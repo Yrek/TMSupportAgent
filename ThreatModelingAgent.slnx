@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ThreatModelingAgent.Api/ThreatModelingAgent.Api.csproj" />
+    <Project Path="src/ThreatModelingAgent.Domain/ThreatModelingAgent.Domain.csproj" />
+    <Project Path="src/ThreatModelingAgent.Infrastructure/ThreatModelingAgent.Infrastructure.csproj" />
+    <Project Path="src/ThreatModelingAgent.Worker/ThreatModelingAgent.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ThreatModelingAgent.Api.Tests/ThreatModelingAgent.Api.Tests.csproj" />
+    <Project Path="tests/ThreatModelingAgent.Domain.Tests/ThreatModelingAgent.Domain.Tests.csproj" />
+  </Folder>
+</Solution>

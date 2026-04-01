@@ -1,0 +1,6 @@
+@ThreatModelingAgent.Api_HostAddress = http://localhost:5240
+
+GET {{ThreatModelingAgent.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

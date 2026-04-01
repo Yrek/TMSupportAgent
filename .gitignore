@@ -1,0 +1,46 @@
+# Build output
+bin/
+obj/
+out/
+
+# User-specific files
+*.user
+*.suo
+.vs/
+.idea/
+*.DotSettings.user
+
+# Local secrets — NEVER commit these (CLAUDE.md §10.1)
+appsettings.Development.json
+appsettings.*.local.json
+secrets.json
+.env
+.env.*
+!.env.example
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+
+# Test results
+TestResults/
+coverage/
+*.trx
+*.coveragexml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Azure Functions / Functions local settings
+local.settings.json
+
+# Terraform / Bicep state
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# Rider / JetBrains
+.idea/
+*.sln.iml

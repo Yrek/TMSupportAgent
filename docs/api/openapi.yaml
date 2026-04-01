@@ -1,0 +1,1456 @@
+openapi: 3.1.0
+
+info:
+  title: Threat Modeling Agent API
+  version: 0.1.0
+  description: |
+    REST API for the Threat Modeling Agent SaaS platform.
+
+    ## Authentication
+    All endpoints (except the auth callback) require a valid Bearer token issued by WorkOS.
+    Tokens are validated server-side on every request. Client-side validation is not sufficient.
+
+    ## Tenant scoping
+    All data is scoped to an organisation. The `org_id` is extracted from the validated JWT —
+    it is never accepted from request parameters or body.
+
+    ## Rate limiting
+    Authentication and job submission endpoints are rate-limited.
+    See individual endpoint descriptions for details.
+
+    ## Security
+    This API is governed by CLAUDE.md and docs/specs/06-security.md.
+    All responses to authenticated requests include `Cache-Control: no-store`.
+
+servers:
+  - url: https://api.tmsa.example.com/v1
+    description: Production (West Europe)
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: WorkOS-issued JWT. Validated server-side on every request.
+
+  parameters:
+    OrgId:
+      name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Organisation UUID. Must match the org_id in the authenticated user's JWT.
+
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    ThreatId:
+      name: threatId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    ElementId:
+      name: elementId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    PageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    PageCursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+      description: Opaque pagination cursor from a previous response.
+
+  schemas:
+
+    # ── Errors ──────────────────────────────────────────────────────────────────
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code. Never contains stack traces or internal paths.
+        message:
+          type: string
+          description: Human-readable summary. Never contains internal details.
+        correlationId:
+          type: string
+          format: uuid
+
+    # ── Pagination ───────────────────────────────────────────────────────────────
+
+    PaginationMeta:
+      type: object
+      properties:
+        nextCursor:
+          type: string
+          nullable: true
+        hasMore:
+          type: boolean
+        totalCount:
+          type: integer
+
+    # ── Auth ─────────────────────────────────────────────────────────────────────
+
+    SessionResponse:
+      type: object
+      required: [userId, email, orgs]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+          nullable: true
+        orgs:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrgSummary'
+
+    # ── Organisations ────────────────────────────────────────────────────────────
+
+    OrgSummary:
+      type: object
+      required: [id, name, slug, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        role:
+          $ref: '#/components/schemas/OrgMemberRole'
+
+    OrgDetail:
+      type: object
+      required: [id, name, slug, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        hasCustomIdp:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateOrgRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 255
+        slug:
+          type: string
+          minLength: 2
+          maxLength: 63
+          pattern: '^[a-z0-9][a-z0-9\-]*[a-z0-9]$'
+
+    UpdateOrgRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 255
+
+    OrgMemberRole:
+      type: string
+      enum: [owner, member]
+
+    # ── Members ──────────────────────────────────────────────────────────────────
+
+    Member:
+      type: object
+      required: [userId, email, role, joinedAt]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+          nullable: true
+        role:
+          $ref: '#/components/schemas/OrgMemberRole'
+        joinedAt:
+          type: string
+          format: date-time
+
+    InviteMemberRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        role:
+          $ref: '#/components/schemas/OrgMemberRole'
+
+    UpdateMemberRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          $ref: '#/components/schemas/OrgMemberRole'
+
+    # ── IDP Config ───────────────────────────────────────────────────────────────
+
+    IdpConfig:
+      type: object
+      required: [providerType, domainHints, createdAt]
+      properties:
+        providerType:
+          type: string
+          enum: [okta, google_workspace, entra_id, oidc, saml]
+        domainHints:
+          type: array
+          items:
+            type: string
+            format: hostname
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UpsertIdpConfigRequest:
+      type: object
+      required: [providerType, domainHints, workosConnectionId]
+      properties:
+        providerType:
+          type: string
+          enum: [okta, google_workspace, entra_id, oidc, saml]
+        domainHints:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: hostname
+            maxLength: 255
+        workosConnectionId:
+          type: string
+          maxLength: 255
+          description: WorkOS SSO Connection ID. Must be created in WorkOS before calling this endpoint.
+
+    # ── Jobs ─────────────────────────────────────────────────────────────────────
+
+    JobStatus:
+      type: string
+      enum:
+        - PENDING
+        - PARSING
+        - NORMALIZING
+        - AWAITING_REVIEW
+        - CLASSIFYING
+        - ANALYZING
+        - SYNTHESIZING
+        - COMPLETE
+        - FAILED
+        - PARTIAL
+
+    JobSummary:
+      type: object
+      required: [id, title, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        artifactType:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    JobDetail:
+      allOf:
+        - $ref: '#/components/schemas/JobSummary'
+        - type: object
+          properties:
+            errorCode:
+              type: string
+              nullable: true
+            threatCount:
+              type: integer
+              nullable: true
+            confirmedThreatCount:
+              type: integer
+              nullable: true
+
+    # ── Architecture ─────────────────────────────────────────────────────────────
+
+    ArchitectureModel:
+      type: object
+      required: [id, jobId, version, classification, confirmedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        jobId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        classification:
+          type: array
+          items:
+            type: string
+        systemPurpose:
+          type: string
+          nullable: true
+        assumptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Assumption'
+        gaps:
+          type: array
+          items:
+            type: string
+        clarificationQuestions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClarificationQuestion'
+        elements:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArchitectureElement'
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    Assumption:
+      type: object
+      required: [text, confirmed]
+      properties:
+        text:
+          type: string
+        confirmed:
+          type: boolean
+
+    ClarificationQuestion:
+      type: object
+      required: [question, priority]
+      properties:
+        question:
+          type: string
+        priority:
+          type: string
+          enum: [high, medium, low]
+        topic:
+          type: string
+
+    ArchitectureElement:
+      type: object
+      required: [id, elementType, name, source]
+      properties:
+        id:
+          type: string
+          format: uuid
+        elementType:
+          type: string
+          enum: [component, actor, data_flow, trust_boundary, data_store, external_system, identity, background_job, llm_boundary]
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        properties:
+          type: object
+          additionalProperties: true
+        source:
+          type: string
+          enum: [extracted, user_added]
+        extractionConfidence:
+          type: string
+          enum: [high, medium, low]
+          nullable: true
+        corrections:
+          type: array
+          items:
+            $ref: '#/components/schemas/Correction'
+
+    Correction:
+      type: object
+      required: [id, correctionType, correctedBy, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        correctionType:
+          type: string
+          enum: [update, mark_incorrect, mark_assumed, mark_confirmed, add_note]
+        fieldName:
+          type: string
+          nullable: true
+        originalValue:
+          type: string
+          nullable: true
+        correctedValue:
+          type: string
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        correctedBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+
+    CorrectElementRequest:
+      type: object
+      required: [correctionType]
+      properties:
+        correctionType:
+          type: string
+          enum: [update, mark_incorrect, mark_assumed, mark_confirmed, add_note]
+        fieldName:
+          type: string
+          maxLength: 100
+        correctedValue:
+          type: string
+          maxLength: 5000
+        note:
+          type: string
+          maxLength: 5000
+
+    AddElementRequest:
+      type: object
+      required: [elementType, name]
+      properties:
+        elementType:
+          type: string
+          enum: [component, actor, data_flow, trust_boundary, data_store, external_system, identity, background_job, llm_boundary]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 5000
+        properties:
+          type: object
+          additionalProperties: true
+
+    # ── Threats ──────────────────────────────────────────────────────────────────
+
+    Threat:
+      type: object
+      required: [id, identifier, title, methodCategory, findingType, status, confidence, evidenceStrength, source]
+      properties:
+        id:
+          type: string
+          format: uuid
+        identifier:
+          type: string
+          example: T-001
+        title:
+          type: string
+        methodCategory:
+          type: string
+        affectedElementIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        description:
+          type: string
+        attackScenario:
+          type: string
+        preconditions:
+          type: string
+          nullable: true
+        impactedAssets:
+          type: array
+          items:
+            type: string
+        securityImpact:
+          type: string
+          nullable: true
+        privacyImpact:
+          type: string
+          nullable: true
+        existingControls:
+          type: string
+          nullable: true
+        controlGaps:
+          type: string
+          nullable: true
+        confidence:
+          type: string
+          enum: [high, medium, low]
+        evidenceBasis:
+          type: array
+          items:
+            type: string
+        evidenceStrength:
+          type: string
+          enum: [direct, inferred, assumption_dependent]
+        assumptions:
+          type: string
+          nullable: true
+        findingType:
+          type: string
+          enum: [confirmed, conditional, user_added]
+        status:
+          type: string
+          enum: [open, accepted, mitigated, rejected]
+        source:
+          type: string
+          enum: [system, user]
+        mitigations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mitigation'
+        frameworkMappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/FrameworkMapping'
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThreatNote'
+
+    Mitigation:
+      type: object
+      required: [id, title, description, priority]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          type: string
+          enum: [critical, high, medium, low]
+        category:
+          type: string
+          nullable: true
+
+    FrameworkMapping:
+      type: object
+      required: [framework, reference, mappingType]
+      properties:
+        framework:
+          type: string
+          enum: [owasp_top10, owasp_api_top10, asvs, cis_controls, ncsc, twelve_factor]
+        reference:
+          type: string
+        mappingType:
+          type: string
+          enum: [direct, approximate]
+
+    ThreatNote:
+      type: object
+      required: [id, body, createdBy, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        body:
+          type: string
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+
+    AddThreatRequest:
+      type: object
+      required: [title, methodCategory, description, attackScenario, affectedElementIds]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        methodCategory:
+          type: string
+          maxLength: 100
+        affectedElementIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+        description:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        attackScenario:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        preconditions:
+          type: string
+          maxLength: 5000
+        impactedAssets:
+          type: array
+          items:
+            type: string
+            maxLength: 255
+        securityImpact:
+          type: string
+          maxLength: 5000
+        privacyImpact:
+          type: string
+          maxLength: 5000
+
+    UpdateThreatStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [open, accepted, mitigated, rejected]
+        note:
+          type: string
+          maxLength: 5000
+
+    AddThreatNoteRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+
+    # ── Analysis output ──────────────────────────────────────────────────────────
+
+    AnalysisSummary:
+      type: object
+      required: [jobId, status, confirmedThreats, conditionalThreats, userAddedThreats]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        systemSummary:
+          type: string
+          nullable: true
+        architectureClassification:
+          type: array
+          items:
+            type: string
+        selectedMethods:
+          type: array
+          items:
+            $ref: '#/components/schemas/SelectedMethod'
+        modelRoutingSummary:
+          type: object
+          additionalProperties:
+            type: string
+        confirmedThreats:
+          type: integer
+        conditionalThreats:
+          type: integer
+        userAddedThreats:
+          type: integer
+        reviewQuestions:
+          type: array
+          items:
+            type: string
+
+    SelectedMethod:
+      type: object
+      required: [method, rationale]
+      properties:
+        method:
+          type: string
+        rationale:
+          type: string
+
+# ── Paths ──────────────────────────────────────────────────────────────────────
+
+paths:
+
+  # ── Auth ─────────────────────────────────────────────────────────────────────
+
+  /auth/session:
+    get:
+      operationId: getSession
+      summary: Get current authenticated user and their organisations
+      tags: [auth]
+      responses:
+        '200':
+          description: Current session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      operationId: deleteSession
+      summary: Sign out — invalidate current session
+      tags: [auth]
+      responses:
+        '204':
+          description: Signed out
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Organisations ────────────────────────────────────────────────────────────
+
+  /orgs:
+    get:
+      operationId: listOrgs
+      summary: List organisations the authenticated user belongs to
+      tags: [organisations]
+      responses:
+        '200':
+          description: List of organisations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrgSummary'
+
+    post:
+      operationId: createOrg
+      summary: Create a new organisation. Caller becomes owner.
+      tags: [organisations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrgRequest'
+      responses:
+        '201':
+          description: Organisation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgDetail'
+        '409':
+          description: Slug already taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /orgs/{orgId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+
+    get:
+      operationId: getOrg
+      summary: Get organisation details
+      tags: [organisations]
+      responses:
+        '200':
+          description: Organisation detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgDetail'
+        '403':
+          description: Not a member of this organisation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    patch:
+      operationId: updateOrg
+      summary: Update organisation. Requires org:owner.
+      tags: [organisations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrgRequest'
+      responses:
+        '200':
+          description: Updated organisation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgDetail'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      operationId: deleteOrg
+      summary: Delete organisation and all its data. Requires org:owner. Irreversible.
+      tags: [organisations]
+      responses:
+        '204':
+          description: Organisation deleted
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Members ──────────────────────────────────────────────────────────────────
+
+  /orgs/{orgId}/members:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+
+    get:
+      operationId: listMembers
+      summary: List organisation members
+      tags: [members]
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageCursor'
+      responses:
+        '200':
+          description: Member list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Member'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+
+    post:
+      operationId: inviteMember
+      summary: Invite a user to the organisation. Requires org:owner.
+      description: |
+        Rate-limited: 20 invitations per hour per org.
+        Sends a WorkOS invitation email. Does not create the membership until the user accepts.
+      tags: [members]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteMemberRequest'
+      responses:
+        '202':
+          description: Invitation sent
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /orgs/{orgId}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/UserId'
+
+    patch:
+      operationId: updateMemberRole
+      summary: Update a member's role. Requires org:owner.
+      tags: [members]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMemberRoleRequest'
+      responses:
+        '200':
+          description: Updated member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      operationId: removeMember
+      summary: Remove a member from the organisation. Requires org:owner.
+      tags: [members]
+      responses:
+        '204':
+          description: Member removed
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── IDP Config ───────────────────────────────────────────────────────────────
+
+  /orgs/{orgId}/idp:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+
+    get:
+      operationId: getIdpConfig
+      summary: Get the organisation's IDP configuration. Requires org:owner.
+      tags: [identity]
+      responses:
+        '200':
+          description: IDP config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdpConfig'
+        '404':
+          description: No IDP configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      operationId: upsertIdpConfig
+      summary: Create or update the organisation IDP configuration. Requires org:owner.
+      description: |
+        The WorkOS SSO connection must be created in WorkOS before calling this endpoint.
+        Domain hints must be validated as belonging to the organisation —
+        this validation is performed server-side.
+      tags: [identity]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertIdpConfigRequest'
+      responses:
+        '200':
+          description: IDP config saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdpConfig'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      operationId: deleteIdpConfig
+      summary: Remove the organisation's IDP configuration. Requires org:owner.
+      tags: [identity]
+      responses:
+        '204':
+          description: IDP config removed
+
+  # ── Jobs ─────────────────────────────────────────────────────────────────────
+
+  /orgs/{orgId}/jobs:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+
+    get:
+      operationId: listJobs
+      summary: List analysis jobs for the organisation
+      tags: [jobs]
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageCursor'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/JobStatus'
+      responses:
+        '200':
+          description: Job list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JobSummary'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+
+    post:
+      operationId: submitJob
+      summary: Submit a new threat modeling analysis
+      description: |
+        Accepts a multipart/form-data body with the architecture artifact.
+        Supported artifact types: image (PNG, JPG, GIF, WebP), PlantUML (.puml),
+        Mermaid (.md, .mmd), Draw.io XML (.drawio, .xml), plain text (.txt).
+        Maximum file size: 10 MB.
+        Rate-limited: 10 job submissions per hour per organisation.
+      tags: [jobs]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [artifact]
+              properties:
+                artifact:
+                  type: string
+                  format: binary
+                  description: The architecture diagram or description file.
+                title:
+                  type: string
+                  maxLength: 255
+                  description: Optional human-readable title for this analysis.
+      responses:
+        '202':
+          description: Job accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetail'
+        '413':
+          description: Artifact too large (max 10 MB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          description: Unsupported artifact type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /orgs/{orgId}/jobs/{jobId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/JobId'
+
+    get:
+      operationId: getJob
+      summary: Get job status and summary
+      tags: [jobs]
+      responses:
+        '200':
+          description: Job detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetail'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      operationId: deleteJob
+      summary: Delete a job and all its associated data
+      tags: [jobs]
+      responses:
+        '204':
+          description: Job deleted
+        '409':
+          description: Job is in progress and cannot be deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Architecture (canonical model) ───────────────────────────────────────────
+
+  /orgs/{orgId}/jobs/{jobId}/architecture:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/JobId'
+
+    get:
+      operationId: getArchitecture
+      summary: Get the normalized canonical architecture model for a job
+      description: Available once job status reaches AWAITING_REVIEW or later.
+      tags: [architecture]
+      responses:
+        '200':
+          description: Architecture model
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchitectureModel'
+        '409':
+          description: Architecture not yet available (job still parsing or normalizing)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /orgs/{orgId}/jobs/{jobId}/architecture/confirm:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/JobId'
+
+    post:
+      operationId: confirmArchitecture
+      summary: Confirm the reviewed architecture model and trigger threat analysis
+      description: |
+        Job must be in AWAITING_REVIEW status. Transitions job to CLASSIFYING.
+        User corrections made before this call are applied to the analysis.
+      tags: [architecture]
+      responses:
+        '202':
+          description: Architecture confirmed; analysis queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetail'
+        '409':
+          description: Job is not in AWAITING_REVIEW status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /orgs/{orgId}/jobs/{jobId}/architecture/elements:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/JobId'
+
+    post:
+      operationId: addArchitectureElement
+      summary: Add a missing element to the architecture model
+      description: Only allowed when job is in AWAITING_REVIEW status.
+      tags: [architecture]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddElementRequest'
+      responses:
+        '201':
+          description: Element added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchitectureElement'
+        '409':
+          description: Job is not in AWAITING_REVIEW status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /orgs/{orgId}/jobs/{jobId}/architecture/elements/{elementId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/JobId'
+      - $ref: '#/components/parameters/ElementId'
+
+    get:
+      operationId: getArchitectureElement
+      summary: Get a single architecture element with its corrections and related threats
+      tags: [architecture]
+      responses:
+        '200':
+          description: Element detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchitectureElement'
+
+    post:
+      operationId: correctArchitectureElement
+      summary: Submit a correction or annotation for an architecture element
+      description: Only allowed when job is in AWAITING_REVIEW status.
+      tags: [architecture]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectElementRequest'
+      responses:
+        '200':
+          description: Correction recorded; updated element returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchitectureElement'
+        '409':
+          description: Job is not in AWAITING_REVIEW status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Analysis output ──────────────────────────────────────────────────────────
+
+  /orgs/{orgId}/jobs/{jobId}/analysis:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/JobId'
+
+    get:
+      operationId: getAnalysis
+      summary: Get the full analysis summary for a completed job
+      description: Available once job status is COMPLETE or PARTIAL.
+      tags: [analysis]
+      responses:
+        '200':
+          description: Analysis summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisSummary'
+        '409':
+          description: Analysis not yet complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Threats ──────────────────────────────────────────────────────────────────
+
+  /orgs/{orgId}/jobs/{jobId}/threats:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/JobId'
+
+    get:
+      operationId: listThreats
+      summary: List threats for a job
+      tags: [threats]
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageCursor'
+        - name: findingType
+          in: query
+          schema:
+            type: string
+            enum: [confirmed, conditional, user_added]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, accepted, mitigated, rejected]
+        - name: elementId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter threats affecting a specific architecture element
+      responses:
+        '200':
+          description: Threat list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Threat'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+
+    post:
+      operationId: addThreat
+      summary: Add a user-defined threat to the analysis
+      tags: [threats]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddThreatRequest'
+      responses:
+        '201':
+          description: Threat added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Threat'
+
+  /orgs/{orgId}/jobs/{jobId}/threats/{threatId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/JobId'
+      - $ref: '#/components/parameters/ThreatId'
+
+    get:
+      operationId: getThreat
+      summary: Get a single threat with full detail
+      tags: [threats]
+      responses:
+        '200':
+          description: Threat detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Threat'
+
+    patch:
+      operationId: updateThreatStatus
+      summary: Update a threat's status (accept, mitigate, reject)
+      tags: [threats]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateThreatStatusRequest'
+      responses:
+        '200':
+          description: Updated threat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Threat'
+
+  /orgs/{orgId}/jobs/{jobId}/threats/{threatId}/notes:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/JobId'
+      - $ref: '#/components/parameters/ThreatId'
+
+    post:
+      operationId: addThreatNote
+      summary: Add a note to a threat
+      tags: [threats]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddThreatNoteRequest'
+      responses:
+        '201':
+          description: Note added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreatNote'
+
+tags:
+  - name: auth
+    description: Session management
+  - name: organisations
+    description: Organisation (tenant) management
+  - name: members
+    description: Organisation membership management
+  - name: identity
+    description: Per-organisation IDP configuration
+  - name: jobs
+    description: Threat modeling analysis jobs
+  - name: architecture
+    description: Canonical architecture model review and correction
+  - name: analysis
+    description: Analysis results and summaries
+  - name: threats
+    description: Threats, mitigations, and annotations

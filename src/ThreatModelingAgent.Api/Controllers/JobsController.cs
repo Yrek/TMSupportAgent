@@ -18,20 +18,14 @@ public sealed class JobsController(
     IJobRepository jobs,
     IMembershipRepository memberships,
     IBlobStorage blob,
+    IJobQueue jobQueue,
     IAuditLogger audit,
     ILogger<JobsController> logger) : ControllerBase
 {
-    private static readonly HashSet<string> AllowedContentTypes =
-    [
-        "image/png", "image/jpeg", "image/gif", "image/webp",
-        "text/plain", "application/xml", "text/xml",
-        "application/octet-stream" // Draw.io .drawio files
-    ];
-
     private static readonly HashSet<string> AllowedExtensions =
         [".png", ".jpg", ".jpeg", ".gif", ".webp", ".puml", ".txt", ".md", ".mmd", ".drawio", ".xml"];
 
-    private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB (CLAUDE.md §9.6)
+    private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB (CLAUDE.md §9.7)
 
     // GET /v1/orgs/{orgId}/jobs
     [HttpGet]
@@ -92,12 +86,19 @@ public sealed class JobsController(
         await jobs.AddAsync(job, ct);
         await jobs.SaveChangesAsync(ct);
 
-        // Upload to org-scoped blob path — filename randomised on write (CLAUDE.md §9.6)
+        // Upload artifact to org-scoped blob path — filename randomised on write (CLAUDE.md §9.6)
         var blobPath = $"{orgIdValue}/uploads/{job.Id}/{Guid.NewGuid()}{ext}";
         await using var stream = artifact.OpenReadStream();
         await blob.UploadAsync(blobPath, stream, artifact.ContentType, ct);
 
-        job.SetArtifact(blobPath, DetectArtifactType(ext));
+        var artifactType = DetectArtifactType(ext);
+        job.SetArtifact(blobPath, artifactType);
+        await jobs.SaveChangesAsync(ct);
+
+        // Enqueue Phase 1 (DETECT → PARSE → NORMALIZE) on the Service Bus
+        await jobQueue.EnqueueParsePhaseAsync(job.Id, orgIdValue, blobPath, artifactType, ct);
+
+        // Update job status to Parsing now that it's enqueued
         job.Transition(JobStatus.Parsing);
         await jobs.SaveChangesAsync(ct);
 
@@ -109,8 +110,8 @@ public sealed class JobsController(
             ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
             ct: ct);
 
-        logger.LogInformation("Job submitted. JobId={JobId} OrgId={OrgId} ArtifactType={ArtifactType}",
-            job.Id, orgIdValue, job.ArtifactType);
+        logger.LogInformation("Job submitted and enqueued. JobId={JobId} OrgId={OrgId} ArtifactType={ArtifactType}",
+            job.Id, orgIdValue, artifactType);
 
         return AcceptedAtAction(nameof(GetJob),
             new { orgId, jobId = job.Id.Value },
@@ -150,16 +151,17 @@ public sealed class JobsController(
         if (job.IsInProgress)
             return Conflict(new { code = "JOB_IN_PROGRESS", message = "Cannot delete a job that is in progress." });
 
-        // Cascade: delete blob artifacts
+        // Delete blob artifacts before removing the DB record
         if (job.ArtifactBlobPath is not null)
             await blob.DeleteByPrefixAsync($"{orgIdValue}/uploads/{job.Id}/", ct);
 
+        await blob.DeleteByPrefixAsync($"{orgIdValue}/intermediate/{job.Id}/", ct);
         await blob.DeleteByPrefixAsync($"{orgIdValue}/outputs/{job.Id}/", ct);
 
-        // EF cascade deletes job record and related rows
-        // (actual implementation: soft-delete or hard delete per retention policy)
-        // For MVP: mark as deleted by transitioning to Failed with a special code
-        // TODO: implement hard-delete cascade in a background job per retention policy
+        // Hard-delete the job record; EF cascade removes all child rows
+        // (architectures, elements, threats, mitigations, etc.) via FK ON DELETE CASCADE
+        jobs.Delete(job);
+        await jobs.SaveChangesAsync(ct);
 
         await audit.LogAsync("job.deleted",
             orgId: orgIdValue,

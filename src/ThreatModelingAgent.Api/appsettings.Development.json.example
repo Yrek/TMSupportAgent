@@ -1,0 +1,38 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Debug",
+      "Microsoft.AspNetCore": "Information",
+      "Microsoft.EntityFrameworkCore": "Information"
+    }
+  },
+
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=threatmodeling_dev;Username=postgres;Password=localdev"
+  },
+
+  "WorkOS": {
+    "ClientId": "YOUR_WORKOS_CLIENT_ID",
+    "Issuer": "https://api.workos.com",
+    "JwksUri": "https://api.workos.com/.well-known/jwks.json"
+  },
+
+  "AzureStorage": {
+    "ConnectionString": "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KbHBXKmv/+Kg==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;",
+    "ContainerName": "architectures"
+  },
+
+  "ApplicationInsights": {
+    "ConnectionString": ""
+  },
+
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Debug",
+      "Override": {
+        "Microsoft": "Information",
+        "System": "Warning"
+      }
+    }
+  }
+}

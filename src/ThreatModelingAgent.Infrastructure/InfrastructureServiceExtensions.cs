@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using ThreatModelingAgent.Domain.Interfaces;
+using ThreatModelingAgent.Infrastructure.Messaging;
 using ThreatModelingAgent.Infrastructure.Persistence;
 using ThreatModelingAgent.Infrastructure.Persistence.Repositories;
 using ThreatModelingAgent.Infrastructure.Services;
@@ -28,11 +29,17 @@ public static class InfrastructureServiceExtensions
                 .AddInterceptors(sp.GetRequiredService<RlsSessionInterceptor>());
         });
 
+        services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IOrganizationRepository, OrganizationRepository>();
         services.AddScoped<IJobRepository, JobRepository>();
         services.AddScoped<IMembershipRepository, MembershipRepository>();
+        services.AddScoped<IArchitectureRepository, ArchitectureRepository>();
+        services.AddScoped<IThreatRepository, ThreatRepository>();
+        services.AddScoped<IIdpConfigRepository, IdpConfigRepository>();
         services.AddScoped<IAuditLogger, AuditLogger>();
         services.AddSingleton<IBlobStorage, AzureBlobStorageService>();
+        services.AddSingleton<IJobQueue, ServiceBusJobQueue>();
+        services.AddScoped<IWorkOsClient, WorkOsHttpClient>();
 
         return services;
     }

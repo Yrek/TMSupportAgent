@@ -90,8 +90,20 @@ public sealed record ClarificationQuestion(string Question, string Priority, str
 
 // ── Stage 4 — CLASSIFY ───────────────────────────────────────────────────────
 
+/// <summary>
+/// Represents a single user correction applied during the AWAITING_REVIEW window.
+/// Passed to CLASSIFY so the model can distinguish user-confirmed facts from AI inferences.
+/// </summary>
+public sealed record UserCorrection(
+    string ElementId,
+    string Field,
+    string? OldValue,
+    string NewValue,
+    string CorrectionType);   // Update | MarkIncorrect | MarkAssumed | MarkConfirmed | AddNote
+
 public sealed record ClassifyInput(
-    CanonicalModel ConfirmedModel);
+    CanonicalModel ConfirmedModel,
+    UserCorrection[] UserCorrections);
 
 public sealed record ClassificationResult(
     string[] Categories,
@@ -158,10 +170,11 @@ public sealed record FinalOutput(
     Dictionary<string, string> ModelRoutingSummary,
     FinalThreat[] ConfirmedThreats,
     FinalThreat[] ConditionalThreats,
+    FinalThreat[] UserAddedThreats,    // always empty at synthesis; populated via API after job completes
     DesignRecommendation[] SecureDesignRecommendations,
     RemediationItem[] PrioritizedRemediationList,
     string[] ReviewQuestions,
-    string AnalysisStatus,         // complete | partial
+    string AnalysisStatus,             // complete | partial
     string? PartialReason);
 
 public sealed record FinalThreat(

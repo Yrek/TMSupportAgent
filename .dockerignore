@@ -1,0 +1,14 @@
+**/.git
+**/.vs
+**/.idea
+**/bin
+**/obj
+**/TestResults
+**/coverage
+**/*.user
+appsettings.Development.json
+appsettings.*.local.json
+secrets.json
+.env
+.env.*
+!.env.example

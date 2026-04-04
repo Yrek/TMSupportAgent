@@ -45,3 +45,20 @@ public sealed class UpdateOrgRequestValidator : AbstractValidator<UpdateOrgReque
         RuleFor(x => x.Name).NotEmpty().MaximumLength(255);
     }
 }
+
+public class InviteMemberRequest
+{
+    public string Email { get; set; } = string.Empty;
+}
+
+public class UpdateMemberRoleRequest
+{
+    public string Role { get; set; } = string.Empty;
+}
+
+public class ConfigureIdpRequest
+{
+    public string WorkOsConnectionId { get; set; } = string.Empty;
+    public string ProviderType { get; set; } = string.Empty;
+    public string[] DomainHints { get; set; } = [];
+}

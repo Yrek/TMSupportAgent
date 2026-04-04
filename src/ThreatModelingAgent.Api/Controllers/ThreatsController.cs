@@ -1,0 +1,317 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using ThreatModelingAgent.Api.Dtos;
+using ThreatModelingAgent.Api.Security;
+using ThreatModelingAgent.Domain.Entities;
+using ThreatModelingAgent.Domain.Enums;
+using ThreatModelingAgent.Domain.ValueObjects;
+using ThreatModelingAgent.Domain.Interfaces;
+using ThreatModelingAgent.Domain.ValueObjects;
+
+namespace ThreatModelingAgent.Api.Controllers;
+
+/// <summary>
+/// Manages threats and the final analysis output for a completed job.
+///
+/// Endpoints:
+///   GET    /v1/orgs/{orgId}/jobs/{jobId}/threats                    — list all threats
+///   POST   /v1/orgs/{orgId}/jobs/{jobId}/threats                    — user-add a threat
+///   PATCH  /v1/orgs/{orgId}/jobs/{jobId}/threats/{threatId}/status  — update threat status
+///   GET    /v1/orgs/{orgId}/jobs/{jobId}/analysis                   — full analysis output
+///
+/// Authorization: org membership check on every request (defence-in-depth, RLS also active).
+/// </summary>
+[ApiController]
+[Authorize]
+[Route("v1/orgs/{orgId:guid}/jobs/{jobId:guid}")]
+[EnableRateLimiting("api")]
+public sealed class ThreatsController(
+    IJobRepository jobs,
+    IMembershipRepository memberships,
+    IThreatRepository threats,
+    IBlobStorage blob,
+    IAuditLogger audit,
+    ILogger<ThreatsController> logger) : ControllerBase
+{
+    private static readonly JsonSerializerOptions JsonReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    private static readonly HashSet<string> AllowedStatuses =
+        ["Open", "Accepted", "Mitigated", "Rejected"];
+
+    // GET /v1/orgs/{orgId}/jobs/{jobId}/threats
+    [HttpGet("threats")]
+    public async Task<IActionResult> ListThreats(Guid orgId, Guid jobId, CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        var orgIdValue = OrgId.From(orgId);
+
+        if (!await memberships.HasOrgAccessAsync(orgIdValue, userId, ct: ct))
+            return Forbid();
+
+        var job = await jobs.GetByIdAsync(JobId.From(jobId), orgIdValue, ct);
+        if (job is null) return NotFound();
+
+        var items = await threats.ListByJobAsync(JobId.From(jobId), orgIdValue, ct);
+        return Ok(new { data = items.Select(ThreatDto.From) });
+    }
+
+    // POST /v1/orgs/{orgId}/jobs/{jobId}/threats
+    [HttpPost("threats")]
+    [EnableRateLimiting("strict")]
+    public async Task<IActionResult> AddThreat(
+        Guid orgId,
+        Guid jobId,
+        [FromBody] AddThreatRequest request,
+        CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        var orgIdValue = OrgId.From(orgId);
+
+        if (!await memberships.HasOrgAccessAsync(orgIdValue, userId, ct: ct))
+            return Forbid();
+
+        var job = await jobs.GetByIdAsync(JobId.From(jobId), orgIdValue, ct);
+        if (job is null) return NotFound();
+
+        // User-added threats are only allowed once the job has results
+        if (job.Status is not (JobStatus.Complete or JobStatus.Partial))
+            return Conflict(new
+            {
+                code = "INVALID_JOB_STATUS",
+                message = "Threats can only be added to completed or partial jobs."
+            });
+
+        // Input validation (CLAUDE.md §6.3 — allow-list, explicit constraints)
+        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 500)
+            return BadRequest(new { code = "INVALID_TITLE", message = "Title is required and must not exceed 500 characters." });
+        if (string.IsNullOrWhiteSpace(request.Description))
+            return BadRequest(new { code = "INVALID_DESCRIPTION", message = "Description is required." });
+        if (string.IsNullOrWhiteSpace(request.AttackScenario))
+            return BadRequest(new { code = "INVALID_ATTACK_SCENARIO", message = "AttackScenario is required." });
+        if (string.IsNullOrWhiteSpace(request.MethodCategory) || request.MethodCategory.Length > 100)
+            return BadRequest(new { code = "INVALID_METHOD_CATEGORY", message = "MethodCategory is required and must not exceed 100 characters." });
+
+        var identifier = await threats.NextIdentifierAsync(JobId.From(jobId), orgIdValue, ct);
+
+        var threat = Threat.CreateUserAdded(
+            jobId: JobId.From(jobId),
+            orgId: orgIdValue,
+            identifier: identifier,
+            title: request.Title,
+            methodCategory: request.MethodCategory,
+            affectedElementIds: request.AffectedElementIds ?? [],
+            description: request.Description,
+            attackScenario: request.AttackScenario);
+
+        await threats.AddAsync(threat, ct);
+        await threats.SaveChangesAsync(ct);
+
+        await audit.LogAsync("threat.added",
+            orgId: orgIdValue,
+            userId: userId,
+            resourceType: "threat",
+            resourceId: threat.Id,
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+            ct: ct);
+
+        logger.LogInformation(
+            "User-added threat. JobId={JobId} ThreatId={ThreatId} Identifier={Identifier}",
+            jobId, threat.Id, threat.Identifier);
+
+        return CreatedAtAction(nameof(ListThreats), new { orgId, jobId }, ThreatDto.From(threat));
+    }
+
+    // PATCH /v1/orgs/{orgId}/jobs/{jobId}/threats/{threatId}/status
+    [HttpPatch("threats/{threatId:guid}/status")]
+    public async Task<IActionResult> UpdateThreatStatus(
+        Guid orgId,
+        Guid jobId,
+        Guid threatId,
+        [FromBody] PatchThreatStatusRequest request,
+        CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        var orgIdValue = OrgId.From(orgId);
+
+        if (!await memberships.HasOrgAccessAsync(orgIdValue, userId, ct: ct))
+            return Forbid();
+
+        var job = await jobs.GetByIdAsync(JobId.From(jobId), orgIdValue, ct);
+        if (job is null) return NotFound();
+
+        // Validate status value against allow-list (CLAUDE.md §6.3)
+        if (string.IsNullOrWhiteSpace(request.Status) || !AllowedStatuses.Contains(request.Status))
+            return BadRequest(new
+            {
+                code = "INVALID_STATUS",
+                message = $"Status must be one of: {string.Join(", ", AllowedStatuses)}."
+            });
+
+        // org_id on the threat itself is defence-in-depth alongside RLS (CLAUDE.md §8.2 BOLA)
+        var threat = await threats.GetByIdAsync(threatId, orgIdValue, ct);
+        if (threat is null) return NotFound();
+
+        // Verify threat belongs to this job
+        if (threat.JobId != JobId.From(jobId))
+            return NotFound();
+
+        var newStatus = Enum.Parse<ThreatStatus>(request.Status);
+        threat.UpdateStatus(newStatus);
+        await threats.SaveChangesAsync(ct);
+
+        await audit.LogAsync("threat.status_updated",
+            orgId: orgIdValue,
+            userId: userId,
+            resourceType: "threat",
+            resourceId: threatId,
+            details: new { status = request.Status },
+            ct: ct);
+
+        return Ok(ThreatDto.From(threat));
+    }
+
+    // POST /v1/orgs/{orgId}/jobs/{jobId}/threats/{threatId}/notes
+    [HttpPost("threats/{threatId:guid}/notes")]
+    [EnableRateLimiting("strict")]
+    public async Task<IActionResult> AddNote(
+        Guid orgId,
+        Guid jobId,
+        Guid threatId,
+        [FromBody] AddThreatNoteRequest request,
+        CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        var orgIdValue = OrgId.From(orgId);
+
+        if (!await memberships.HasOrgAccessAsync(orgIdValue, userId, ct: ct))
+            return Forbid();
+
+        if (string.IsNullOrWhiteSpace(request.Body))
+            return BadRequest(new { code = "BODY_REQUIRED", message = "Note body is required." });
+
+        if (request.Body.Length > 5000)
+            return BadRequest(new { code = "BODY_TOO_LONG", message = "Note body must not exceed 5000 characters." });
+
+        // org_id defence-in-depth (CLAUDE.md §8.2 BOLA)
+        var threat = await threats.GetByIdAsync(threatId, orgIdValue, ct);
+        if (threat is null) return NotFound();
+
+        if (threat.JobId != JobId.From(jobId)) return NotFound();
+
+        var note = ThreatNote.Create(threatId, orgIdValue, userId, request.Body);
+        await threats.AddNoteAsync(note, ct);
+        await threats.SaveChangesAsync(ct);
+
+        await audit.LogAsync("threat.note_added",
+            orgId: orgIdValue,
+            userId: userId,
+            resourceType: "threat_note",
+            resourceId: note.Id,
+            ct: ct);
+
+        return CreatedAtAction(nameof(ListThreats), new { orgId, jobId },
+            new { id = note.Id, authorId = note.CreatedBy.Value, createdAt = note.CreatedAt });
+    }
+
+    // GET /v1/orgs/{orgId}/jobs/{jobId}/export — GDPR right to portability (06-security §6.2)
+    [HttpGet("export")]
+    public async Task<IActionResult> ExportAnalysis(Guid orgId, Guid jobId, CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        var orgIdValue = OrgId.From(orgId);
+
+        if (!await memberships.HasOrgAccessAsync(orgIdValue, userId, ct: ct))
+            return Forbid();
+
+        var job = await jobs.GetByIdAsync(JobId.From(jobId), orgIdValue, ct);
+        if (job is null) return NotFound();
+
+        if (job.Status is not (JobStatus.Complete or JobStatus.Partial))
+            return Conflict(new
+            {
+                code = "ANALYSIS_NOT_READY",
+                message = "Analysis output is only available once the job is complete or partial."
+            });
+
+        // Blob path is deterministic — org_id threads through to prevent cross-tenant access
+        var blobPath = $"{orgId}/outputs/{jobId}/analysis.json";
+
+        Stream blobStream;
+        try
+        {
+            blobStream = await blob.DownloadAsync(blobPath, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Analysis blob not found for export. JobId={JobId}", jobId);
+            return NotFound(new { code = "ANALYSIS_NOT_FOUND", message = "Analysis output blob not found." });
+        }
+
+        // Stream blob directly as a file download — no re-serialization needed
+        // Content is already valid JSON written by SynthesizeStage.PersistAsync
+        Response.Headers.CacheControl = "no-store";  // CLAUDE.md §11.3
+        return File(blobStream, "application/json", $"threat-model-{jobId}.json");
+    }
+
+    // GET /v1/orgs/{orgId}/jobs/{jobId}/analysis
+    [HttpGet("analysis")]
+    public async Task<IActionResult> GetAnalysis(Guid orgId, Guid jobId, CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        var orgIdValue = OrgId.From(orgId);
+
+        if (!await memberships.HasOrgAccessAsync(orgIdValue, userId, ct: ct))
+            return Forbid();
+
+        var job = await jobs.GetByIdAsync(JobId.From(jobId), orgIdValue, ct);
+        if (job is null) return NotFound();
+
+        if (job.Status is not (JobStatus.Complete or JobStatus.Partial))
+            return Conflict(new
+            {
+                code = "ANALYSIS_NOT_READY",
+                message = "Analysis output is only available once the job is complete or partial."
+            });
+
+        // Blob path is deterministic: {orgId}/outputs/{jobId}/analysis.json
+        // The org_id is threaded through the path — cross-tenant access is structurally prevented
+        var blobPath = $"{orgId}/outputs/{jobId}/analysis.json";
+
+        Stream blobStream;
+        try
+        {
+            blobStream = await blob.DownloadAsync(blobPath, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Analysis blob not found. JobId={JobId}", jobId);
+            return NotFound(new { code = "ANALYSIS_NOT_FOUND", message = "Analysis output blob not found." });
+        }
+
+        // Parse and re-serialize via JsonDocument to ensure correct encoding for the HTTP context
+        // (CLAUDE.md §7.3 — use framework serializers, not manual string construction)
+        await using (blobStream)
+        using var ms = new MemoryStream();
+        await blobStream.CopyToAsync(ms, ct);
+        ms.Seek(0, SeekOrigin.Begin);
+
+        JsonDocument doc;
+        try
+        {
+            doc = await JsonDocument.ParseAsync(ms, cancellationToken: ct);
+        }
+        catch (JsonException ex)
+        {
+            logger.LogError(ex, "Analysis blob is not valid JSON. JobId={JobId}", jobId);
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                new { code = "ANALYSIS_CORRUPT", message = "Analysis output could not be read." });
+        }
+
+        return Ok(doc.RootElement);
+    }
+}

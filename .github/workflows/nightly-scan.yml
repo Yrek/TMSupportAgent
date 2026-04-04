@@ -1,0 +1,47 @@
+name: Nightly Dependency Scan
+
+# 06-security.md §9: dependency CVE scanning runs every PR + nightly
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 02:00 UTC nightly
+  workflow_dispatch:        # allow manual trigger
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  nightly-dependency-scan:
+    name: Nightly Dependency CVE Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore ThreatModelingAgent.slnx
+
+      - name: Vulnerability scan
+        run: dotnet list package --vulnerable --include-transitive 2>&1 | tee vuln-report.txt
+
+      - name: Fail on critical or high vulnerabilities
+        run: |
+          if grep -E "(Critical|High)" vuln-report.txt; then
+            echo "Critical or High severity vulnerabilities detected. Patch SLA: critical 24h, high 7 days."
+            exit 1
+          fi
+
+      - name: Upload vulnerability report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-vulnerability-report-${{ github.run_id }}
+          path: vuln-report.txt
+          retention-days: 30

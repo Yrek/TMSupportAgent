@@ -1,6 +1,6 @@
 # Data Model Specification
 
-**Status:** Draft  
+**Status:** Approved  
 **Spec ref:** [02-architecture.md](02-architecture.md), [01-product.md](01-product.md)  
 **Security ref:** [CLAUDE.md](../../CLAUDE.md) §7, §8  
 **Version:** 0.1  

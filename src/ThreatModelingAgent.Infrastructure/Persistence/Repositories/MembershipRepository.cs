@@ -16,6 +16,11 @@ internal sealed class MembershipRepository(AppDbContext db) : IMembershipReposit
             .OrderBy(m => m.CreatedAt)
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<OrgMembership>> ListByUserAsync(UserId userId, CancellationToken ct = default)
+        => await db.OrgMemberships
+            .Where(m => m.UserId == userId)
+            .ToListAsync(ct);
+
     public async Task AddAsync(OrgMembership membership, CancellationToken ct = default)
         => await db.OrgMemberships.AddAsync(membership, ct);
 

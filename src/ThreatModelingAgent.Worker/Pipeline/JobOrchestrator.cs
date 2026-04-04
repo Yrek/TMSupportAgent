@@ -10,7 +10,7 @@ namespace ThreatModelingAgent.Worker.Pipeline;
 /// <summary>
 /// Orchestrates the two-phase analysis pipeline for a single job.
 ///
-/// Phase 1 (Parse):  DETECT → PARSE → NORMALIZE → AWAITING_REVIEW
+/// Phase 1 (Parse):   DETECT → PARSE → NORMALIZE → AWAITING_REVIEW
 /// Phase 2 (Analyze): CLASSIFY → ANALYZE (all methods, parallel) → SYNTHESIZE → COMPLETE
 ///
 /// Security invariants:
@@ -24,6 +24,7 @@ public sealed class JobOrchestrator(
     IJobRepository jobs,
     IAuditLogger audit,
     IBlobStorage blobStorage,
+    PipelineDbPersistence dbPersistence,
     DetectStage detectStage,
     ParseStage parseStage,
     NormalizeStage normalizeStage,
@@ -127,8 +128,11 @@ public sealed class JobOrchestrator(
         var normalizeInput = new NormalizeInput(parseOutput, detectOutput.ArtifactType);
         var canonicalModel = await normalizeStage.ExecuteAsync(normalizeInput, ct);
 
-        // Persist canonical model to blob — survives AWAITING_REVIEW pause
+        // Persist canonical model to blob — survives AWAITING_REVIEW pause and feeds Phase 2
         await NormalizeStage.PersistAsync(canonicalModel, orgId.Value, job.Id.Value, blobStorage, ct);
+
+        // Persist canonical model to DB — makes architecture available via API
+        await dbPersistence.PersistArchitectureAsync(job.Id, orgId, canonicalModel, ct);
 
         // Transition to AWAITING_REVIEW — pipeline pauses until user confirms via API
         await TransitionAsync(job, JobStatus.AwaitingReview, ct);
@@ -154,10 +158,41 @@ public sealed class JobOrchestrator(
         var canonicalModel = await NormalizeStage.LoadAsync(
             orgId.Value, job.Id.Value, blobStorage, ct);
 
+        // Apply user corrections from DB before CLASSIFY (re-analysis support)
+        var arch = await dbPersistence.TryGetArchitectureWithCorrectionsAsync(job.Id, orgId, ct);
+        if (arch is not null && arch.corrections.Count > 0)
+        {
+            canonicalModel = CorrectionApplicator.Apply(
+                canonicalModel, arch.elements, arch.corrections, logger);
+
+            // Re-persist corrected canonical model to blob so all downstream stages use it
+            await NormalizeStage.PersistAsync(canonicalModel, orgId.Value, job.Id.Value, blobStorage, ct);
+
+            // Increment architecture version and delete previous system-generated threats
+            arch.architecture.IncrementVersion();
+            await dbPersistence.DeleteSystemThreatsAndSaveAsync(job.Id, orgId, ct);
+
+            logger.LogInformation(
+                "Corrections applied. JobId={JobId} Count={Count} ArchVersion={Version}",
+                job.Id, arch.corrections.Count, arch.architecture.Version);
+        }
+
         // CLASSIFY
         await TransitionAsync(job, JobStatus.Classifying, ct);
-        var classifyInput = new ClassifyInput(canonicalModel);
+        var userCorrections = arch?.corrections
+            .Select(c => new UserCorrection(
+                ElementId: c.ElementId?.ToString() ?? string.Empty,
+                Field: c.FieldName ?? string.Empty,
+                OldValue: c.OriginalValue,
+                NewValue: c.CorrectedValue ?? string.Empty,
+                CorrectionType: c.CorrectionType.ToString()))
+            .ToArray() ?? [];
+        var classifyInput = new ClassifyInput(canonicalModel, userCorrections);
         var classification = await classifyStage.ExecuteAsync(classifyInput, ct);
+
+        // Update architecture classification in DB now that CLASSIFY has run
+        await dbPersistence.UpdateArchitectureClassificationAsync(
+            job.Id, orgId, classification.Categories, ct);
 
         // ANALYZE — all methods in parallel
         await TransitionAsync(job, JobStatus.Analyzing, ct);
@@ -172,7 +207,11 @@ public sealed class JobOrchestrator(
         var outputBlobPath = await SynthesizeStage.PersistAsync(
             finalOutput, orgId.Value, job.Id.Value, blobStorage, ct);
 
-        // Store token usage summary in job record for cost tracking
+        // Persist threats, mitigations, framework mappings, and rejected candidates to DB
+        await dbPersistence.PersistFinalOutputAsync(
+            job.Id, orgId, finalOutput, allCandidateSets, ct);
+
+        // Store output blob path + model routing summary in job record for cost tracking
         job.RecordTokenUsage(JsonSerializer.Serialize(
             new { outputBlobPath, modelRoutingSummary = finalOutput.ModelRoutingSummary },
             TokenJsonOptions));

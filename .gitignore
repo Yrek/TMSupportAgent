@@ -41,6 +41,10 @@ local.settings.json
 *.tfstate.backup
 .terraform/
 
+# Bicep parameter files with secrets — use *.bicepparam.example as templates
+infra/parameters/*.bicepparam
+!infra/parameters/*.bicepparam.example
+
 # Rider / JetBrains
 .idea/
 *.sln.iml

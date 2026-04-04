@@ -4,6 +4,36 @@ A SaaS threat modeling assistant for modern web systems. Helps engineering teams
 
 ---
 
+## Quick Start
+
+**Prerequisites:** .NET 10 SDK, Docker Desktop, `dotnet-ef` global tool.
+
+```bash
+# 1. Start local services (PostgreSQL, Azurite, Service Bus emulator)
+docker compose up -d
+
+# 2. Configure local settings
+cp src/ThreatModelingAgent.Api/appsettings.Development.json.example \
+   src/ThreatModelingAgent.Api/appsettings.Development.json
+cp src/ThreatModelingAgent.Worker/appsettings.Development.json.example \
+   src/ThreatModelingAgent.Worker/appsettings.Development.json
+# Edit both files — set WorkOS:ClientId at minimum
+
+# 3. Apply database migrations
+dotnet ef database update \
+  --project src/ThreatModelingAgent.Infrastructure \
+  --startup-project src/ThreatModelingAgent.Api
+
+# 4. Run
+dotnet run --project src/ThreatModelingAgent.Api     # terminal 1 → http://localhost:5240
+dotnet run --project src/ThreatModelingAgent.Worker  # terminal 2
+```
+
+See **[docs/deployment/local.md](docs/deployment/local.md)** for the full local setup guide.  
+See **[docs/deployment/azure.md](docs/deployment/azure.md)** for Azure deployment.
+
+---
+
 ## How We Work: Spec-Driven Development
 
 This project follows **spec-driven development (SDD)**. No implementation begins without an approved spec.
@@ -35,6 +65,7 @@ This project follows **spec-driven development (SDD)**. No implementation begins
 TMSupportAgent/
 ├── CLAUDE.md                    # Security specification (mandatory — read this first)
 ├── README.md                    # This file
+├── docker-compose.yml           # Local dev services (PostgreSQL, Azurite, Service Bus)
 │
 ├── docs/
 │   ├── specs/
@@ -50,10 +81,28 @@ TMSupportAgent/
 │   │   ├── README.md            # ADR index
 │   │   └── ADR-001-*.md         # One file per architectural decision
 │   │
-│   └── api/
-│       └── openapi.yaml         # OpenAPI 3.1 contract (authoritative API spec)
+│   ├── api/
+│   │   └── openapi.yaml         # OpenAPI 3.1 contract (authoritative API spec)
+│   │
+│   └── deployment/
+│       ├── local.md             # Local development setup
+│       └── azure.md             # Azure deployment guide
+│
+├── infra/
+│   ├── main.bicep               # Azure infrastructure entry point
+│   ├── modules/                 # Bicep modules (one per Azure service)
+│   ├── parameters/              # Bicep parameter files (git-ignored; .example committed)
+│   └── local/                   # Local dev config (Service Bus emulator)
+│
+├── .github/workflows/
+│   ├── ci.yml                   # Build and test on every PR
+│   └── deploy.yml               # Build, push, migrate, deploy on merge to main
 │
 └── src/                         # Implementation (do not create without approved spec)
+    ├── ThreatModelingAgent.Api/
+    ├── ThreatModelingAgent.Worker/
+    ├── ThreatModelingAgent.Domain/
+    └── ThreatModelingAgent.Infrastructure/
 ```
 
 ---
@@ -80,3 +129,15 @@ If you find a conflict between existing code and a MUST in CLAUDE.md, raise it b
 2. Check [docs/specs/README.md](docs/specs/README.md) to understand what is specced and approved.
 3. If your change requires an architectural decision, write an ADR first.
 4. All PRs must reference the spec they implement.
+
+---
+
+## Deployment
+
+| Target | Guide |
+|---|---|
+| Local development | [docs/deployment/local.md](docs/deployment/local.md) |
+| Azure (production/staging) | [docs/deployment/azure.md](docs/deployment/azure.md) |
+
+CI runs on every pull request ([.github/workflows/ci.yml](.github/workflows/ci.yml)).  
+Deployment to staging runs automatically on merge to `main` ([.github/workflows/deploy.yml](.github/workflows/deploy.yml)).

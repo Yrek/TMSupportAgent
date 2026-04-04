@@ -1,6 +1,6 @@
 # Security Specification
 
-**Status:** Draft  
+**Status:** Approved  
 **Foundation:** [CLAUDE.md](../../CLAUDE.md) — all requirements therein are binding and incorporated by reference  
 **Architecture ref:** [02-architecture.md](02-architecture.md)  
 **Standard:** ISO/IEC 27001:2022  

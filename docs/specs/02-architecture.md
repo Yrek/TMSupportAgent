@@ -1,6 +1,6 @@
 # Architecture Specification
 
-**Status:** Review  
+**Status:** Approved  
 **Spec ref:** [01-product.md](01-product.md)  
 **Security ref:** [CLAUDE.md](../../CLAUDE.md), [06-security.md](06-security.md)  
 **ADR:** [ADR-001 — WorkOS identity](../adr/ADR-001-workos-identity.md)  

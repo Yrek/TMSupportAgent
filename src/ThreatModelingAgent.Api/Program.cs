@@ -49,6 +49,12 @@ try
     // ── Infrastructure (DB, repos, audit logger) ────────────────────────────
     builder.Services.AddInfrastructure(builder.Configuration);
 
+    // ── WorkOS HTTP client — explicit timeout (CLAUDE.md §9.8) ─────────────
+    builder.Services.AddHttpClient("WorkOS", c =>
+    {
+        c.Timeout = TimeSpan.FromSeconds(15);
+    });
+
     // ── Tenant context — scoped, populated from JWT by middleware ───────────
     builder.Services.AddScoped<TenantContext>();
     builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());

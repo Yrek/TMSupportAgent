@@ -50,6 +50,9 @@ internal sealed class JobRepository(AppDbContext db) : IJobRepository
     public async Task AddAsync(Job job, CancellationToken ct = default)
         => await db.Jobs.AddAsync(job, ct);
 
+    public void Delete(Job job)
+        => db.Jobs.Remove(job);
+
     public Task SaveChangesAsync(CancellationToken ct = default)
         => db.SaveChangesAsync(ct);
 }

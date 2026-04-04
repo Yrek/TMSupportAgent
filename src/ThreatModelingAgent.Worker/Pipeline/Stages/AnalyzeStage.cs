@@ -51,8 +51,13 @@ public sealed class AnalyzeStage(
         var classificationJson = JsonSerializer.Serialize(input.ClassificationResult, SerializeOptions);
         var userPrompt = PromptTemplates.BuildAnalyzeUser(canonicalJson, classificationJson);
 
+        var systemPrompt = PromptTemplates.BuildAnalyzeSystem(input.Method);
+
+        // Token budget: 12,288 input per method (spec §7) — fail closed rather than truncate
+        TokenEstimator.AssertWithinBudget(systemPrompt, userPrompt, 12_288, $"ANALYZE:{input.Method}");
+
         var request = new LlmRequest(
-            SystemPrompt: PromptTemplates.BuildAnalyzeSystem(input.Method),
+            SystemPrompt: systemPrompt,
             UserPrompt: userPrompt,
             Model: model,
             Temperature: 0.3f,

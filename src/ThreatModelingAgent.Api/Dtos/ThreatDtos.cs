@@ -1,0 +1,110 @@
+using ThreatModelingAgent.Domain.Entities;
+
+namespace ThreatModelingAgent.Api.Dtos;
+
+// ── Response DTOs (CLAUDE.md §6.6 — purpose-specific, no domain model exposed) ──
+
+public record ThreatDto(
+    Guid Id,
+    string Identifier,
+    string Title,
+    string MethodCategory,
+    Guid[] AffectedElementIds,
+    string Description,
+    string AttackScenario,
+    string? Preconditions,
+    string[] ImpactedAssets,
+    string? SecurityImpact,
+    string? PrivacyImpact,
+    string? ExistingControls,
+    string? ControlGaps,
+    string Confidence,
+    string[] EvidenceBasis,
+    string EvidenceStrength,
+    string FindingType,
+    string Status,
+    string Source,
+    IReadOnlyList<MitigationDto> Mitigations,
+    IReadOnlyList<FrameworkMappingDto> FrameworkMappings,
+    DateTimeOffset CreatedAt)
+{
+    public static ThreatDto From(Threat t) => new(
+        Id: t.Id,
+        Identifier: t.Identifier,
+        Title: t.Title,
+        MethodCategory: t.MethodCategory,
+        AffectedElementIds: t.AffectedElementIds,
+        Description: t.Description,
+        AttackScenario: t.AttackScenario,
+        Preconditions: t.Preconditions,
+        ImpactedAssets: t.ImpactedAssets,
+        SecurityImpact: t.SecurityImpact,
+        PrivacyImpact: t.PrivacyImpact,
+        ExistingControls: t.ExistingControls,
+        ControlGaps: t.ControlGaps,
+        Confidence: t.Confidence.ToString(),
+        EvidenceBasis: t.EvidenceBasis,
+        EvidenceStrength: t.EvidenceStrength.ToString(),
+        FindingType: t.FindingType.ToString(),
+        Status: t.Status.ToString(),
+        Source: t.Source,
+        Mitigations: t.Mitigations.Select(MitigationDto.From).ToList(),
+        FrameworkMappings: t.FrameworkMappings.Select(FrameworkMappingDto.From).ToList(),
+        CreatedAt: t.CreatedAt);
+}
+
+public record MitigationDto(
+    Guid Id,
+    string Title,
+    string Description,
+    string Priority,
+    string? Category)
+{
+    public static MitigationDto From(Mitigation m) => new(
+        Id: m.Id,
+        Title: m.Title,
+        Description: m.Description,
+        Priority: m.Priority,
+        Category: m.Category);
+}
+
+public record FrameworkMappingDto(
+    Guid Id,
+    string Framework,
+    string Reference,
+    string MappingType)
+{
+    public static FrameworkMappingDto From(FrameworkMapping fm) => new(
+        Id: fm.Id,
+        Framework: fm.Framework,
+        Reference: fm.Reference,
+        MappingType: fm.MappingType);
+}
+
+// ── Request DTOs ─────────────────────────────────────────────────────────────
+
+/// <summary>
+/// User-submitted threat — minimal required fields; more fields can be added later via notes.
+/// </summary>
+public class AddThreatRequest
+{
+    public string Title { get; set; } = string.Empty;
+    public string MethodCategory { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string AttackScenario { get; set; } = string.Empty;
+    public Guid[] AffectedElementIds { get; set; } = [];
+}
+
+/// <summary>
+/// Update the status of a threat (open → accepted_risk | mitigated | wont_fix | false_positive).
+/// </summary>
+public class PatchThreatStatusRequest
+{
+    public string Status { get; set; } = string.Empty;
+}
+
+/// <summary>Add an immutable discussion note to a threat.</summary>
+public class AddThreatNoteRequest
+{
+    public string Body { get; set; } = string.Empty;
+}

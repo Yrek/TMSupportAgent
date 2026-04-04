@@ -45,6 +45,9 @@ public sealed class NormalizeStage(
         var parsedJson = JsonSerializer.Serialize(input.Parsed, SerializeOptions);
         var userPrompt = PromptTemplates.BuildNormalizeUser(parsedJson, input.ArtifactType);
 
+        // Token budget: 12,288 input (spec §7) — fail closed rather than truncate
+        TokenEstimator.AssertWithinBudget(PromptTemplates.NormalizeSystem, userPrompt, 12_288, "NORMALIZE");
+
         var request = new LlmRequest(
             SystemPrompt: PromptTemplates.NormalizeSystem,
             UserPrompt: userPrompt,

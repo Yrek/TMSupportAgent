@@ -59,6 +59,7 @@ try
     builder.Services.AddScoped<LlmClientFactory>();
 
     // ── Pipeline stages ──────────────────────────────────────────────────────
+    builder.Services.AddScoped<PipelineDbPersistence>();
     builder.Services.AddScoped<DetectStage>();
     builder.Services.AddScoped<ParseStage>();
     builder.Services.AddScoped<NormalizeStage>();

@@ -1,6 +1,6 @@
 # LLM Workflow Specification
 
-**Status:** Draft  
+**Status:** Approved  
 **Spec ref:** [01-product.md](01-product.md) §9 (model routing), §10 (clarification), §11 (threats), §19 (output)  
 **Architecture ref:** [02-architecture.md](02-architecture.md) §8 (LLM routing)  
 **Security ref:** [CLAUDE.md](../../CLAUDE.md) §16, [06-security.md](06-security.md)  

@@ -1,0 +1,23 @@
+// Copy this file to production.bicepparam and fill in your values.
+// NEVER commit production.bicepparam — it contains secrets.
+// production.bicepparam is listed in .gitignore.
+
+using '../main.bicep'
+
+param environmentName = 'prod'
+param location = 'westeurope'
+
+// WorkOS — find in WorkOS dashboard → API Keys
+param workosClientId = 'YOUR_WORKOS_CLIENT_ID'
+
+// Anthropic — find in console.anthropic.com
+param anthropicApiKey = 'YOUR_ANTHROPIC_API_KEY'
+
+// Azure OpenAI — name of your Azure OpenAI resource (must be pre-provisioned)
+param azureOpenAiResourceName = 'YOUR_AZURE_OPENAI_RESOURCE_NAME'
+param azureOpenAiStrongModel = 'gpt-4o'
+param azureOpenAiLowCostModel = 'gpt-4o-mini'
+
+// PostgreSQL admin credentials — use a strong random password
+param pgAdminLogin = 'pgadmin'
+param pgAdminPassword = 'REPLACE_WITH_STRONG_PASSWORD'

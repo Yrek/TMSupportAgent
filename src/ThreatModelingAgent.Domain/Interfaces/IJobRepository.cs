@@ -14,5 +14,6 @@ public interface IJobRepository
         Guid? afterId,
         CancellationToken ct = default);
     Task AddAsync(Job job, CancellationToken ct = default);
+    void Delete(Job job);
     Task SaveChangesAsync(CancellationToken ct = default);
 }

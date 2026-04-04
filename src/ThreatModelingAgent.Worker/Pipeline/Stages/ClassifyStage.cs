@@ -51,7 +51,11 @@ public sealed class ClassifyStage(
         var llmClient = llmFactory.GetForModel(model);
 
         var canonicalJson = JsonSerializer.Serialize(input.ConfirmedModel, SerializeOptions);
-        var userPrompt = PromptTemplates.BuildClassifyUser(canonicalJson);
+        var correctionsJson = JsonSerializer.Serialize(input.UserCorrections, SerializeOptions);
+        var userPrompt = PromptTemplates.BuildClassifyUser(canonicalJson, correctionsJson);
+
+        // Token budget: 8,192 input (spec §7) — fail closed rather than truncate
+        TokenEstimator.AssertWithinBudget(PromptTemplates.ClassifySystem, userPrompt, 8_192, "CLASSIFY");
 
         var request = new LlmRequest(
             SystemPrompt: PromptTemplates.ClassifySystem,

@@ -1,0 +1,83 @@
+version: "3.9"
+
+# Local development stack for ThreatModelingAgent
+# Provides: PostgreSQL, Azurite (blob storage), Azure Service Bus emulator
+#
+# Usage:
+#   docker compose up -d
+#   # then run migrations (see docs/deployment/local.md)
+#   dotnet ef database update --project src/ThreatModelingAgent.Infrastructure
+#
+# Ports exposed to host:
+#   5432  — PostgreSQL
+#   10000 — Azurite blob
+#   10001 — Azurite queue
+#   10002 — Azurite table
+#   5672  — Service Bus emulator AMQP
+#   8080  — Service Bus emulator management UI
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tma-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: localdev
+      POSTGRES_DB: threatmodeling_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: tma-azurite
+    restart: unless-stopped
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --loose
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+    volumes:
+      - azurite_data:/data
+
+  servicebus-emulator:
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    container_name: tma-servicebus
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "LocalDev!23"
+    ports:
+      - "5672:5672"
+      - "8080:8080"
+    volumes:
+      - ./infra/local/servicebus-config.json:/ServiceBus_Emulator/ConfigFiles/Config.json
+    depends_on:
+      - sqledge
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  sqledge:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    container_name: tma-sqledge
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "LocalDev!23"
+    volumes:
+      - sqledge_data:/var/opt/mssql
+
+volumes:
+  postgres_data:
+  azurite_data:
+  sqledge_data:

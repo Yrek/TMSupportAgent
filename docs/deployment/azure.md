@@ -200,6 +200,7 @@ The [deploy workflow](../../.github/workflows/deploy.yml) uses OIDC federation â
 | `AZURE_TENANT_ID` | Azure AD tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
 | `WORKOS_CLIENT_ID` | WorkOS application client ID |
+| `WORKOS_API_KEY` | WorkOS API key (for invitations and user deletion) |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `PG_ADMIN_LOGIN` | PostgreSQL admin login |
 | `PG_ADMIN_PASSWORD` | PostgreSQL admin password |

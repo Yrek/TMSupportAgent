@@ -152,11 +152,13 @@ interface RawBoundary {
 
 | Artifact type | Model | Reason |
 |---|---|---|
-| `image` | `gpt-4o` (vision) | Image understanding requires multimodal |
-| `plantuml` | `gpt-4o-mini` or `claude-haiku-4-5` | Structured text; low reasoning needed |
-| `mermaid` | `gpt-4o-mini` or `claude-haiku-4-5` | Structured text |
-| `drawio` | `gpt-4o-mini` or `claude-haiku-4-5` | XML parsing + label extraction |
-| `text` | `gpt-4o-mini` or `claude-haiku-4-5` | Initial extraction; normalization handles complexity |
+| `image` | Strong model with vision | Image understanding requires multimodal. Both `gpt-4o` and `claude-sonnet-4-6` support vision. |
+| `plantuml` | Low-cost model | Structured text; low reasoning needed |
+| `mermaid` | Low-cost model | Structured text |
+| `drawio` | Low-cost model | XML parsing + label extraction |
+| `text` | Low-cost model | Initial extraction; normalization handles complexity |
+
+Low-cost model is `gpt-4o-mini` (Azure OpenAI) or `claude-haiku-4-5` (Anthropic). Both clients support vision for image artifacts.
 
 **Prompt template structure (mandatory constraints):**
 - System message: role definition (architecture parser), output schema, what NOT to do (do not invent elements, do not interpret intent, do not add security judgements)

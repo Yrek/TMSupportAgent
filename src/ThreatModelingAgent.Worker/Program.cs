@@ -57,6 +57,7 @@ try
         sp.GetRequiredService<AnthropicClient>()
     ]);
     builder.Services.AddScoped<LlmClientFactory>();
+    builder.Services.AddScoped<ILlmClientFactory>(sp => sp.GetRequiredService<LlmClientFactory>());
 
     // ── Pipeline stages ──────────────────────────────────────────────────────
     builder.Services.AddScoped<PipelineDbPersistence>();

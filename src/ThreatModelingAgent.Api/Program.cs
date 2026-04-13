@@ -91,7 +91,17 @@ try
             };
         });
 
-    builder.Services.AddAuthorization();
+    builder.Services.AddAuthorization(options =>
+    {
+        // PlatformAdmin policy: JWT must carry role = "platform:admin"
+        // WorkOS may map this to ClaimTypes.Role or the raw "role" claim depending on version.
+        // Used exclusively by AdminController. TenantContextMiddleware is defence-in-depth:
+        // it also rejects admin tokens on org-scoped routes before the controller even runs.
+        options.AddPolicy("PlatformAdmin", policy =>
+            policy.RequireAssertion(ctx =>
+                ctx.User.HasClaim(System.Security.Claims.ClaimTypes.Role, "platform:admin") ||
+                ctx.User.HasClaim("role", "platform:admin")));
+    });
 
     // ── FluentValidation ────────────────────────────────────────────────────
     builder.Services.AddValidatorsFromAssemblyContaining<Program>();

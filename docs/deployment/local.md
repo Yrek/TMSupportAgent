@@ -39,16 +39,53 @@ Edit each file. Minimum required values:
 
 **API** (`src/ThreatModelingAgent.Api/appsettings.Development.json`):
 - `WorkOS:ClientId` — from WorkOS dashboard → API Keys
+- `WorkOS:ApiKey` — from WorkOS dashboard → API Keys (required for user invitations and erasure)
 
 **Worker** (`src/ThreatModelingAgent.Worker/appsettings.Development.json`):
 - `AzureServiceBus:ConnectionString` — from the Service Bus emulator (see step 3)
-- `Anthropic:ApiKey` or `AzureOpenAI:Endpoint` — at least one LLM provider
+- `Anthropic:ApiKey` or `AzureOpenAI:Endpoint` + `AzureOpenAI:ApiKey` — at least one LLM provider
+
+**Anthropic-only setup** (no Azure OpenAI):
+Change `LlmRouting` in the Worker config to route to Claude instead of GPT:
+```json
+"LlmRouting": {
+  "StrongModel": "claude-sonnet-4-6",
+  "LowCostModel": "claude-haiku-4-5"
+}
+```
+
+**Azure OpenAI-only setup** (default): set `AzureOpenAI:Endpoint` and `AzureOpenAI:ApiKey`. The defaults (`gpt-4o` / `gpt-4o-mini`) require those deployments to exist in your resource.
 
 > These files are git-ignored (CLAUDE.md §10.1). Never commit them.
 
 ---
 
-## 2. Start local services
+## 2. Supported architecture formats
+
+The following file formats are accepted when submitting a job:
+
+| Extension | Type | Detection method | Notes |
+|---|---|---|---|
+| `.png` | Image | Magic bytes `\x89PNG` | Architecture diagram screenshot or export |
+| `.jpg` / `.jpeg` | Image | Magic bytes `\xFF\xD8` | Architecture diagram screenshot or export |
+| `.gif` | Image | Magic bytes `GIF8` | Architecture diagram screenshot or export |
+| `.webp` | Image | Extension fallback | Architecture diagram export |
+| `.puml` | PlantUML | `@startuml` marker | Text-based diagram; most reliable input |
+| `.txt` | PlantUML / text | Extension fallback | PlantUML or free-text description |
+| `.md` | Mermaid | Mermaid keywords | `graph`, `flowchart`, `sequenceDiagram`, etc. |
+| `.mmd` | Mermaid | Mermaid keywords | Mermaid-native extension |
+| `.drawio` | Draw.io XML | `mxfile`/`mxGraph` root | Export from draw.io / diagrams.net |
+| `.xml` | Draw.io XML | `mxfile`/`mxGraph` root | Same as `.drawio` |
+
+**Size limit:** 10 MB per file.
+
+**Recommended format:** `.puml` (PlantUML) or `.drawio` produce the most accurate extractions. Image files require vision-capable models (gpt-4o or claude-sonnet-4-6).
+
+> **Note on images and model routing:** PNG/JPEG/GIF uploads are routed to the strong model with vision enabled. Both `AzureOpenAiClient` and `AnthropicClient` support vision. Make sure your configured `StrongModel` is a vision-capable deployment (`gpt-4o` with vision enabled, or `claude-sonnet-4-6`).
+
+---
+
+## 3. Start local services
 
 ```bash
 docker compose up -d
@@ -85,7 +122,7 @@ Azurite uses a fixed well-known development connection string. The API's example
 
 ---
 
-## 3. Run database migrations
+## 4. Run database migrations
 
 ```bash
 dotnet ef database update \
@@ -103,7 +140,7 @@ docker exec -it tma-postgres psql -U postgres -d threatmodeling_dev -c "\dt"
 
 ---
 
-## 4. Run the API
+## 5. Run the API
 
 ```bash
 dotnet run --project src/ThreatModelingAgent.Api
@@ -123,7 +160,7 @@ curl -H "Authorization: Bearer <token>" https://localhost:7036/orgs
 
 ---
 
-## 5. Run the Worker
+## 6. Run the Worker
 
 In a second terminal:
 
@@ -135,7 +172,7 @@ The Worker connects to Service Bus and polls for `analysis-jobs` messages. It lo
 
 ---
 
-## 6. Run tests
+## 7. Run tests
 
 ```bash
 dotnet test ThreatModelingAgent.slnx

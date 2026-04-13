@@ -13,6 +13,7 @@
 
   "WorkOS": {
     "ClientId": "YOUR_WORKOS_CLIENT_ID",
+    "ApiKey": "YOUR_WORKOS_API_KEY",
     "Issuer": "https://api.workos.com",
     "JwksUri": "https://api.workos.com/.well-known/jwks.json"
   },

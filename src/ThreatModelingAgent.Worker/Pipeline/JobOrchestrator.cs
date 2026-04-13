@@ -20,7 +20,7 @@ namespace ThreatModelingAgent.Worker.Pipeline;
 /// - No secrets appear in prompts (CLAUDE.md §16.3)
 /// - All failures transition the job to Failed and fail closed (CLAUDE.md §4.3)
 /// </summary>
-public sealed class JobOrchestrator(
+internal sealed class JobOrchestrator(
     IJobRepository jobs,
     IAuditLogger audit,
     IBlobStorage blobStorage,
@@ -154,39 +154,54 @@ public sealed class JobOrchestrator(
         OrgId orgId,
         CancellationToken ct)
     {
-        // Load the canonical model persisted by Phase 1
-        var canonicalModel = await NormalizeStage.LoadAsync(
-            orgId.Value, job.Id.Value, blobStorage, ct);
+        // Load the canonical model.
+        // Manual jobs have no Phase 1 blob — build from user-defined elements in DB instead.
+        CanonicalModel canonicalModel;
+        if (message.ArtifactType == "manual")
+        {
+            canonicalModel = await dbPersistence.BuildCanonicalModelFromElementsAsync(job.Id, orgId, ct);
+            // Persist so CorrectionApplicator and any re-analysis paths can load normally
+            await NormalizeStage.PersistAsync(canonicalModel, orgId.Value, job.Id.Value, blobStorage, ct);
+
+            logger.LogInformation(
+                "Manual job: canonical model built from DB elements. JobId={JobId}", job.Id);
+        }
+        else
+        {
+            canonicalModel = await NormalizeStage.LoadAsync(orgId.Value, job.Id.Value, blobStorage, ct);
+        }
 
         // Apply user corrections from DB before CLASSIFY (re-analysis support)
         var arch = await dbPersistence.TryGetArchitectureWithCorrectionsAsync(job.Id, orgId, ct);
-        if (arch is not null && arch.corrections.Count > 0)
+        if (arch is not null && arch.Value.corrections.Count > 0)
         {
             canonicalModel = CorrectionApplicator.Apply(
-                canonicalModel, arch.elements, arch.corrections, logger);
+                canonicalModel, arch.Value.elements, arch.Value.corrections, logger);
 
             // Re-persist corrected canonical model to blob so all downstream stages use it
             await NormalizeStage.PersistAsync(canonicalModel, orgId.Value, job.Id.Value, blobStorage, ct);
 
             // Increment architecture version and delete previous system-generated threats
-            arch.architecture.IncrementVersion();
+            arch.Value.architecture.IncrementVersion();
             await dbPersistence.DeleteSystemThreatsAndSaveAsync(job.Id, orgId, ct);
 
             logger.LogInformation(
                 "Corrections applied. JobId={JobId} Count={Count} ArchVersion={Version}",
-                job.Id, arch.corrections.Count, arch.architecture.Version);
+                job.Id, arch.Value.corrections.Count, arch.Value.architecture.Version);
         }
 
         // CLASSIFY
         await TransitionAsync(job, JobStatus.Classifying, ct);
-        var userCorrections = arch?.corrections
-            .Select(c => new UserCorrection(
-                ElementId: c.ElementId?.ToString() ?? string.Empty,
-                Field: c.FieldName ?? string.Empty,
-                OldValue: c.OriginalValue,
-                NewValue: c.CorrectedValue ?? string.Empty,
-                CorrectionType: c.CorrectionType.ToString()))
-            .ToArray() ?? [];
+        var userCorrections = arch is not null
+            ? arch.Value.corrections
+                .Select(c => new UserCorrection(
+                    ElementId: c.ElementId?.ToString() ?? string.Empty,
+                    Field: c.FieldName ?? string.Empty,
+                    OldValue: c.OriginalValue,
+                    NewValue: c.CorrectedValue ?? string.Empty,
+                    CorrectionType: c.CorrectionType.ToString()))
+                .ToArray()
+            : [];
         var classifyInput = new ClassifyInput(canonicalModel, userCorrections);
         var classification = await classifyStage.ExecuteAsync(classifyInput, ct);
 

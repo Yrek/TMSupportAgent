@@ -131,7 +131,7 @@ jobs:
         uses: azure/arm-deploy@v2
         with:
           scope: subscription
-          region: westeurope
+          region: swedencentral
           template: infra/main.bicep
           parameters: >
             environmentName=${{ needs.set-env.outputs.environment }}
@@ -213,3 +213,68 @@ jobs:
             --name tma-${{ needs.set-env.outputs.environment }}-worker \
             --resource-group tma-${{ needs.set-env.outputs.environment }}-rg \
             --image ${{ vars.ACR_LOGIN_SERVER }}/worker:sha-${GITHUB_SHA::8}
+
+  # ── Post-deploy smoke test ──────────────────────────────────────────────────
+  # Resolves the live API and frontend URLs from Azure, then polls each until
+  # it returns HTTP 200 (up to 60 s). Fails the pipeline if either times out.
+
+  smoke-test:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    needs: [set-env, deploy-api, deploy-worker]
+    environment: ${{ needs.set-env.outputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve URLs from Azure
+        id: urls
+        run: |
+          ENV=${{ needs.set-env.outputs.environment }}
+          RG="tma-${ENV}-rg"
+
+          API_FQDN=$(az containerapp show \
+            --name "tma-${ENV}-api" \
+            --resource-group "$RG" \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)
+          echo "api_url=https://${API_FQDN}" >> "$GITHUB_OUTPUT"
+
+          SWA_HOSTNAME=$(az staticwebapp show \
+            --name "tma-${ENV}-swa" \
+            --resource-group "$RG" \
+            --query "properties.defaultHostname" \
+            --output tsv)
+          echo "swa_url=https://${SWA_HOSTNAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for API health
+        run: |
+          URL="${{ steps.urls.outputs.api_url }}/health"
+          echo "Checking API health at $URL"
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" --max-time 10 || echo "000")
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then echo "API is healthy."; exit 0; fi
+            sleep 5
+          done
+          echo "API health check failed after 60 s."; exit 1
+
+      - name: Wait for frontend
+        run: |
+          URL="${{ steps.urls.outputs.swa_url }}"
+          echo "Checking frontend at $URL"
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" --max-time 10 || echo "000")
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then echo "Frontend is reachable."; exit 0; fi
+            sleep 5
+          done
+          echo "Frontend health check failed after 60 s."; exit 1

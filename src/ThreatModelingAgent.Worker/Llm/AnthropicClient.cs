@@ -6,6 +6,7 @@ namespace ThreatModelingAgent.Worker.Llm;
 /// <summary>
 /// Anthropic Claude client. API key sourced from Key Vault — never hardcoded.
 /// Explicit HTTP timeouts applied (CLAUDE.md §9.8).
+/// Supports vision (multimodal) requests via optional ImageBase64 / ImageMediaType on LlmRequest.
 /// Token counts logged; prompt/response content NEVER logged (CLAUDE.md §16.6).
 /// </summary>
 public sealed class AnthropicClient(
@@ -21,13 +22,18 @@ public sealed class AnthropicClient(
         var apiKey = configuration["Anthropic:ApiKey"]
             ?? throw new InvalidOperationException("Anthropic:ApiKey is required.");
 
+        // Build user message content — text-only or multimodal (vision)
+        object userContent = request.ImageBase64 is not null
+            ? BuildVisionUserContent(request.UserPrompt, request.ImageBase64, request.ImageMediaType ?? "image/png")
+            : (object)request.UserPrompt;
+
         var payload = new
         {
             model = request.Model,
             max_tokens = request.MaxTokens,
             temperature = request.Temperature,
             system = request.SystemPrompt,
-            messages = new[] { new { role = "user", content = request.UserPrompt } }
+            messages = new[] { new { role = "user", content = userContent } }
         };
 
         using var client = httpClientFactory.CreateClient("Anthropic");
@@ -55,9 +61,29 @@ public sealed class AnthropicClient(
 
         // Log token counts only — no content (CLAUDE.md §16.6)
         logger.LogInformation(
-            "LLM call complete. Model={Model} InputTokens={InputTokens} OutputTokens={OutputTokens}",
-            request.Model, inputTokens, outputTokens);
+            "LLM call complete. Model={Model} InputTokens={InputTokens} OutputTokens={OutputTokens} Vision={IsVision}",
+            request.Model, inputTokens, outputTokens, request.ImageBase64 is not null);
 
         return new LlmResponse(text, inputTokens, outputTokens, request.Model);
     }
+
+    /// <summary>
+    /// Builds Anthropic's multimodal content block format for vision requests.
+    /// Spec: https://docs.anthropic.com/en/api/messages (content block types).
+    /// </summary>
+    private static object[] BuildVisionUserContent(string text, string imageBase64, string mediaType)
+        =>
+        [
+            new
+            {
+                type = "image",
+                source = new
+                {
+                    type = "base64",
+                    media_type = mediaType,
+                    data = imageBase64
+                }
+            },
+            new { type = "text", text }
+        ];
 }

@@ -1,9 +1,14 @@
 // ── Threat Modeling Agent — Azure Infrastructure ──────────────────────────────
-// Deploys all resources to West Europe (EU data residency — spec §3).
+// Deploys resources to an EU Azure region for data residency (spec §3).
+// Default: Sweden Central — keeps costs within the Sweden MACC/credits plan.
+//
+// Azure Static Web Apps does not support swedencentral; its management plane
+// is placed in westeurope (swaLocation). This is irrelevant to end users —
+// SWA is a global CDN and file data never leaves the CDN edge.
 //
 // Usage:
 //   az deployment sub create \
-//     --location westeurope \
+//     --location swedencentral \
 //     --template-file infra/main.bicep \
 //     --parameters infra/parameters/production.bicepparam
 //
@@ -17,13 +22,21 @@ targetScope = 'subscription'
 @allowed(['prod', 'staging', 'dev'])
 param environmentName string
 
-@description('Azure region for all resources. Must be an EU region for data residency.')
+@description('Azure region for compute, data, and messaging resources. Must be an EU region for data residency.')
+@allowed(['swedencentral', 'westeurope', 'northeurope'])
+param location string = 'swedencentral'
+
+@description('Azure region for Azure Static Web Apps management plane. SWA does not support swedencentral; westeurope is the closest supported EU region. The CDN itself is global.')
 @allowed(['westeurope', 'northeurope'])
-param location string = 'westeurope'
+param swaLocation string = 'westeurope'
 
 @description('WorkOS Client ID — used to validate JWT audience in the API.')
 @secure()
 param workosClientId string
+
+@description('WorkOS API key — used by the API to call WorkOS Management API (user deletion, invitations).')
+@secure()
+param workosApiKey string
 
 @description('Anthropic API key for the worker LLM client.')
 @secure()
@@ -84,6 +97,7 @@ module keyVault 'modules/keyvault.bicep' = {
     location: location
     tags: tags
     workosClientId: workosClientId
+    workosApiKey: workosApiKey
     anthropicApiKey: anthropicApiKey
   }
 }
@@ -127,6 +141,16 @@ module registry 'modules/registry.bicep' = {
   params: {
     prefix: prefix
     location: location
+    tags: tags
+  }
+}
+
+module staticWebApp 'modules/staticwebapp.bicep' = {
+  name: 'staticwebapp'
+  scope: rg
+  params: {
+    prefix: prefix
+    location: swaLocation
     tags: tags
   }
 }
@@ -236,6 +260,8 @@ module workerOpenAiRole 'modules/roleassignment.bicep' = {
 // ── Outputs ───────────────────────────────────────────────────────────────────
 
 output apiUrl string = containerApps.outputs.apiUrl
+output frontendUrl string = 'https://${staticWebApp.outputs.defaultHostname}'
+output swaName string = staticWebApp.outputs.swaName
 output registryLoginServer string = registry.outputs.loginServer
 output keyVaultName string = keyVault.outputs.keyVaultName
 output resourceGroupName string = rgName

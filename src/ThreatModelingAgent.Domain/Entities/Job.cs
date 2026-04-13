@@ -8,16 +8,16 @@ public class Job
     // Canonical state machine from spec §6 / data-model §6 — forward-only transitions
     private static readonly Dictionary<JobStatus, IReadOnlySet<JobStatus>> AllowedTransitions = new()
     {
-        [JobStatus.Pending]        = new HashSet<JobStatus> { JobStatus.Parsing,     JobStatus.Failed },
+        [JobStatus.Pending]        = new HashSet<JobStatus> { JobStatus.Parsing, JobStatus.AwaitingReview, JobStatus.Failed },
         [JobStatus.Parsing]        = new HashSet<JobStatus> { JobStatus.Normalizing, JobStatus.Failed },
         [JobStatus.Normalizing]    = new HashSet<JobStatus> { JobStatus.AwaitingReview, JobStatus.Failed },
         [JobStatus.AwaitingReview] = new HashSet<JobStatus> { JobStatus.Classifying, JobStatus.Failed },
         [JobStatus.Classifying]    = new HashSet<JobStatus> { JobStatus.Analyzing,   JobStatus.Failed },
         [JobStatus.Analyzing]      = new HashSet<JobStatus> { JobStatus.Synthesizing, JobStatus.Failed },
         [JobStatus.Synthesizing]   = new HashSet<JobStatus> { JobStatus.Complete, JobStatus.Partial, JobStatus.Failed },
-        [JobStatus.Complete]       = new HashSet<JobStatus>(),
+        [JobStatus.Complete]       = new HashSet<JobStatus> { JobStatus.AwaitingReview },  // re-analysis
         [JobStatus.Failed]         = new HashSet<JobStatus>(),
-        [JobStatus.Partial]        = new HashSet<JobStatus>(),
+        [JobStatus.Partial]        = new HashSet<JobStatus> { JobStatus.AwaitingReview },  // re-analysis
     };
 
     public JobId Id { get; private set; }
@@ -65,6 +65,8 @@ public class Job
 
         if (newStatus is JobStatus.Complete or JobStatus.Failed or JobStatus.Partial)
             CompletedAt = DateTimeOffset.UtcNow;
+        else if (newStatus is JobStatus.AwaitingReview)
+            CompletedAt = null;  // reset when re-queued for review
     }
 
     public void SetArtifact(string blobPath, string artifactType)

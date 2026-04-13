@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -28,6 +29,20 @@ public sealed class SessionController(
     [HttpGet]
     public async Task<IActionResult> GetSession(CancellationToken ct)
     {
+        var role = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role");
+        var isPlatformAdmin = string.Equals(role, "platform:admin", StringComparison.OrdinalIgnoreCase);
+
+        // Platform admin tokens have no org_id — return minimal session with admin flag
+        if (isPlatformAdmin)
+        {
+            return Ok(new
+            {
+                userId = (Guid?)null,
+                orgs = Array.Empty<object>(),
+                isPlatformAdmin = true
+            });
+        }
+
         var userId = User.GetUserId();
 
         // Load orgs the user belongs to — includes role per org
@@ -52,7 +67,8 @@ public sealed class SessionController(
         return Ok(new
         {
             userId = userId.Value,
-            orgs = orgList
+            orgs = orgList,
+            isPlatformAdmin = false
         });
     }
 
@@ -60,7 +76,7 @@ public sealed class SessionController(
     // JWT cannot be server-side revoked without a token denylist (out of MVP scope).
     // Clients MUST discard the token on receiving 204.
     [HttpDelete]
-    public IActionResult SignOut()
+    public new IActionResult SignOut()
     {
         // 204 is sufficient — no server state to clear for a stateless JWT
         return NoContent();

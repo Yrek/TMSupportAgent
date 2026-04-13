@@ -17,6 +17,7 @@ namespace ThreatModelingAgent.Api.Controllers;
 public sealed class JobsController(
     IJobRepository jobs,
     IMembershipRepository memberships,
+    IArchitectureRepository architectures,
     IBlobStorage blob,
     IJobQueue jobQueue,
     IAuditLogger audit,
@@ -114,6 +115,57 @@ public sealed class JobsController(
             job.Id, orgIdValue, artifactType);
 
         return AcceptedAtAction(nameof(GetJob),
+            new { orgId, jobId = job.Id.Value },
+            JobDetailDto.From(job));
+    }
+
+    // POST /v1/orgs/{orgId}/jobs/manual — create a job with an empty architecture (no file upload)
+    [HttpPost("manual")]
+    [EnableRateLimiting("strict")]
+    public async Task<IActionResult> CreateManualJob(
+        Guid orgId,
+        [FromBody] CreateManualJobRequest request,
+        CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        var orgIdValue = OrgId.From(orgId);
+
+        if (!await memberships.HasOrgAccessAsync(orgIdValue, userId, ct: ct))
+            return Forbid();
+
+        // Create job and skip straight to AwaitingReview — no pipeline phases needed
+        var job = Job.Create(orgIdValue, userId, request.Title);
+        await jobs.AddAsync(job, ct);
+        await jobs.SaveChangesAsync(ct);
+
+        job.Transition(JobStatus.AwaitingReview);
+        await jobs.SaveChangesAsync(ct);
+
+        // Create an empty architecture so elements can be added immediately
+        var arch = Architecture.Create(
+            jobId: job.Id,
+            orgId: orgIdValue,
+            systemPurpose: request.SystemPurpose,
+            classification: [],
+            assumptionsJson: "[]",
+            gapsJson: "[]",
+            clarificationQuestionsJson: "[]");
+
+        await architectures.AddAsync(arch, ct);
+        await architectures.SaveChangesAsync(ct);
+
+        await audit.LogAsync("job.created_manual",
+            orgId: orgIdValue,
+            userId: userId,
+            resourceType: "job",
+            resourceId: job.Id.Value,
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+            ct: ct);
+
+        logger.LogInformation(
+            "Manual job created. JobId={JobId} OrgId={OrgId}", job.Id, orgIdValue);
+
+        return CreatedAtAction(nameof(GetJob),
             new { orgId, jobId = job.Id.Value },
             JobDetailDto.From(job));
     }

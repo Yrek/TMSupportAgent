@@ -19,7 +19,7 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 /// Retry: up to 3 attempts on schema validation failure.
 /// </summary>
 public sealed class ClassifyStage(
-    LlmClientFactory llmFactory,
+    ILlmClientFactory llmFactory,
     ILogger<ClassifyStage> logger) : IPipelineStage<ClassifyInput, ClassificationResult>
 {
     private const int MaxAttempts = 3;

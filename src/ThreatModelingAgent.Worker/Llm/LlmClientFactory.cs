@@ -6,20 +6,23 @@ namespace ThreatModelingAgent.Worker.Llm;
 /// </summary>
 public sealed class LlmClientFactory(
     IEnumerable<ILlmClient> clients,
-    IConfiguration configuration)
+    IConfiguration configuration) : ILlmClientFactory
 {
     // Strong models for security-critical reasoning (architecture §8.2)
     public static readonly HashSet<string> StrongModels =
         ["gpt-4o", "claude-sonnet-4-6"];
 
     // Low-cost models for classification, formatting, deduplication
+    // o4-mini is an OpenAI reasoning model — routes to Azure OpenAI, uses max_completion_tokens (no temperature)
     public static readonly HashSet<string> LowCostModels =
-        ["gpt-4o-mini", "claude-haiku-4-5"];
+        ["gpt-4o-mini", "claude-haiku-4-5", "o4-mini"];
 
     public ILlmClient GetForModel(string model)
     {
-        // Route to Azure OpenAI for gpt-* models, Anthropic for claude-* models
-        if (model.StartsWith("gpt-", StringComparison.OrdinalIgnoreCase))
+        // Route to Azure OpenAI for gpt-* and o-series (o1, o3, o4-mini, etc.) models,
+        // Anthropic for claude-* models
+        if (model.StartsWith("gpt-", StringComparison.OrdinalIgnoreCase) ||
+            model.StartsWith("o", StringComparison.OrdinalIgnoreCase) && model.Length > 1 && char.IsDigit(model[1]))
             return clients.OfType<AzureOpenAiClient>().First();
 
         if (model.StartsWith("claude-", StringComparison.OrdinalIgnoreCase))

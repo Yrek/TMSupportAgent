@@ -8,7 +8,6 @@ using ThreatModelingAgent.Domain.Entities;
 using ThreatModelingAgent.Domain.Enums;
 using ThreatModelingAgent.Domain.ValueObjects;
 using ThreatModelingAgent.Domain.Interfaces;
-using ThreatModelingAgent.Domain.ValueObjects;
 
 namespace ThreatModelingAgent.Api.Controllers;
 
@@ -43,9 +42,13 @@ public sealed class ThreatsController(
     private static readonly HashSet<string> AllowedStatuses =
         ["Open", "Accepted", "Mitigated", "Rejected"];
 
-    // GET /v1/orgs/{orgId}/jobs/{jobId}/threats
+    // GET /v1/orgs/{orgId}/jobs/{jobId}/threats?elementId={guid}
     [HttpGet("threats")]
-    public async Task<IActionResult> ListThreats(Guid orgId, Guid jobId, CancellationToken ct)
+    public async Task<IActionResult> ListThreats(
+        Guid orgId,
+        Guid jobId,
+        [FromQuery] Guid? elementId,
+        CancellationToken ct)
     {
         var userId = User.GetUserId();
         var orgIdValue = OrgId.From(orgId);
@@ -56,8 +59,29 @@ public sealed class ThreatsController(
         var job = await jobs.GetByIdAsync(JobId.From(jobId), orgIdValue, ct);
         if (job is null) return NotFound();
 
-        var items = await threats.ListByJobAsync(JobId.From(jobId), orgIdValue, ct);
+        // GAP-TH3: pass elementId to repository for server-side filtering
+        var items = await threats.ListByJobAsync(JobId.From(jobId), orgIdValue, elementId, ct);
         return Ok(new { data = items.Select(ThreatDto.From) });
+    }
+
+    // GET /v1/orgs/{orgId}/jobs/{jobId}/threats/{threatId}
+    [HttpGet("threats/{threatId:guid}")]
+    public async Task<IActionResult> GetThreat(Guid orgId, Guid jobId, Guid threatId, CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        var orgIdValue = OrgId.From(orgId);
+
+        if (!await memberships.HasOrgAccessAsync(orgIdValue, userId, ct: ct))
+            return Forbid();
+
+        // org_id scoping is defence-in-depth alongside RLS (CLAUDE.md §8.2 BOLA)
+        var threat = await threats.GetByIdAsync(threatId, orgIdValue, ct);
+        if (threat is null) return NotFound();
+
+        // Verify threat belongs to this job
+        if (threat.JobId != JobId.From(jobId)) return NotFound();
+
+        return Ok(ThreatDto.From(threat));
     }
 
     // POST /v1/orgs/{orgId}/jobs/{jobId}/threats
@@ -78,12 +102,13 @@ public sealed class ThreatsController(
         var job = await jobs.GetByIdAsync(JobId.From(jobId), orgIdValue, ct);
         if (job is null) return NotFound();
 
-        // User-added threats are only allowed once the job has results
-        if (job.Status is not (JobStatus.Complete or JobStatus.Partial))
+        // GAP-TH7: user-added threats/concerns are allowed during AwaitingReview (pre-analysis)
+        // as well as after analysis is complete or partial (spec §19 pre-analysis correction workflow)
+        if (job.Status is not (JobStatus.Complete or JobStatus.Partial or JobStatus.AwaitingReview))
             return Conflict(new
             {
                 code = "INVALID_JOB_STATUS",
-                message = "Threats can only be added to completed or partial jobs."
+                message = "Threats can only be added to jobs in AwaitingReview, Complete, or Partial status."
             });
 
         // Input validation (CLAUDE.md §6.3 — allow-list, explicit constraints)
@@ -96,6 +121,14 @@ public sealed class ThreatsController(
         if (string.IsNullOrWhiteSpace(request.MethodCategory) || request.MethodCategory.Length > 100)
             return BadRequest(new { code = "INVALID_METHOD_CATEGORY", message = "MethodCategory is required and must not exceed 100 characters." });
 
+        // GAP-TH2: enforce data-model §9 invariant — at least one element must be referenced
+        if (request.AffectedElementIds is null || request.AffectedElementIds.Length == 0)
+            return UnprocessableEntity(new
+            {
+                code = "ELEMENT_REQUIRED",
+                message = "At least one affected element ID is required (spec data-model §9)."
+            });
+
         var identifier = await threats.NextIdentifierAsync(JobId.From(jobId), orgIdValue, ct);
 
         var threat = Threat.CreateUserAdded(
@@ -104,7 +137,7 @@ public sealed class ThreatsController(
             identifier: identifier,
             title: request.Title,
             methodCategory: request.MethodCategory,
-            affectedElementIds: request.AffectedElementIds ?? [],
+            affectedElementIds: request.AffectedElementIds,
             description: request.Description,
             attackScenario: request.AttackScenario);
 
@@ -296,22 +329,24 @@ public sealed class ThreatsController(
         // Parse and re-serialize via JsonDocument to ensure correct encoding for the HTTP context
         // (CLAUDE.md §7.3 — use framework serializers, not manual string construction)
         await using (blobStream)
-        using var ms = new MemoryStream();
-        await blobStream.CopyToAsync(ms, ct);
-        ms.Seek(0, SeekOrigin.Begin);
-
-        JsonDocument doc;
-        try
         {
-            doc = await JsonDocument.ParseAsync(ms, cancellationToken: ct);
-        }
-        catch (JsonException ex)
-        {
-            logger.LogError(ex, "Analysis blob is not valid JSON. JobId={JobId}", jobId);
-            return StatusCode(StatusCodes.Status500InternalServerError,
-                new { code = "ANALYSIS_CORRUPT", message = "Analysis output could not be read." });
-        }
+            using var ms = new MemoryStream();
+            await blobStream.CopyToAsync(ms, ct);
+            ms.Seek(0, SeekOrigin.Begin);
 
-        return Ok(doc.RootElement);
+            JsonDocument doc;
+            try
+            {
+                doc = await JsonDocument.ParseAsync(ms, cancellationToken: ct);
+            }
+            catch (JsonException ex)
+            {
+                logger.LogError(ex, "Analysis blob is not valid JSON. JobId={JobId}", jobId);
+                return StatusCode(StatusCodes.Status500InternalServerError,
+                    new { code = "ANALYSIS_CORRUPT", message = "Analysis output could not be read." });
+            }
+
+            return Ok(doc.RootElement);
+        }
     }
 }

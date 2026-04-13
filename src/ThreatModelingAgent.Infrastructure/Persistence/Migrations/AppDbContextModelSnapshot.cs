@@ -22,6 +22,195 @@ namespace ThreatModelingAgent.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.Architecture", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AssumptionsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("assumptions");
+
+                    b.Property<string>("ClarificationQuestionsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("clarification_questions");
+
+                    b.PrimitiveCollection<string[]>("Classification")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("classification");
+
+                    b.Property<DateTimeOffset?>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmed_at");
+
+                    b.Property<Guid?>("ConfirmedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("confirmed_by");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("GapsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("gaps");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("job_id");
+
+                    b.Property<Guid>("OrgId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("org_id");
+
+                    b.Property<string>("SystemPurpose")
+                        .HasColumnType("text")
+                        .HasColumnName("system_purpose");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobId")
+                        .IsUnique();
+
+                    b.HasIndex("OrgId");
+
+                    b.ToTable("architectures", (string)null);
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.ArchitectureCorrection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ArchitectureId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("architecture_id");
+
+                    b.Property<Guid>("CorrectedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("corrected_by");
+
+                    b.Property<string>("CorrectedValue")
+                        .HasColumnType("text")
+                        .HasColumnName("corrected_value");
+
+                    b.Property<string>("CorrectionType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("correction_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("ElementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("element_id");
+
+                    b.Property<string>("FieldName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("field_name");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text")
+                        .HasColumnName("note");
+
+                    b.Property<Guid>("OrgId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("org_id");
+
+                    b.Property<string>("OriginalValue")
+                        .HasColumnType("text")
+                        .HasColumnName("original_value");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ArchitectureId");
+
+                    b.HasIndex("ElementId");
+
+                    b.ToTable("architecture_corrections", (string)null);
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.ArchitectureElement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ArchitectureId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("architecture_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("ElementType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("element_type");
+
+                    b.Property<string>("ExtractionConfidence")
+                        .HasColumnType("text")
+                        .HasColumnName("extraction_confidence");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("OrgId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("org_id");
+
+                    b.Property<string>("PropertiesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("properties");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("source");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ArchitectureId");
+
+                    b.HasIndex("ArchitectureId", "ElementType");
+
+                    b.ToTable("architecture_elements", (string)null);
+                });
+
             modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.AuditLog", b =>
                 {
                     b.Property<Guid>("Id")
@@ -79,6 +268,50 @@ namespace ThreatModelingAgent.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId", "CreatedAt");
 
                     b.ToTable("audit_log", (string)null);
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.FrameworkMapping", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Framework")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("framework");
+
+                    b.Property<string>("MappingType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("mapping_type");
+
+                    b.Property<Guid>("OrgId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("org_id");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("reference");
+
+                    b.Property<Guid>("ThreatId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("threat_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ThreatId");
+
+                    b.ToTable("framework_mappings", (string)null);
                 });
 
             modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.Job", b =>
@@ -143,6 +376,58 @@ namespace ThreatModelingAgent.Infrastructure.Persistence.Migrations
                     b.HasIndex("OrgId", "CreatedAt");
 
                     b.ToTable("jobs", (string)null);
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.Mitigation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("category");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<Guid>("OrgId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("org_id");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("priority");
+
+                    b.Property<Guid>("ThreatId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("threat_id");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("title");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ThreatId");
+
+                    b.ToTable("mitigations", (string)null);
                 });
 
             modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.OrgIdpConfig", b =>
@@ -243,6 +528,12 @@ namespace ThreatModelingAgent.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<bool>("IsSuspended")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_suspended");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -254,6 +545,10 @@ namespace ThreatModelingAgent.Infrastructure.Persistence.Migrations
                         .HasMaxLength(63)
                         .HasColumnType("character varying(63)")
                         .HasColumnName("slug");
+
+                    b.Property<DateTimeOffset?>("SuspendedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("suspended_at");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -274,6 +569,220 @@ namespace ThreatModelingAgent.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("organizations", (string)null);
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.RejectedCandidate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("job_id");
+
+                    b.Property<string>("MethodCategory")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("method_category");
+
+                    b.Property<Guid>("OrgId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("org_id");
+
+                    b.Property<string>("RejectionNote")
+                        .HasColumnType("text")
+                        .HasColumnName("rejection_note");
+
+                    b.Property<string>("RejectionReason")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rejection_reason");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobId");
+
+                    b.ToTable("rejected_candidates", (string)null);
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.Threat", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.PrimitiveCollection<Guid[]>("AffectedElementIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("affected_element_ids");
+
+                    b.Property<string>("Assumptions")
+                        .HasColumnType("text")
+                        .HasColumnName("assumptions");
+
+                    b.Property<string>("AttackScenario")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("attack_scenario");
+
+                    b.Property<string>("Confidence")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("confidence");
+
+                    b.Property<string>("ControlGaps")
+                        .HasColumnType("text")
+                        .HasColumnName("control_gaps");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.PrimitiveCollection<string[]>("EvidenceBasis")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("evidence_basis");
+
+                    b.Property<string>("EvidenceStrength")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("evidence_strength");
+
+                    b.Property<string>("ExistingControls")
+                        .HasColumnType("text")
+                        .HasColumnName("existing_controls");
+
+                    b.Property<string>("FindingType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("finding_type");
+
+                    b.Property<string>("Identifier")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("identifier");
+
+                    b.PrimitiveCollection<string[]>("ImpactedAssets")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("impacted_assets");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("job_id");
+
+                    b.Property<string>("MethodCategory")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("method_category");
+
+                    b.Property<Guid>("OrgId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("org_id");
+
+                    b.Property<string>("Preconditions")
+                        .HasColumnType("text")
+                        .HasColumnName("preconditions");
+
+                    b.Property<string>("PrivacyImpact")
+                        .HasColumnType("text")
+                        .HasColumnName("privacy_impact");
+
+                    b.Property<string>("SecurityImpact")
+                        .HasColumnType("text")
+                        .HasColumnName("security_impact");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("title");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobId");
+
+                    b.HasIndex("JobId", "FindingType");
+
+                    b.HasIndex("JobId", "Identifier")
+                        .IsUnique();
+
+                    b.ToTable("threats", (string)null);
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.ThreatNote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("body");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("OrgId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("org_id");
+
+                    b.Property<Guid>("ThreatId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("threat_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ThreatId");
+
+                    b.ToTable("threat_notes", (string)null);
                 });
 
             modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.User", b =>
@@ -316,6 +825,77 @@ namespace ThreatModelingAgent.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("users", (string)null);
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.ArchitectureCorrection", b =>
+                {
+                    b.HasOne("ThreatModelingAgent.Domain.Entities.Architecture", null)
+                        .WithMany("Corrections")
+                        .HasForeignKey("ArchitectureId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ThreatModelingAgent.Domain.Entities.ArchitectureElement", null)
+                        .WithMany("Corrections")
+                        .HasForeignKey("ElementId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.ArchitectureElement", b =>
+                {
+                    b.HasOne("ThreatModelingAgent.Domain.Entities.Architecture", null)
+                        .WithMany("Elements")
+                        .HasForeignKey("ArchitectureId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.FrameworkMapping", b =>
+                {
+                    b.HasOne("ThreatModelingAgent.Domain.Entities.Threat", null)
+                        .WithMany("FrameworkMappings")
+                        .HasForeignKey("ThreatId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.Mitigation", b =>
+                {
+                    b.HasOne("ThreatModelingAgent.Domain.Entities.Threat", null)
+                        .WithMany("Mitigations")
+                        .HasForeignKey("ThreatId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.ThreatNote", b =>
+                {
+                    b.HasOne("ThreatModelingAgent.Domain.Entities.Threat", null)
+                        .WithMany("Notes")
+                        .HasForeignKey("ThreatId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.Architecture", b =>
+                {
+                    b.Navigation("Corrections");
+
+                    b.Navigation("Elements");
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.ArchitectureElement", b =>
+                {
+                    b.Navigation("Corrections");
+                });
+
+            modelBuilder.Entity("ThreatModelingAgent.Domain.Entities.Threat", b =>
+                {
+                    b.Navigation("FrameworkMappings");
+
+                    b.Navigation("Mitigations");
+
+                    b.Navigation("Notes");
                 });
 #pragma warning restore 612, 618
         }

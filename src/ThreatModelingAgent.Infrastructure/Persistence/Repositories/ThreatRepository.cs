@@ -14,11 +14,13 @@ internal sealed class ThreatRepository(AppDbContext db) : IThreatRepository
             .Include(t => t.Notes)
             .FirstOrDefaultAsync(t => t.Id == threatId && t.OrgId == orgId, ct);
 
-    public async Task<IReadOnlyList<Threat>> ListByJobAsync(JobId jobId, OrgId orgId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<Threat>> ListByJobAsync(JobId jobId, OrgId orgId, Guid? elementId = null, CancellationToken ct = default)
         => await db.Threats
             .Include(t => t.Mitigations)
             .Include(t => t.FrameworkMappings)
             .Where(t => t.JobId == jobId && t.OrgId == orgId)
+            // GAP-TH3: filter by element when requested (Npgsql translates Contains → ANY())
+            .Where(t => elementId == null || t.AffectedElementIds.Contains(elementId.Value))
             .OrderBy(t => t.Identifier)
             .ToListAsync(ct);
 

@@ -10,6 +10,7 @@ namespace ThreatModelingAgent.Domain.Entities;
 /// Invariants (spec data-model §9):
 /// - Confidence = High MUST NOT be set unless FindingType = Confirmed
 /// - Identifier MUST be unique within a job and follow the format T-NNN
+/// - User-added threats MUST reference at least one architecture element
 /// </summary>
 public class Threat
 {
@@ -113,6 +114,12 @@ public class Threat
         string description,
         string attackScenario)
     {
+        // Invariant: user-added threats MUST reference at least one architecture element (spec data-model §9)
+        if (affectedElementIds.Length == 0)
+            throw new ArgumentException(
+                "A user-added threat must reference at least one architecture element (spec data-model §9).",
+                nameof(affectedElementIds));
+
         ValidateIdentifier(identifier);
 
         var now = DateTimeOffset.UtcNow;

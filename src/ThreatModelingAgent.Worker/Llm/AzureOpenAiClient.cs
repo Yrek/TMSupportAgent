@@ -34,16 +34,31 @@ public sealed class AzureOpenAiClient(
             ? BuildVisionUserContent(request.UserPrompt, request.ImageBase64, request.ImageMediaType ?? "image/png")
             : (object)request.UserPrompt;
 
-        var payload = new
-        {
-            messages = new object[]
+        // o-series models (o1, o3, o4-mini, etc.) use max_completion_tokens and do not support temperature
+        var isOSeries = request.Model.Length > 1
+            && request.Model[0] is 'o' or 'O'
+            && char.IsDigit(request.Model[1]);
+
+        object payload = isOSeries
+            ? new
             {
-                new { role = "system", content = request.SystemPrompt },
-                new { role = "user",   content = userContent }
-            },
-            max_tokens = request.MaxTokens,
-            temperature = request.Temperature
-        };
+                messages = new object[]
+                {
+                    new { role = "system", content = request.SystemPrompt },
+                    new { role = "user",   content = userContent }
+                },
+                max_completion_tokens = request.MaxTokens
+            }
+            : new
+            {
+                messages = new object[]
+                {
+                    new { role = "system", content = request.SystemPrompt },
+                    new { role = "user",   content = userContent }
+                },
+                max_tokens = request.MaxTokens,
+                temperature = request.Temperature
+            };
 
         using var client = httpClientFactory.CreateClient("AzureOpenAI");
         client.DefaultRequestHeaders.Add("api-key", apiKey);

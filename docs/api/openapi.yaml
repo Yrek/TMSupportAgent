@@ -130,17 +130,11 @@ components:
 
     SessionResponse:
       type: object
-      required: [userId, email, orgs]
+      required: [userId, orgs]
       properties:
         userId:
           type: string
           format: uuid
-        email:
-          type: string
-          format: email
-        displayName:
-          type: string
-          nullable: true
         orgs:
           type: array
           items:
@@ -467,15 +461,52 @@ components:
         correctionType:
           type: string
           enum: [update, mark_incorrect, mark_assumed, mark_confirmed, add_note]
+          description: |
+            Case-insensitive. update requires fieldName. add_note requires note.
         fieldName:
           type: string
           maxLength: 100
+          description: Field being corrected — required for update corrections.
+        originalValue:
+          type: string
+          maxLength: 5000
+          description: Original extracted value — optional, for provenance.
         correctedValue:
           type: string
           maxLength: 5000
+          description: The corrected value — required for update corrections.
         note:
           type: string
           maxLength: 5000
+          description: Free-text note — required for add_note, optional otherwise.
+
+    PatchElementRequest:
+      type: object
+      description: |
+        All fields optional — only non-null values are applied.
+        Omitting a field leaves the stored value unchanged.
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 5000
+        properties:
+          type: object
+          additionalProperties: true
+          description: |
+            Replaces the existing properties object when provided.
+            Well-known keys: port, protocol, auth, trustZone, technology, encryption.
+
+    ConfirmArchitectureRequest:
+      type: object
+      description: Optional confirmation metadata. An empty body is valid.
+      properties:
+        note:
+          type: string
+          maxLength: 5000
+          description: Optional note recorded alongside the confirmation for audit purposes.
 
     AddElementRequest:
       type: object
@@ -1126,6 +1157,47 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /orgs/{orgId}/jobs/manual:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+
+    post:
+      operationId: createManualJob
+      summary: Create a manual job with no file upload
+      description: |
+        Creates a job in AWAITING_REVIEW status with an empty architecture model.
+        The user builds the architecture by adding elements via POST /elements.
+        Once ready, confirm via POST /architecture/confirm to trigger analysis.
+        Rate-limited: same tier as job submission.
+      tags: [jobs]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  maxLength: 255
+                systemPurpose:
+                  type: string
+                  maxLength: 5000
+                  description: Brief description of what the system does.
+      responses:
+        '201':
+          description: Manual job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetail'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /orgs/{orgId}/jobs/{jobId}:
     parameters:
       - $ref: '#/components/parameters/OrgId'
@@ -1200,28 +1272,70 @@ paths:
       description: |
         Job must be in AWAITING_REVIEW status. Transitions job to CLASSIFYING.
         User corrections made before this call are applied to the analysis.
+        An empty body is valid — all fields are optional.
       tags: [architecture]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmArchitectureRequest'
       responses:
-        '202':
-          description: Architecture confirmed; analysis queued
+        '200':
+          description: Architecture confirmed; analysis queued. Returns updated architecture model.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/JobDetail'
+                $ref: '#/components/schemas/ArchitectureModel'
         '409':
-          description: Job is not in AWAITING_REVIEW status
+          description: Job is not in AWAITING_REVIEW status, or architecture already confirmed
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /orgs/{orgId}/jobs/{jobId}/architecture/elements:
+  /orgs/{orgId}/jobs/{jobId}/architecture/reanalyze:
     parameters:
       - $ref: '#/components/parameters/OrgId'
       - $ref: '#/components/parameters/JobId'
 
     post:
-      operationId: addArchitectureElement
+      operationId: reanalyzeJob
+      summary: Reset a completed job to AwaitingReview for re-analysis
+      description: |
+        Allowed only when job status is COMPLETE or PARTIAL.
+        Clears the architecture confirmation, deletes system-generated threats
+        (user-added threats are preserved), and transitions the job back to AWAITING_REVIEW.
+        The user can then correct the architecture and call POST /architecture/confirm again.
+        Rate-limited.
+      tags: [architecture]
+      responses:
+        '200':
+          description: Job reset to AwaitingReview. Returns updated job detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetail'
+        '404':
+          description: Job or architecture not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Job is not in COMPLETE or PARTIAL status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /orgs/{orgId}/jobs/{jobId}/elements:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/JobId'
+
+    post:
+      operationId: addElement
       summary: Add a missing element to the architecture model
       description: Only allowed when job is in AWAITING_REVIEW status.
       tags: [architecture]
@@ -1245,15 +1359,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /orgs/{orgId}/jobs/{jobId}/architecture/elements/{elementId}:
+  /orgs/{orgId}/jobs/{jobId}/elements/{elementId}:
     parameters:
       - $ref: '#/components/parameters/OrgId'
       - $ref: '#/components/parameters/JobId'
       - $ref: '#/components/parameters/ElementId'
 
     get:
-      operationId: getArchitectureElement
-      summary: Get a single architecture element with its corrections and related threats
+      operationId: getElement
+      summary: Get a single architecture element with its corrections
       tags: [architecture]
       responses:
         '200':
@@ -1262,11 +1376,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ArchitectureElement'
+        '404':
+          description: Element not found or does not belong to this job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    patch:
+      operationId: patchElement
+      summary: Update an element's name, description, or properties
+      description: Only allowed when job is in AWAITING_REVIEW status. All fields optional.
+      tags: [architecture]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchElementRequest'
+      responses:
+        '200':
+          description: Updated element with corrections
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchitectureElement'
+        '409':
+          description: Job is not in AWAITING_REVIEW status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
     post:
-      operationId: correctArchitectureElement
+      operationId: correctElement
       summary: Submit a correction or annotation for an architecture element
-      description: Only allowed when job is in AWAITING_REVIEW status.
+      description: Only allowed when job is in AWAITING_REVIEW status. Corrections are immutable once written.
       tags: [architecture]
       requestBody:
         required: true
@@ -1276,11 +1421,32 @@ paths:
               $ref: '#/components/schemas/CorrectElementRequest'
       responses:
         '200':
-          description: Correction recorded; updated element returned
+          description: Correction recorded; updated element with all corrections returned
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ArchitectureElement'
+        '409':
+          description: Job is not in AWAITING_REVIEW status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid correction type or missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      operationId: deleteElement
+      summary: Remove an element from the architecture model
+      description: Only allowed when job is in AWAITING_REVIEW status.
+      tags: [architecture]
+      responses:
+        '204':
+          description: Element deleted
         '409':
           description: Job is not in AWAITING_REVIEW status
           content:
@@ -1394,10 +1560,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Threat'
+        '404':
+          description: Threat not found or does not belong to this job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /orgs/{orgId}/jobs/{jobId}/threats/{threatId}/status:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/JobId'
+      - $ref: '#/components/parameters/ThreatId'
 
     patch:
       operationId: updateThreatStatus
-      summary: Update a threat's status (accept, mitigate, reject)
+      summary: Update a threat's status (accept, mitigate, reject, re-open)
+      description: |
+        Valid statuses: Open, Accepted, Mitigated, Rejected.
+        Case-sensitive. The status field must match exactly.
       tags: [threats]
       requestBody:
         required: true
@@ -1412,6 +1593,52 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Threat'
+        '400':
+          description: Invalid status value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /orgs/{orgId}/jobs/{jobId}/export:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/JobId'
+
+    get:
+      operationId: exportAnalysis
+      summary: Download the full analysis output as a JSON file
+      description: |
+        Available once job status is COMPLETE or PARTIAL.
+        Returns the raw analysis blob as a file download (Content-Disposition: attachment).
+        Use GET /analysis for in-page rendering of the parsed data.
+        Response includes Cache-Control: no-store.
+      tags: [analysis]
+      responses:
+        '200':
+          description: Analysis JSON file download
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Raw analysis output blob
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: 'attachment; filename="threat-model-{jobId}.json"'
+        '404':
+          description: Analysis output not found (job may not have completed successfully)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Analysis not yet complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /orgs/{orgId}/jobs/{jobId}/threats/{threatId}/notes:
     parameters:

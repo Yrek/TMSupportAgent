@@ -33,6 +33,8 @@ internal sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organ
         builder.Property(o => o.CreatedAt).HasColumnName("created_at");
         builder.Property(o => o.UpdatedAt).HasColumnName("updated_at");
         builder.Property(o => o.DeletedAt).HasColumnName("deleted_at");
+        builder.Property(o => o.IsSuspended).HasColumnName("is_suspended").HasDefaultValue(false);
+        builder.Property(o => o.SuspendedAt).HasColumnName("suspended_at");
 
         builder.HasIndex(o => o.Slug)
             .IsUnique()

@@ -4,6 +4,10 @@ using ThreatModelingAgent.Domain.Enums;
 using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Domain.ValueObjects;
 using ThreatModelingAgent.Worker.Pipeline.Contracts;
+using ThreatModelingAgent.Worker.Pipeline.Stages;
+using DomainMitigation = ThreatModelingAgent.Domain.Entities.Mitigation;
+using DomainFrameworkMapping = ThreatModelingAgent.Domain.Entities.FrameworkMapping;
+using DomainRejectedCandidate = ThreatModelingAgent.Domain.Entities.RejectedCandidate;
 
 namespace ThreatModelingAgent.Worker.Pipeline;
 
@@ -182,7 +186,7 @@ internal sealed class PipelineDbPersistence(
                 existingControls: ft.ExistingControls,
                 controlGaps: ft.ControlGaps,
                 confidence: ParseConfidence(ft.Confidence),
-                evidenceBasis: ft.EvidenceBasis ?? [],
+                evidenceBasis: [],
                 evidenceStrength: ParseEvidenceStrength(ft.EvidenceStrength),
                 assumptions: null,
                 findingType: findingType);
@@ -195,7 +199,7 @@ internal sealed class PipelineDbPersistence(
                 if (priority is not ("critical" or "high" or "medium" or "low"))
                     priority = "medium";
 
-                var mitigation = Mitigation.Create(
+                var mitigation = DomainMitigation.Create(
                     threatId: threat.Id,
                     orgId: orgId,
                     title: m.Title,
@@ -210,7 +214,7 @@ internal sealed class PipelineDbPersistence(
                 var normalizedFramework = NormalizeFramework(fm.Framework);
                 if (normalizedFramework is null) continue; // Skip unknown frameworks — don't crash the pipeline
 
-                var mapping = FrameworkMapping.Create(
+                var mapping = DomainFrameworkMapping.Create(
                     threatId: threat.Id,
                     orgId: orgId,
                     framework: normalizedFramework,
@@ -231,7 +235,7 @@ internal sealed class PipelineDbPersistence(
                     "out_of_scope" or "mitigation_confirmed" or "too_speculative"))
                     continue;
 
-                var rejected = RejectedCandidate.Create(
+                var rejected = DomainRejectedCandidate.Create(
                     jobId: jobId,
                     orgId: orgId,
                     title: rc.Title,
@@ -247,6 +251,128 @@ internal sealed class PipelineDbPersistence(
         logger.LogInformation(
             "Final output persisted to DB. JobId={JobId} Confirmed={Confirmed} Conditional={Conditional}",
             jobId, output.ConfirmedThreats.Length, output.ConditionalThreats.Length);
+    }
+
+    // ── Manual job helpers ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a <see cref="CanonicalModel"/> from user-defined elements stored in DB.
+    /// Used by manual jobs (no file artifact) at the start of Phase 2 so the normal
+    /// CLASSIFY → ANALYZE → SYNTHESIZE stages can proceed without modification.
+    /// </summary>
+    public async Task<CanonicalModel> BuildCanonicalModelFromElementsAsync(
+        JobId jobId, OrgId orgId, CancellationToken ct)
+    {
+        var arch = await architectures.GetByJobIdAsync(jobId, orgId, ct)
+            ?? throw new PipelineStageException("PERSIST_ERROR",
+                "Architecture record not found for manual job processing.");
+
+        var elements = await architectures.ListElementsAsync(arch.Id, orgId, ct);
+
+        var components = new List<CanonicalComponent>();
+        var actors = new List<CanonicalActor>();
+        var externalSystems = new List<CanonicalExternalSystem>();
+        var dataStores = new List<CanonicalDataStore>();
+        var dataFlows = new List<CanonicalDataFlow>();
+        var trustBoundaries = new List<CanonicalTrustBoundary>();
+        var backgroundJobs = new List<BackgroundJob>();
+        var llmBoundaries = new List<AiLlmBoundary>();
+
+        foreach (var el in elements)
+        {
+            JsonElement? props = TryParseProperties(el.PropertiesJson);
+
+            switch (el.ElementType)
+            {
+                case ElementType.Component:
+                case ElementType.Identity:
+                    components.Add(new CanonicalComponent(
+                        Label: el.Name,
+                        Type: GetString(props, "type") ?? "component",
+                        Description: el.Description,
+                        Tags: GetStringArray(props, "tags")));
+                    break;
+
+                case ElementType.Actor:
+                    actors.Add(new CanonicalActor(
+                        Label: el.Name,
+                        Type: GetString(props, "type") ?? "user",
+                        IsExternal: GetBool(props, "isExternal")));
+                    break;
+
+                case ElementType.ExternalSystem:
+                    externalSystems.Add(new CanonicalExternalSystem(
+                        Label: el.Name,
+                        Protocol: GetString(props, "protocol"),
+                        TrustLevel: GetString(props, "trustLevel")));
+                    break;
+
+                case ElementType.DataStore:
+                    dataStores.Add(new CanonicalDataStore(
+                        Label: el.Name,
+                        StoreType: GetString(props, "storeType") ?? "unknown",
+                        ContainsSensitiveData: GetBool(props, "containsSensitiveData"),
+                        Encrypted: GetBool(props, "encrypted")));
+                    break;
+
+                case ElementType.DataFlow:
+                    dataFlows.Add(new CanonicalDataFlow(
+                        From: GetString(props, "from") ?? el.Name,
+                        To: GetString(props, "to") ?? string.Empty,
+                        Label: el.Description,
+                        Protocol: GetString(props, "protocol"),
+                        ContainsSensitiveData: GetBool(props, "containsSensitiveData"),
+                        Authenticated: GetBool(props, "authenticated")));
+                    break;
+
+                case ElementType.TrustBoundary:
+                    trustBoundaries.Add(new CanonicalTrustBoundary(
+                        Label: el.Name,
+                        ContainedComponentLabels: GetStringArray(props, "containedComponents"),
+                        BoundaryType: GetString(props, "boundaryType") ?? "network"));
+                    break;
+
+                case ElementType.BackgroundJob:
+                    backgroundJobs.Add(new BackgroundJob(
+                        Label: el.Name,
+                        Trigger: GetString(props, "trigger") ?? "unknown",
+                        AccessedResources: GetStringArray(props, "accessedResources")));
+                    break;
+
+                case ElementType.LlmBoundary:
+                    llmBoundaries.Add(new AiLlmBoundary(
+                        Label: el.Name,
+                        Provider: GetString(props, "provider") ?? "unknown",
+                        UserInputPassedToModel: GetBool(props, "userInputPassedToModel"),
+                        ModelOutputUsedInResponse: GetBool(props, "modelOutputUsedInResponse")));
+                    break;
+            }
+        }
+
+        return new CanonicalModel(
+            SystemPurpose: arch.SystemPurpose,
+            Components: components.ToArray(),
+            Actors: actors.ToArray(),
+            ExternalSystems: externalSystems.ToArray(),
+            DataStores: dataStores.ToArray(),
+            DataFlows: dataFlows.ToArray(),
+            TrustBoundaries: trustBoundaries.ToArray(),
+            NetworkExposure: "unknown",
+            AuthenticationMethods: [],
+            AuthorizationModel: null,
+            SessionModel: null,
+            MachineIdentities: [],
+            PrivilegedPaths: [],
+            TenantModel: null,
+            SensitiveDataTypes: [],
+            SecretsUsage: [],
+            AsyncFlows: [],
+            BackgroundJobs: backgroundJobs.ToArray(),
+            HasLoggingMonitoring: false,
+            AiLlmBoundaries: llmBoundaries.ToArray(),
+            Assumptions: TryDeserialize<Assumption[]>(arch.AssumptionsJson) ?? [],
+            Gaps: TryDeserialize<Gap[]>(arch.GapsJson) ?? [],
+            ClarificationQuestions: TryDeserialize<ClarificationQuestion[]>(arch.ClarificationQuestionsJson) ?? []);
     }
 
     // ── Re-analysis helpers ───────────────────────────────────────────────────
@@ -306,4 +432,53 @@ internal sealed class PipelineDbPersistence(
 
     // Framework name normalization is in the shared FrameworkNormalizer (CLAUDE.md §14 — no duplication).
     private static string? NormalizeFramework(string? framework) => FrameworkNormalizer.Normalize(framework);
+
+    // ── Property extraction helpers (manual job canonical model build) ─────────
+
+    private static readonly JsonSerializerOptions CaseInsensitiveOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    private static JsonElement? TryParseProperties(string json)
+    {
+        try { return JsonSerializer.Deserialize<JsonElement>(json); }
+        catch { return null; }
+    }
+
+    private static string? GetString(JsonElement? el, string key)
+    {
+        if (el is null) return null;
+        if (el.Value.TryGetProperty(key, out var prop) && prop.ValueKind == JsonValueKind.String)
+            return prop.GetString();
+        return null;
+    }
+
+    private static bool GetBool(JsonElement? el, string key)
+    {
+        if (el is null) return false;
+        if (el.Value.TryGetProperty(key, out var prop))
+        {
+            if (prop.ValueKind == JsonValueKind.True) return true;
+            if (prop.ValueKind == JsonValueKind.False) return false;
+        }
+        return false;
+    }
+
+    private static string[] GetStringArray(JsonElement? el, string key)
+    {
+        if (el is null) return [];
+        if (!el.Value.TryGetProperty(key, out var prop) || prop.ValueKind != JsonValueKind.Array)
+            return [];
+        return prop.EnumerateArray()
+            .Where(e => e.ValueKind == JsonValueKind.String)
+            .Select(e => e.GetString()!)
+            .ToArray();
+    }
+
+    private static T? TryDeserialize<T>(string json)
+    {
+        try { return JsonSerializer.Deserialize<T>(json, CaseInsensitiveOptions); }
+        catch { return default; }
+    }
 }

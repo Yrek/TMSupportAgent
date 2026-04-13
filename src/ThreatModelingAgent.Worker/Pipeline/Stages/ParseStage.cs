@@ -28,7 +28,7 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 /// </summary>
 public sealed class ParseStage(
     IBlobStorage blobStorage,
-    LlmClientFactory llmFactory,
+    ILlmClientFactory llmFactory,
     ILogger<ParseStage> logger) : IPipelineStage<ParseInput, ParseOutput>
 {
     private const int MaxAttempts = 3;

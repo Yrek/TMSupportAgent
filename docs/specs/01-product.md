@@ -669,10 +669,13 @@ The assistant MUST support an interactive architecture diagram view.
 
 The user MUST be able to:
 - click a diagram element and see the threats mapped to that element
+  > ~~**TODO (GAP-TH3)**~~ ✅ **RESOLVED** — `AnalysisPage` canvas `onElementSelect` now writes `elementId` to URL search params; `useThreats` passes it server-side; `ThreatFilterBar` shows an active element chip with a clear button; tab switches to Threats automatically.
 - click a data flow and see threats mapped to that flow
+  > ~~**TODO (GAP-TH4)**~~ ✅ **RESOLVED** — `canvasLayout.ts` now renders edge labels with `⚠ N` count badge in amber when threats exist; `ArchCanvas` wires `onEdgeClick` → `elementId` filter (same path as node click).
 - click a trust boundary and see threats mapped to that boundary
 - see whether a threat is confirmed, conditional, user-added, or system-generated
 - add their own threats to a specific diagram element, flow, boundary, or note
+  > ~~**TODO (GAP-TH1 + GAP-TH7)**~~ ✅ **RESOLVED** — `AddThreatModal` now renders a required multi-select element picker (checkboxes, DataFlow elements excluded); `affectedElementIds` is validated min-length 1 in Zod schema, controller (422), and `Threat.CreateUserAdded()` domain invariant. API status gate expanded to include `AwaitingReview`. `ReviewPage` now shows a "Flag concern" button wired to `AddThreatModal`; pre-selected element passed when one is active.
 - add contextual notes or corrections to a specific diagram element
 - edit or clarify metadata for a specific element, such as purpose, trust zone, data type, auth mechanism, or tenant relevance
 - mark extracted information as correct, incorrect, incomplete, or assumed
@@ -705,6 +708,9 @@ The system SHOULD support per-element views showing:
 - related assumptions
 - related user notes
 - related control mappings
+  > ~~**TODO (GAP-TH5)**~~ ✅ **RESOLVED** — `ElementDetailPanel` now accepts `relatedThreats?: Threat[]` and `onThreatClick` props; renders a "Threats (N)" section with status badges and clickable rows. `AnalysisPage` architecture tab shows a 288px side panel when an element is selected, passing `threatsForSelectedElement` filtered from the unfiltered threat list. Clicking a threat navigates to the Threats tab with that threat selected.
+
+  > ~~**TODO (GAP-TH6)**~~ ✅ **EXPLICITLY DEFERRED** — See `07-backlog.md §9 OD-F5`.
 
 The system SHOULD support diagram state comparison between:
 - original extracted architecture

@@ -1,14 +1,23 @@
 // Copy this file to production.bicepparam and fill in your values.
 // NEVER commit production.bicepparam — it contains secrets.
 // production.bicepparam is listed in .gitignore.
+//
+// After deploying, note the outputs:
+//   apiUrl         → set as VITE_API_BASE_URL in GitHub repository variables
+//   frontendUrl    → the Azure Static Web Apps URL for the React frontend
+//   swaName        → used by CI to retrieve the SWA deployment token
 
 using '../main.bicep'
 
 param environmentName = 'prod'
-param location = 'westeurope'
+// swedencentral keeps costs within the Sweden MACC/credits plan.
+// swaLocation stays westeurope — SWA does not support swedencentral.
+param location = 'swedencentral'
+param swaLocation = 'westeurope'
 
 // WorkOS — find in WorkOS dashboard → API Keys
 param workosClientId = 'YOUR_WORKOS_CLIENT_ID'
+param workosApiKey   = 'YOUR_WORKOS_API_KEY'
 
 // Anthropic — find in console.anthropic.com
 param anthropicApiKey = 'YOUR_ANTHROPIC_API_KEY'

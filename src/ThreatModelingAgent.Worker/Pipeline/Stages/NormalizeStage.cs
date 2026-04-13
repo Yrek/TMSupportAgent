@@ -26,7 +26,7 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 /// - Content not logged; only token counts (CLAUDE.md §16.6)
 /// </summary>
 public sealed class NormalizeStage(
-    LlmClientFactory llmFactory,
+    ILlmClientFactory llmFactory,
     IBlobStorage blobStorage,
     ILogger<NormalizeStage> logger) : IPipelineStage<NormalizeInput, CanonicalModel>
 {

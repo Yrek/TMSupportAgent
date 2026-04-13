@@ -11,6 +11,8 @@ public class Organization
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public DateTimeOffset? DeletedAt { get; private set; }
+    public bool IsSuspended { get; private set; }
+    public DateTimeOffset? SuspendedAt { get; private set; }
 
     private Organization() { } // EF Core
 
@@ -56,4 +58,18 @@ public class Organization
     }
 
     public bool IsDeleted => DeletedAt.HasValue;
+
+    public void Suspend()
+    {
+        IsSuspended = true;
+        SuspendedAt = DateTimeOffset.UtcNow;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void Unsuspend()
+    {
+        IsSuspended = false;
+        SuspendedAt = null;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
 }

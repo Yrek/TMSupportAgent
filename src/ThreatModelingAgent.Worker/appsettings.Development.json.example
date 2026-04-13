@@ -22,7 +22,8 @@
   },
 
   "AzureOpenAI": {
-    "Endpoint": "https://YOUR_RESOURCE.openai.azure.com/"
+    "Endpoint": "https://YOUR_RESOURCE.openai.azure.com/",
+    "ApiKey": "YOUR_AZURE_OPENAI_KEY"
   },
 
   "Anthropic": {

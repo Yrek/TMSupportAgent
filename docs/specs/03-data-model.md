@@ -599,6 +599,7 @@ The following MUST be enforced at the service/domain layer (not only at the data
 
 - A `job` MAY only be created by a user who is a member of `job.org_id`
 - A `threat` MUST reference at least one `architecture_element` that belongs to the same `job`
+  > ~~**TODO (GAP-TH1 + GAP-TH2)**~~ ✅ **RESOLVED** — `Threat.CreateUserAdded()` now throws `ArgumentException` on empty `affectedElementIds`; `ThreatsController.AddThreat` returns HTTP 422 `ELEMENT_REQUIRED` for null/empty; `AddThreatModal` now requires at least one element checked (Zod min-1 validation). Applies to both uploaded and manual-draw job types.
 - `architecture_corrections` for an element MUST belong to the same `org_id` as the element
 - `jobs.status` transitions MUST follow the state machine in §6; no arbitrary status updates
 - `audit_log` rows MUST NOT be updated or deleted by the application user role

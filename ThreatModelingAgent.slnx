@@ -8,5 +8,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/ThreatModelingAgent.Api.Tests/ThreatModelingAgent.Api.Tests.csproj" />
     <Project Path="tests/ThreatModelingAgent.Domain.Tests/ThreatModelingAgent.Domain.Tests.csproj" />
+    <Project Path="tests/ThreatModelingAgent.Worker.Tests/ThreatModelingAgent.Worker.Tests.csproj" />
   </Folder>
 </Solution>

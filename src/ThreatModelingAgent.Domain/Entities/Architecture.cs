@@ -79,6 +79,19 @@ public class Architecture
     public bool IsConfirmed => ConfirmedAt.HasValue;
 
     /// <summary>
+    /// Resets confirmed state so the user can review and re-confirm before the next analysis run.
+    /// Also increments version so downstream pipeline stages know this is a new revision.
+    /// Called when the user triggers re-analysis on a completed job.
+    /// </summary>
+    public void ResetForReanalysis()
+    {
+        ConfirmedAt = null;
+        ConfirmedBy = null;
+        Version++;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>
     /// Sets the architecture classification after the CLASSIFY pipeline stage completes.
     /// Called in Phase 2 before ANALYZE.
     /// </summary>

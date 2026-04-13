@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ThreatModelingAgent.Domain.Entities;
 using ThreatModelingAgent.Domain.ValueObjects;
 
@@ -52,7 +53,9 @@ internal sealed class ArchitectureConfiguration : IEntityTypeConfiguration<Archi
 
         builder.Property(a => a.ConfirmedBy)
             .HasColumnName("confirmed_by")
-            .HasConversion(id => id != null ? id.Value : (Guid?)null, v => v.HasValue ? UserId.From(v.Value) : null);
+            .HasConversion(new ValueConverter<UserId?, Guid?>(
+                id => id.HasValue ? (Guid?)id.Value.Value : null,
+                v => v.HasValue ? (UserId?)UserId.From(v.Value) : null));
 
         builder.Property(a => a.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(a => a.UpdatedAt).HasColumnName("updated_at").IsRequired();

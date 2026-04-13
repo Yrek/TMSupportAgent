@@ -73,7 +73,7 @@ TMSupportAgent/
 │   │   ├── 01-product.md        # What the assistant does (functional spec)
 │   │   ├── 02-architecture.md   # Azure architecture, services, tenancy, identity
 │   │   ├── 03-data-model.md     # Database schema, blob layout, state machines
-│   │   ├── 04-api.md            # API design decisions and conventions
+│   │   └── (04) see docs/api/openapi.yaml — authoritative OpenAPI 3.1 contract
 │   │   ├── 05-llm-workflow.md   # LLM pipeline stages, model routing, contracts
 │   │   └── 06-security.md       # ISO 27001 + CLAUDE.md scoped to this system
 │   │

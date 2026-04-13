@@ -24,7 +24,7 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 /// Fails method with ANALYZE_FAILED after max retries.
 /// </summary>
 public sealed class AnalyzeStage(
-    LlmClientFactory llmFactory,
+    ILlmClientFactory llmFactory,
     ILogger<AnalyzeStage> logger) : IPipelineStage<AnalyzeInput, ThreatCandidateSet>
 {
     private const int MaxAttempts = 3;

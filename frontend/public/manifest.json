@@ -1,0 +1,16 @@
+{
+  "name": "Threat Modeling Agent",
+  "short_name": "TM Agent",
+  "description": "AI-powered threat modeling for your architecture",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

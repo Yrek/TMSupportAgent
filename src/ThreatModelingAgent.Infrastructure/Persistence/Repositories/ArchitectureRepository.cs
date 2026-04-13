@@ -42,6 +42,9 @@ internal sealed class ArchitectureRepository(AppDbContext db) : IArchitectureRep
             .OrderBy(c => c.CreatedAt)
             .ToListAsync(ct);
 
+    public void RemoveElement(ArchitectureElement element)
+        => db.ArchitectureElements.Remove(element);
+
     public Task SaveChangesAsync(CancellationToken ct = default)
         => db.SaveChangesAsync(ct);
 }

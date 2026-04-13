@@ -40,6 +40,7 @@ public static class InfrastructureServiceExtensions
         services.AddSingleton<IBlobStorage, AzureBlobStorageService>();
         services.AddSingleton<IJobQueue, ServiceBusJobQueue>();
         services.AddScoped<IWorkOsClient, WorkOsHttpClient>();
+        services.AddScoped<IAdminRepository, AdminRepository>();
 
         return services;
     }

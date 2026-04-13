@@ -24,7 +24,7 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 ///   /{orgId}/outputs/{jobId}/analysis.json
 /// </summary>
 public sealed class SynthesizeStage(
-    LlmClientFactory llmFactory,
+    ILlmClientFactory llmFactory,
     IBlobStorage blobStorage,
     ILogger<SynthesizeStage> logger) : IPipelineStage<SynthesizeInput, FinalOutput>
 {
@@ -74,9 +74,9 @@ public sealed class SynthesizeStage(
         output = await RunFrameworkMappingSubStepAsync(output, model, ct);
 
         // Ensure UserAddedThreats is always an empty array at synthesis time (spec §4 Stage 6)
-        // Populated later via POST /threats API — never by the LLM
-        if (output.UserAddedThreats is null)
-            output = output with { UserAddedThreats = [] };
+        // Populated later via POST /threats API — never by the LLM.
+        // Clear any LLM-produced value, whether null or non-empty.
+        output = output with { UserAddedThreats = [] };
 
         logger.LogInformation(
             "SYNTHESIZE complete. Confirmed={Confirmed} Conditional={Conditional} Status={Status} " +
@@ -102,7 +102,7 @@ public sealed class SynthesizeStage(
     /// Spec reference: 05-llm-workflow §4 Stage 6, §7 (framework-mapping token budget).
     /// </summary>
     private async Task<FinalOutput> RunFrameworkMappingSubStepAsync(
-        FinalOutput output, string synthesisModel, CancellationToken ct)
+        FinalOutput output, string _synthesisModel, CancellationToken ct)
     {
         var allThreats = output.ConfirmedThreats.Concat(output.ConditionalThreats).ToArray();
         if (allThreats.Length == 0) return output;

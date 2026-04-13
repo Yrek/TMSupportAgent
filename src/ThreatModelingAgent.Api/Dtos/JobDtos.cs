@@ -24,12 +24,13 @@ public record JobDetailDto(
     string Status,
     string? ArtifactType,
     string? ErrorCode,
+    bool IsManual,
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt)
 {
     public static JobDetailDto From(Job job)
         => new(job.Id.Value, job.Title, job.Status.ToString(), job.ArtifactType,
-               job.ErrorCode, job.CreatedAt, job.CompletedAt);
+               job.ErrorCode, job.ArtifactType is null, job.CreatedAt, job.CompletedAt);
 }
 
 // ── Request DTOs ─────────────────────────────────────────────────────────────
@@ -38,4 +39,15 @@ public class SubmitJobRequest
 {
     public IFormFile Artifact { get; set; } = null!;
     public string? Title { get; set; }
+}
+
+/// <summary>
+/// Creates a manual job with an empty architecture — no file upload required.
+/// The job starts in AwaitingReview status and is ready for elements to be added
+/// via POST /elements before confirming to trigger analysis.
+/// </summary>
+public class CreateManualJobRequest
+{
+    public string? Title { get; set; }
+    public string? SystemPurpose { get; set; }
 }

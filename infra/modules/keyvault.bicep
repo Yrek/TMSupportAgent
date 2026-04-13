@@ -9,6 +9,9 @@ param tags object
 param workosClientId string
 
 @secure()
+param workosApiKey string
+
+@secure()
 param anthropicApiKey string
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
@@ -38,6 +41,17 @@ resource secretWorkosClientId 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: 'WorkOS--ClientId'
   properties: {
     value: workosClientId
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+resource secretWorkosApiKey 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'WorkOS--ApiKey'
+  properties: {
+    value: workosApiKey
     attributes: {
       enabled: true
     }

@@ -12,5 +12,6 @@ public interface IArchitectureRepository
     Task<ArchitectureElement?> GetElementByIdAsync(Guid elementId, OrgId orgId, CancellationToken ct = default);
     Task<IReadOnlyList<ArchitectureElement>> ListElementsAsync(Guid architectureId, OrgId orgId, CancellationToken ct = default);
     Task<IReadOnlyList<ArchitectureCorrection>> ListCorrectionsAsync(Guid architectureId, OrgId orgId, CancellationToken ct = default);
+    void RemoveElement(ArchitectureElement element);
     Task SaveChangesAsync(CancellationToken ct = default);
 }

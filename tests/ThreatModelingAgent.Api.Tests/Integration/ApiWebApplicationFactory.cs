@@ -51,6 +51,27 @@ public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>, I
 
         builder.ConfigureServices(services =>
         {
+            // Serilog's two-stage bootstrap (CreateBootstrapLogger + UseSerilog) stores the
+            // bootstrap logger in the static Log.Logger as a ReloadableLogger, then freezes it
+            // when the DI container first resolves ILoggerFactory. In parallel test runs,
+            // multiple WebApplicationFactory instances share that static and both try to call
+            // Freeze(), which throws "The logger is already frozen." on the second caller.
+            //
+            // Fix: replace the registered Serilog.ILogger singleton (captured by UseSerilog from
+            // Log.Logger at startup) with a pre-built, non-reloadable Logger. AddSerilog's
+            // Freeze() guard (`if (logger is ReloadableLogger)`) then never fires in tests.
+            var serilogLogger = services.FirstOrDefault(d => d.ServiceType == typeof(Serilog.ILogger));
+            if (serilogLogger != null)
+            {
+                services.Remove(serilogLogger);
+                // No sinks — tests don't need app log output. MinimumLevel.Fatal
+                // suppresses everything so xUnit output stays clean.
+                services.AddSingleton<Serilog.ILogger>(
+                    new Serilog.LoggerConfiguration()
+                        .MinimumLevel.Fatal()
+                        .CreateLogger());
+            }
+
             // Replace external singletons with mocks.
             RemoveSingleton<IBlobStorage>(services);
             services.AddSingleton(BlobStorage);

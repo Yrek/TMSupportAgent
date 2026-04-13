@@ -26,6 +26,7 @@ namespace ThreatModelingAgent.Infrastructure.Persistence.Migrations
                 ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
                 ALTER TABLE jobs FORCE ROW LEVEL SECURITY;
 
+                DROP POLICY IF EXISTS jobs_tenant_isolation ON jobs;
                 CREATE POLICY jobs_tenant_isolation ON jobs
                   USING  (org_id::text = current_setting('app.current_org_id', true))
                   WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
@@ -36,6 +37,7 @@ namespace ThreatModelingAgent.Infrastructure.Persistence.Migrations
                 ALTER TABLE org_memberships ENABLE ROW LEVEL SECURITY;
                 ALTER TABLE org_memberships FORCE ROW LEVEL SECURITY;
 
+                DROP POLICY IF EXISTS org_memberships_tenant_isolation ON org_memberships;
                 CREATE POLICY org_memberships_tenant_isolation ON org_memberships
                   USING  (org_id::text = current_setting('app.current_org_id', true))
                   WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
@@ -46,6 +48,7 @@ namespace ThreatModelingAgent.Infrastructure.Persistence.Migrations
                 ALTER TABLE org_idp_configs ENABLE ROW LEVEL SECURITY;
                 ALTER TABLE org_idp_configs FORCE ROW LEVEL SECURITY;
 
+                DROP POLICY IF EXISTS org_idp_configs_tenant_isolation ON org_idp_configs;
                 CREATE POLICY org_idp_configs_tenant_isolation ON org_idp_configs
                   USING  (org_id::text = current_setting('app.current_org_id', true))
                   WITH CHECK (org_id::text = current_setting('app.current_org_id', true));

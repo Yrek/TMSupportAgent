@@ -10,13 +10,20 @@ using ThreatModelingAgent.Infrastructure;
 using ThreatModelingAgent.Infrastructure.Persistence;
 
 // ── Bootstrap Serilog before anything else so startup errors are captured ──
+// Note: CreateLogger() (not CreateBootstrapLogger()) is used intentionally.
+// CreateBootstrapLogger() produces a ReloadableLogger that UseSerilog() later
+// freezes via a direct Log.Logger reference — not through DI. When multiple
+// WebApplicationFactory instances run in the same process (parallel xUnit
+// integration test classes), they race to set and freeze the same static
+// Log.Logger, causing "The logger is already frozen." CreateLogger() produces
+// a plain Logger; UseSerilog() skips the Freeze() path entirely.
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
     .MinimumLevel.Override("System", LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .WriteTo.Console(outputTemplate:
         "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
-    .CreateBootstrapLogger();
+    .CreateLogger();
 
 try
 {

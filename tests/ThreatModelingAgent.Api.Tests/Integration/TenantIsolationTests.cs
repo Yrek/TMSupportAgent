@@ -17,7 +17,8 @@ namespace ThreatModelingAgent.Api.Tests.Integration;
 /// - Querying jobs for an org the caller is not a member of returns Forbid (403).
 /// - Membership checks prevent org A members from accessing org B resources.
 /// </summary>
-public sealed class TenantIsolationTests : IClassFixture<ApiWebApplicationFactory>
+[Collection("Integration")]
+public sealed class TenantIsolationTests
 {
     private readonly ApiWebApplicationFactory _factory;
 

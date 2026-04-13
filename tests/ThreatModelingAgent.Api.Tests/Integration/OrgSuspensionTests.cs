@@ -16,7 +16,8 @@ namespace ThreatModelingAgent.Api.Tests.Integration;
 ///  - Unsuspended org: member access restored
 ///  - Error code in body: includes "ORG_SUSPENDED" for clients to distinguish
 /// </summary>
-public sealed class OrgSuspensionTests : IClassFixture<ApiWebApplicationFactory>
+[Collection("Integration")]
+public sealed class OrgSuspensionTests
 {
     private readonly ApiWebApplicationFactory _factory;
 

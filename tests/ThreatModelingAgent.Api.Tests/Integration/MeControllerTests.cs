@@ -7,7 +7,8 @@ using ThreatModelingAgent.Domain.ValueObjects;
 
 namespace ThreatModelingAgent.Api.Tests.Integration;
 
-public sealed class MeControllerTests : IClassFixture<ApiWebApplicationFactory>
+[Collection("Integration")]
+public sealed class MeControllerTests
 {
     private readonly ApiWebApplicationFactory _factory;
 

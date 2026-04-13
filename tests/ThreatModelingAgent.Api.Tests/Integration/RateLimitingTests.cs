@@ -18,7 +18,8 @@ namespace ThreatModelingAgent.Api.Tests.Integration;
 /// Since rate limit windows reset per-instance and tests run in-process, we use a
 /// dedicated factory per test class via IClassFixture to get a fresh rate limiter.
 /// </summary>
-public sealed class RateLimitingTests : IClassFixture<ApiWebApplicationFactory>
+[Collection("Integration")]
+public sealed class RateLimitingTests
 {
     private readonly ApiWebApplicationFactory _factory;
 

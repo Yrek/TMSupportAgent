@@ -18,8 +18,8 @@ namespace ThreatModelingAgent.Api.Tests.Integration;
 ///  - POST /v1/admin/orgs/{id}/unsuspend — clears IsSuspended, idempotent
 ///  - DELETE /v1/admin/orgs/{id} — soft-delete, subsequent GET returns not found
 /// </summary>
-[Collection("AdminController")]
-public sealed class AdminControllerTests : IClassFixture<ApiWebApplicationFactory>
+[Collection("Integration")]
+public sealed class AdminControllerTests
 {
     private readonly ApiWebApplicationFactory _factory;
 

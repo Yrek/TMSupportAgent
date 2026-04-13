@@ -8,7 +8,8 @@ namespace ThreatModelingAgent.Api.Tests.Integration;
 /// Verifies that unauthenticated and incorrectly-formed requests are rejected
 /// before reaching any controller logic.
 /// </summary>
-public sealed class AuthenticationTests : IClassFixture<ApiWebApplicationFactory>
+[Collection("Integration")]
+public sealed class AuthenticationTests
 {
     private readonly ApiWebApplicationFactory _factory;
 

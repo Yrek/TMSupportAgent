@@ -15,7 +15,8 @@ namespace ThreatModelingAgent.Api.Tests.Integration;
 ///  - User with multiple org memberships: all orgs included with correct roles
 ///  - DELETE /v1/auth/session returns 204 for any authenticated caller
 /// </summary>
-public sealed class SessionControllerTests : IClassFixture<ApiWebApplicationFactory>
+[Collection("Integration")]
+public sealed class SessionControllerTests
 {
     private readonly ApiWebApplicationFactory _factory;
 

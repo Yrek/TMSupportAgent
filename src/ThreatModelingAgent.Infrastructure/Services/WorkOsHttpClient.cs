@@ -37,6 +37,25 @@ internal sealed class WorkOsHttpClient : IWorkOsClient
             new AuthenticationHeaderValue("Bearer", apiKey);
     }
 
+    public async Task<string> CreateOrganizationAsync(string name, CancellationToken ct = default)
+    {
+        var body = new { name };
+
+        using var response = await _http.PostAsJsonAsync("/v1/organizations", body, JsonOptions, ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new WorkOsException(
+                $"WorkOS org creation failed with status {(int)response.StatusCode}.",
+                (int)response.StatusCode);
+        }
+
+        var content = await response.Content.ReadAsStringAsync(ct);
+        using var doc = JsonDocument.Parse(content);
+        return doc.RootElement.GetProperty("id").GetString()
+            ?? throw new WorkOsException("WorkOS org creation response missing id.");
+    }
+
     public async Task<string> SendInvitationAsync(
         string email, string workOsOrgId, CancellationToken ct = default)
     {

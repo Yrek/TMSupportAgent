@@ -17,7 +17,7 @@ cp src/ThreatModelingAgent.Api/appsettings.Development.json.example \
    src/ThreatModelingAgent.Api/appsettings.Development.json
 cp src/ThreatModelingAgent.Worker/appsettings.Development.json.example \
    src/ThreatModelingAgent.Worker/appsettings.Development.json
-# Edit both files — set WorkOS:ClientId at minimum
+# Edit both files — set WorkOS:ClientId and WorkOS:ApiKey at minimum
 
 # 3. Apply database migrations
 dotnet ef database update \
@@ -29,8 +29,86 @@ dotnet run --project src/ThreatModelingAgent.Api     # terminal 1 → http://loc
 dotnet run --project src/ThreatModelingAgent.Worker  # terminal 2
 ```
 
+### LLM provider options (Worker)
+
+Set `LlmRouting:StrongModel` and `LlmRouting:LowCostModel` in the Worker `appsettings.Development.json`:
+
+| Provider | Key required | StrongModel | LowCostModel |
+|---|---|---|---|
+| **OpenAI** | `OpenAI:ApiKey` | `gpt-4o` or `gpt-4.1` | `gpt-4o-mini` or `o4-mini` |
+| **Azure OpenAI** | `AzureOpenAI:Endpoint` + `AzureOpenAI:ApiKey` | `gpt-4o` | `gpt-4o-mini` |
+| **Anthropic** | `Anthropic:ApiKey` | `claude-sonnet-4-6` | `claude-haiku-4-5` |
+| **Google Gemini** | `Google:ApiKey` (from [aistudio.google.com](https://aistudio.google.com)) | `gemini-2.5-pro` | `gemini-2.0-flash` |
+
+When both `OpenAI:ApiKey` and `AzureOpenAI` are configured, plain OpenAI takes priority for `gpt-*` / `o-series` models.
+
 See **[docs/deployment/local.md](docs/deployment/local.md)** for the full local setup guide.  
 See **[docs/deployment/azure.md](docs/deployment/azure.md)** for Azure deployment.
+
+---
+
+## WorkOS Setup
+
+This app uses [WorkOS](https://workos.com) for authentication (AuthKit / User Management). Free tier is sufficient for local development.
+
+### 1. Create a WorkOS account and application
+
+1. Sign up at [workos.com](https://workos.com)
+2. In the dashboard, go to **Applications** → create a new application
+3. Enable **User Management** (AuthKit) on the application
+
+### 2. Get your credentials
+
+Navigate to **API Keys** in the dashboard:
+
+| Config key | Where to find it |
+|---|---|
+| `WorkOS:ClientId` | **Client ID** on the API Keys page (starts with `client_`) |
+| `WorkOS:ApiKey` | **Secret Key** on the API Keys page (starts with `sk_`) |
+
+The following values are fixed — do not change them:
+
+```json
+"WorkOS:Issuer":  "https://api.workos.com",
+"WorkOS:JwksUri": "https://api.workos.com/.well-known/jwks.json"
+```
+
+### 3. Configure redirect URIs
+
+In the WorkOS dashboard → **Redirects**, add:
+
+| Type | Local dev | Production |
+|---|---|---|
+| **Sign-in redirect URI** | `http://localhost:5173/auth/callback` | `https://yourdomain.com/auth/callback` |
+| **Sign-out redirect URI** | `http://localhost:5173/login` | `https://yourdomain.com/login` |
+
+> The frontend runs on port **5173** (Vite). The API on 5240 is backend-only and has no auth callback.
+
+### 4. Enable per-org IDP (SSO)
+
+Each organization can configure its own IDP (SAML/OIDC) via WorkOS SSO.
+
+**How it works:**
+1. When an org is created, the backend also creates a matching WorkOS organization (via WorkOS Management API) and stores its ID (`org_01XXXXX`) in `organizations.workos_org_id`.
+2. The frontend calls `getAccessToken({ organizationId: workosOrgId })` — WorkOS routes the user through their org's configured IDP if one exists, otherwise falls back to AuthKit.
+3. The resulting JWT contains a signed `org_id: "org_01XXXXX"` claim. The backend resolves this to the internal org GUID. The URL parameter is **never trusted** for tenant scoping (CLAUDE.md §8.2).
+
+**To configure SSO for an org:** WorkOS dashboard → Organizations → your org → Connections → add SAML or OIDC connection. WorkOS handles the federation — the app receives a standard JWT regardless of which IDP was used.
+
+> `WorkOS:ApiKey` is required in `appsettings.Development.json` — the backend calls the WorkOS Management API when creating organizations.
+
+### 5. Set values in appsettings.Development.json
+
+```json
+"WorkOS": {
+  "ClientId": "client_XXXXXXXXXXXX",
+  "ApiKey":   "sk_XXXXXXXXXXXX",
+  "Issuer":   "https://api.workos.com",
+  "JwksUri":  "https://api.workos.com/.well-known/jwks.json"
+}
+```
+
+> These files are git-ignored. Never commit real credentials.
 
 ---
 

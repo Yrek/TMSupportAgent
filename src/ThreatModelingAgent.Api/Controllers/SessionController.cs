@@ -59,7 +59,8 @@ public sealed class SessionController(
                 orgId = org.Id.Value,
                 name = org.Name,
                 slug = org.Slug,
-                role = membership.Role.ToString().ToLower()
+                role = membership.Role.ToString().ToLower(),
+                workosOrgId = org.WorkOsOrgId   // needed by frontend to request org-scoped JWT
             });
         }
 

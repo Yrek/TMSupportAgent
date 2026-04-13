@@ -42,6 +42,14 @@ try
     {
         c.Timeout = TimeSpan.FromSeconds(120);
     });
+    builder.Services.AddHttpClient("OpenAI", c =>
+    {
+        c.Timeout = TimeSpan.FromSeconds(120);
+    });
+    builder.Services.AddHttpClient("Google", c =>
+    {
+        c.Timeout = TimeSpan.FromSeconds(120);
+    });
     builder.Services.AddHttpClient("Anthropic", c =>
     {
         c.Timeout = TimeSpan.FromSeconds(120);
@@ -50,11 +58,15 @@ try
 
     // ── LLM clients ──────────────────────────────────────────────────────────
     builder.Services.AddScoped<AzureOpenAiClient>();
+    builder.Services.AddScoped<OpenAiClient>();
     builder.Services.AddScoped<AnthropicClient>();
+    builder.Services.AddScoped<GeminiClient>();
     builder.Services.AddScoped<IEnumerable<ILlmClient>>(sp =>
     [
         sp.GetRequiredService<AzureOpenAiClient>(),
-        sp.GetRequiredService<AnthropicClient>()
+        sp.GetRequiredService<OpenAiClient>(),
+        sp.GetRequiredService<AnthropicClient>(),
+        sp.GetRequiredService<GeminiClient>()
     ]);
     builder.Services.AddScoped<LlmClientFactory>();
     builder.Services.AddScoped<ILlmClientFactory>(sp => sp.GetRequiredService<LlmClientFactory>());

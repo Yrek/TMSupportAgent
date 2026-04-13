@@ -6,6 +6,7 @@ export interface OrgSummary {
   name: string;
   slug: string;
   role: "owner" | "member";
+  workosOrgId: string | null;
 }
 
 export interface SessionResponse {

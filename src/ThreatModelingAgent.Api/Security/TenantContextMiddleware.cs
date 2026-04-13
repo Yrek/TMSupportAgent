@@ -1,18 +1,27 @@
 using System.Security.Claims;
+using ThreatModelingAgent.Domain.Entities;
 using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Domain.ValueObjects;
 
 namespace ThreatModelingAgent.Api.Security;
 
 /// <summary>
-/// Extracts org_id from the validated JWT and sets it on TenantContext.
+/// Resolves org context from the validated JWT and sets it on TenantContext.
 /// Runs after authentication middleware — JWT has already been validated by this point.
 ///
 /// Security invariants:
 /// - platform:admin tokens are allowed through to /v1/admin/* routes only; rejected everywhere else.
 /// - Org-scoped routes reject requests where the org is suspended (ORG_SUSPENDED).
-/// - If an authenticated, non-admin request is missing the org_id claim, the request fails with 403.
+/// - If org_id is present but the org is not found or suspended, context is NOT set — RLS denies
+///   all tenant-scoped data (fail-secure, CLAUDE.md §4.3).
+/// - If org_id is absent (e.g. bootstrap call to /v1/auth/session), context is not set and the
+///   request proceeds — individual endpoints enforce their own auth requirements, and RLS
+///   blocks tenant-scoped data without context (fail-secure).
 /// - Unauthenticated requests pass through (auth enforcement is on the endpoint).
+///
+/// org_id resolution (dual-path for test compatibility):
+/// - Production: WorkOS puts "org_01XXXXX" in the JWT → looked up via GetByWorkOsOrgIdAsync.
+/// - Tests: TestAuthHandler injects the internal GUID directly → looked up via GetByIdAsync.
 /// </summary>
 public sealed class TenantContextMiddleware(RequestDelegate next)
 {
@@ -47,31 +56,35 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
 
             var orgIdClaim = context.User.FindFirstValue("org_id");
 
-            if (orgIdClaim is null || !Guid.TryParse(orgIdClaim, out var orgId))
+            if (orgIdClaim is not null)
             {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await context.Response.WriteAsJsonAsync(new
-                {
-                    code = "MISSING_ORG_CONTEXT",
-                    message = "Authenticated requests must include a valid org_id claim."
-                });
-                return;
-            }
+                // Dual-path lookup:
+                //   Production path: WorkOS JWT contains WorkOS org ID (e.g. "org_01XXXXX")
+                //   Test path: TestAuthHandler injects the internal GUID directly
+                Organization? org;
+                if (Guid.TryParse(orgIdClaim, out var internalGuid))
+                    org = await orgs.GetByIdAsync(OrgId.From(internalGuid), context.RequestAborted);
+                else
+                    org = await orgs.GetByWorkOsOrgIdAsync(orgIdClaim, context.RequestAborted);
 
-            // Check org suspension — fail closed (CLAUDE.md §4.3)
-            var org = await orgs.GetByIdAsync(OrgId.From(orgId), context.RequestAborted);
-            if (org is not null && org.IsSuspended)
-            {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await context.Response.WriteAsJsonAsync(new
+                if (org is not null)
                 {
-                    code = "ORG_SUSPENDED",
-                    message = "This organization has been suspended. Contact support."
-                });
-                return;
-            }
+                    if (org.IsSuspended)
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            code = "ORG_SUSPENDED",
+                            message = "This organization has been suspended. Contact support."
+                        });
+                        return;
+                    }
 
-            tenantContext.SetFromClaim(orgId);
+                    tenantContext.SetFromClaim(org.Id.Value);
+                }
+                // org not found for given org_id — context not set, RLS denies all data (fail-secure)
+            }
+            // No org_id claim — context not set; endpoint-level auth and RLS enforce access
         }
 
         await next(context);

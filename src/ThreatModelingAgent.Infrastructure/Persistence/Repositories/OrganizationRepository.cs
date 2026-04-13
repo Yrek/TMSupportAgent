@@ -13,6 +13,9 @@ internal sealed class OrganizationRepository(AppDbContext db) : IOrganizationRep
     public Task<Organization?> GetBySlugAsync(string slug, CancellationToken ct = default)
         => db.Organizations.FirstOrDefaultAsync(o => o.Slug == slug, ct);
 
+    public Task<Organization?> GetByWorkOsOrgIdAsync(string workOsOrgId, CancellationToken ct = default)
+        => db.Organizations.FirstOrDefaultAsync(o => o.WorkOsOrgId == workOsOrgId, ct);
+
     public Task<bool> SlugExistsAsync(string slug, CancellationToken ct = default)
         => db.Organizations.AnyAsync(o => o.Slug == slug, ct);
 

@@ -23,6 +23,7 @@ public sealed class OrgsController(
     IMembershipRepository memberships,
     IAuditLogger audit,
     AppDbContext db,
+    IWorkOsClient workOs,
     ILogger<OrgsController> logger) : ControllerBase
 {
     // GET /v1/orgs — list orgs for the current user
@@ -61,6 +62,23 @@ public sealed class OrgsController(
 
         var userId = User.GetUserId();
         var org = Organization.Create(request.Name, request.Slug);
+
+        // Create matching WorkOS organization so users can receive org-scoped JWTs.
+        // Non-fatal: if WorkOS creation fails, the app org is still created and the
+        // WorkOS org ID can be back-filled later. Without it, users cannot access this
+        // org until the ID is set (org-scoped token lookup will fail — fail-secure).
+        try
+        {
+            var workOsOrgId = await workOs.CreateOrganizationAsync(org.Name, ct);
+            org.SetWorkOsOrgId(workOsOrgId);
+        }
+        catch (WorkOsException ex)
+        {
+            logger.LogWarning(ex,
+                "WorkOS org creation failed for app org {OrgId}. Org created without WorkOS ID.",
+                org.Id);
+        }
+
         await orgs.AddAsync(org, ct);
 
         // Creator becomes owner

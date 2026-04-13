@@ -22,6 +22,13 @@ public interface IWorkOsClient
         CancellationToken ct = default);
 
     /// <summary>
+    /// Creates a WorkOS organization and returns its ID (e.g. "org_01XXXXX").
+    /// Called when a new app org is created so the two are linked.
+    /// Throws <see cref="WorkOsException"/> on API errors.
+    /// </summary>
+    Task<string> CreateOrganizationAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
     /// Deletes a WorkOS user account as part of GDPR erasure.
     /// Throws <see cref="WorkOsException"/> on API errors.
     /// </summary>

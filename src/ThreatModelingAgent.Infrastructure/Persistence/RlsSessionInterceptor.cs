@@ -9,6 +9,13 @@ namespace ThreatModelingAgent.Infrastructure.Persistence;
 ///
 /// The org_id MUST be sourced from the validated JWT via ITenantContext — never
 /// from request parameters, body, or any client-supplied value (CLAUDE.md §8.2).
+///
+/// IMPORTANT: We execute SET LOCAL as a SEPARATE preceding command rather than
+/// prepending it to command.CommandText. Embedding SET LOCAL in CommandText creates
+/// multi-statement commands; Npgsql then returns one extra CommandComplete per
+/// statement. EF Core's NpgsqlModificationCommandBatch reads one CommandComplete per
+/// entity — the SET LOCAL's CommandComplete (0 rows) is attributed to the first
+/// entity, causing a spurious DbUpdateConcurrencyException.
 /// </summary>
 public sealed class RlsSessionInterceptor(ITenantContext tenantContext) : DbCommandInterceptor
 {
@@ -21,14 +28,14 @@ public sealed class RlsSessionInterceptor(ITenantContext tenantContext) : DbComm
         return result;
     }
 
-    public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+    public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
         DbCommand command,
         CommandEventData eventData,
         InterceptionResult<DbDataReader> result,
         CancellationToken cancellationToken = default)
     {
-        SetRlsVariable(command);
-        return ValueTask.FromResult(result);
+        await SetRlsVariableAsync(command, cancellationToken);
+        return result;
     }
 
     public override InterceptionResult<int> NonQueryExecuting(
@@ -40,14 +47,14 @@ public sealed class RlsSessionInterceptor(ITenantContext tenantContext) : DbComm
         return result;
     }
 
-    public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+    public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
         DbCommand command,
         CommandEventData eventData,
         InterceptionResult<int> result,
         CancellationToken cancellationToken = default)
     {
-        SetRlsVariable(command);
-        return ValueTask.FromResult(result);
+        await SetRlsVariableAsync(command, cancellationToken);
+        return result;
     }
 
     public override InterceptionResult<object> ScalarExecuting(
@@ -59,24 +66,45 @@ public sealed class RlsSessionInterceptor(ITenantContext tenantContext) : DbComm
         return result;
     }
 
-    public override ValueTask<InterceptionResult<object>> ScalarExecutingAsync(
+    public override async ValueTask<InterceptionResult<object>> ScalarExecutingAsync(
         DbCommand command,
         CommandEventData eventData,
         InterceptionResult<object> result,
         CancellationToken cancellationToken = default)
     {
-        SetRlsVariable(command);
-        return ValueTask.FromResult(result);
+        await SetRlsVariableAsync(command, cancellationToken);
+        return result;
     }
+
+    // ── Implementation ────────────────────────────────────────────────────────
 
     private void SetRlsVariable(DbCommand command)
     {
-        // If no org context (e.g. platform-level queries), set to empty string.
-        // RLS will deny access to any tenant-scoped row — fail-secure behavior (CLAUDE.md §4.3).
         var orgId = tenantContext.CurrentOrgId?.Value.ToString() ?? string.Empty;
 
-        // Prepend SET LOCAL so it applies only to the current transaction,
-        // preventing cross-request leakage in connection pooling scenarios.
-        command.CommandText = $"SET LOCAL \"app.current_org_id\" = '{orgId}';\n" + command.CommandText;
+        // Execute as a separate preceding command — do NOT embed in command.CommandText.
+        // See class doc for why prepending creates batch result misalignment.
+        using var setCmd = command.Connection!.CreateCommand();
+        setCmd.Transaction = command.Transaction;
+        setCmd.CommandText = "SELECT set_config('app.current_org_id', @v, true)";
+        var p = setCmd.CreateParameter();
+        p.ParameterName = "v";
+        p.Value = orgId;
+        setCmd.Parameters.Add(p);
+        setCmd.ExecuteNonQuery();
+    }
+
+    private async ValueTask SetRlsVariableAsync(DbCommand command, CancellationToken cancellationToken)
+    {
+        var orgId = tenantContext.CurrentOrgId?.Value.ToString() ?? string.Empty;
+
+        await using var setCmd = command.Connection!.CreateCommand();
+        setCmd.Transaction = command.Transaction;
+        setCmd.CommandText = "SELECT set_config('app.current_org_id', @v, true)";
+        var p = setCmd.CreateParameter();
+        p.ParameterName = "v";
+        p.Value = orgId;
+        setCmd.Parameters.Add(p);
+        await setCmd.ExecuteNonQueryAsync(cancellationToken);
     }
 }

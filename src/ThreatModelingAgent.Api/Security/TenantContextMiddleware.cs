@@ -11,17 +11,16 @@ namespace ThreatModelingAgent.Api.Security;
 ///
 /// Security invariants:
 /// - platform:admin tokens are allowed through to /v1/admin/* routes only; rejected everywhere else.
+/// - Authenticated non-admin requests MUST carry a valid org_id — missing or unresolvable org_id
+///   returns 403 MISSING_ORG_CONTEXT (fail-secure, CLAUDE.md §4.3).
 /// - Org-scoped routes reject requests where the org is suspended (ORG_SUSPENDED).
-/// - If org_id is present but the org is not found or suspended, context is NOT set — RLS denies
-///   all tenant-scoped data (fail-secure, CLAUDE.md §4.3).
-/// - If org_id is absent (e.g. bootstrap call to /v1/auth/session), context is not set and the
-///   request proceeds — individual endpoints enforce their own auth requirements, and RLS
-///   blocks tenant-scoped data without context (fail-secure).
 /// - Unauthenticated requests pass through (auth enforcement is on the endpoint).
 ///
 /// org_id resolution (dual-path for test compatibility):
-/// - Production: WorkOS puts "org_01XXXXX" in the JWT → looked up via GetByWorkOsOrgIdAsync.
-/// - Tests: TestAuthHandler injects the internal GUID directly → looked up via GetByIdAsync.
+/// - Production: WorkOS puts "org_01XXXXX" in the JWT → looked up via GetByWorkOsOrgIdAsync;
+///   tenant context is set to the org's internal UUID.
+/// - Tests: TestAuthHandler injects the internal GUID directly → looked up via GetByIdAsync;
+///   tenant context is set to the same GUID that was claimed (verified to exist in DB).
 /// </summary>
 public sealed class TenantContextMiddleware(RequestDelegate next)
 {
@@ -56,35 +55,59 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
 
             var orgIdClaim = context.User.FindFirstValue("org_id");
 
-            if (orgIdClaim is not null)
+            if (orgIdClaim is null)
             {
-                // Dual-path lookup:
-                //   Production path: WorkOS JWT contains WorkOS org ID (e.g. "org_01XXXXX")
-                //   Test path: TestAuthHandler injects the internal GUID directly
-                Organization? org;
-                if (Guid.TryParse(orgIdClaim, out var internalGuid))
-                    org = await orgs.GetByIdAsync(OrgId.From(internalGuid), context.RequestAborted);
-                else
-                    org = await orgs.GetByWorkOsOrgIdAsync(orgIdClaim, context.RequestAborted);
-
-                if (org is not null)
+                // Authenticated non-admin with no org_id — fail-secure (CLAUDE.md §4.3).
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new
                 {
-                    if (org.IsSuspended)
-                    {
-                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                        await context.Response.WriteAsJsonAsync(new
-                        {
-                            code = "ORG_SUSPENDED",
-                            message = "This organization has been suspended. Contact support."
-                        });
-                        return;
-                    }
-
-                    tenantContext.SetFromClaim(org.Id.Value);
-                }
-                // org not found for given org_id — context not set, RLS denies all data (fail-secure)
+                    code = "MISSING_ORG_CONTEXT",
+                    message = "This request requires an organization context."
+                });
+                return;
             }
-            // No org_id claim — context not set; endpoint-level auth and RLS enforce access
+
+            // Dual-path lookup:
+            //   Production path: WorkOS JWT contains WorkOS org ID (e.g. "org_01XXXXX")
+            //   Test path: TestAuthHandler injects the internal GUID directly
+            Organization? org;
+            Guid? resolvedInternalId;
+
+            if (Guid.TryParse(orgIdClaim, out var internalGuid))
+            {
+                org = await orgs.GetByIdAsync(OrgId.From(internalGuid), context.RequestAborted);
+                resolvedInternalId = internalGuid; // use the verified claimed GUID directly
+            }
+            else
+            {
+                org = await orgs.GetByWorkOsOrgIdAsync(orgIdClaim, context.RequestAborted);
+                resolvedInternalId = org?.Id.Value;
+            }
+
+            if (org is null)
+            {
+                // org_id present but not found — fail-secure (CLAUDE.md §4.3).
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    code = "MISSING_ORG_CONTEXT",
+                    message = "This request requires an organization context."
+                });
+                return;
+            }
+
+            if (org.IsSuspended)
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    code = "ORG_SUSPENDED",
+                    message = "This organization has been suspended. Contact support."
+                });
+                return;
+            }
+
+            tenantContext.SetFromClaim(resolvedInternalId!.Value);
         }
 
         await next(context);

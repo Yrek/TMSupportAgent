@@ -118,12 +118,12 @@ public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>, I
         var user = User.Create("workos_" + Guid.NewGuid().ToString("N"), userEmail ?? "owner@test.invalid");
         var membership = OrgMembership.Create(org.Id, user.Id, OrgMemberRole.Owner);
 
-        await SeedAsync(async db =>
+        await SeedAsync(db =>
         {
             db.Organizations.Add(org);
             db.Users.Add(user);
             db.OrgMemberships.Add(membership);
-            await db.SaveChangesAsync();
+            return Task.CompletedTask;
         });
 
         return (org.Id, user.Id);

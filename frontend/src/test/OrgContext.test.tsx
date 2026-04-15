@@ -5,7 +5,7 @@ import { OrgContext, useOrgContext } from "@/hooks/useOrgContext";
 describe("useOrgContext", () => {
   it("returns isOwner=true for owner role", () => {
     const value = {
-      currentOrg: { id: "org1", name: "Acme", slug: "acme", role: "owner" as const },
+      currentOrg: { id: "org1", name: "Acme", slug: "acme", role: "owner" as const, workosOrgId: null },
       allOrgs: [],
       currentRole: "owner" as const,
       isOwner: true,
@@ -22,7 +22,7 @@ describe("useOrgContext", () => {
 
   it("returns isOwner=false for member role", () => {
     const value = {
-      currentOrg: { id: "org1", name: "Acme", slug: "acme", role: "member" as const },
+      currentOrg: { id: "org1", name: "Acme", slug: "acme", role: "member" as const, workosOrgId: null },
       allOrgs: [],
       currentRole: "member" as const,
       isOwner: false,

@@ -226,6 +226,7 @@ public sealed class ThreatsControllerTests
     {
         var (orgId, userId) = await _factory.SeedOrgAndOwnerAsync("Add Threat Happy");
         JobId jobId = default!;
+        Guid elementId = default;
 
         await _factory.SeedAsync(async db =>
         {
@@ -238,8 +239,17 @@ public sealed class ThreatsControllerTests
             job.Transition(JobStatus.Synthesizing);
             job.Transition(JobStatus.Complete);
             db.Jobs.Add(job);
+
+            var arch = Architecture.Create(job.Id, orgId, "sys", [], "[]", "[]", "[]");
+            db.Architectures.Add(arch);
+
+            var element = ArchitectureElement.CreateUserAdded(
+                arch.Id, orgId, ElementType.Component, "Payment API", "Handles payments", "{}");
+            db.ArchitectureElements.Add(element);
+
             await db.SaveChangesAsync();
             jobId = job.Id;
+            elementId = element.Id;
         });
 
         var client = _factory.CreateAuthenticatedClient(userId, orgId);
@@ -248,7 +258,8 @@ public sealed class ThreatsControllerTests
             title = "New Threat",
             description = "Attack description",
             attackScenario = "Via API",
-            methodCategory = "Injection"
+            methodCategory = "Injection",
+            affectedElementIds = new[] { elementId }
         });
 
         var response = await client.PostAsync(

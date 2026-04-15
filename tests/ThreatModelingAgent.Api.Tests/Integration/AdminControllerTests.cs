@@ -73,7 +73,7 @@ public sealed class AdminControllerTests
 
         await _factory.SeedAsync(async db =>
         {
-            var org = await db.Organizations.FindAsync(orgBId.Value);
+            var org = await db.Organizations.FindAsync(orgBId);
             org!.Suspend();
             await db.SaveChangesAsync();
         });
@@ -177,7 +177,7 @@ public sealed class AdminControllerTests
 
         await _factory.SeedAsync(async db =>
         {
-            var org = await db.Organizations.FindAsync(orgId.Value);
+            var org = await db.Organizations.FindAsync(orgId);
             org!.Suspend();
             await db.SaveChangesAsync();
         });
@@ -202,7 +202,7 @@ public sealed class AdminControllerTests
 
         await _factory.SeedAsync(async db =>
         {
-            var org = await db.Organizations.FindAsync(orgId.Value);
+            var org = await db.Organizations.FindAsync(orgId);
             org!.SoftDelete();
             await db.SaveChangesAsync();
         });

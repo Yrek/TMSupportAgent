@@ -120,7 +120,7 @@ public sealed class SessionControllerTests
         orgs.GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
 
         var match = orgs.EnumerateArray()
-            .FirstOrDefault(o => o.GetProperty("orgId").GetGuid() == orgId.Value);
+            .FirstOrDefault(o => o.GetProperty("id").GetGuid() == orgId.Value);
 
         match.ValueKind.Should().NotBe(JsonValueKind.Undefined, "the seeded org should appear in the session");
         match.GetProperty("name").GetString().Should().Be("Session OrgMembership");
@@ -138,7 +138,7 @@ public sealed class SessionControllerTests
         response.EnsureSuccessStatusCode();
         var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var orgs = doc.RootElement.GetProperty("orgs");
-        var org = orgs.EnumerateArray().First(o => o.GetProperty("orgId").GetGuid() == orgId.Value);
+        var org = orgs.EnumerateArray().First(o => o.GetProperty("id").GetGuid() == orgId.Value);
 
         // Internal/admin-only fields must not appear in regular session response
         org.TryGetProperty("isSuspended", out _).Should().BeFalse("suspension state is admin-only");

@@ -1,5 +1,6 @@
 using System.Net;
 using FluentAssertions;
+using ThreatModelingAgent.Domain.ValueObjects;
 
 namespace ThreatModelingAgent.Api.Tests.Integration;
 
@@ -26,7 +27,7 @@ public sealed class OrgSuspensionTests
         _factory = factory;
     }
 
-    private async Task SuspendOrgAsync(Guid orgId)
+    private async Task SuspendOrgAsync(OrgId orgId)
     {
         await _factory.SeedAsync(async db =>
         {
@@ -36,7 +37,7 @@ public sealed class OrgSuspensionTests
         });
     }
 
-    private async Task UnsuspendOrgAsync(Guid orgId)
+    private async Task UnsuspendOrgAsync(OrgId orgId)
     {
         await _factory.SeedAsync(async db =>
         {
@@ -52,7 +53,7 @@ public sealed class OrgSuspensionTests
     public async Task SuspendedOrg_JobsEndpoint_Returns403()
     {
         var (orgId, userId) = await _factory.SeedOrgAndOwnerAsync("Suspended Jobs");
-        await SuspendOrgAsync(orgId.Value);
+        await SuspendOrgAsync(orgId);
 
         var client = _factory.CreateAuthenticatedClient(userId, orgId);
         var response = await client.GetAsync($"/v1/orgs/{orgId.Value}/jobs");
@@ -64,7 +65,7 @@ public sealed class OrgSuspensionTests
     public async Task SuspendedOrg_ResponseBody_ContainsOrgSuspendedCode()
     {
         var (orgId, userId) = await _factory.SeedOrgAndOwnerAsync("Suspended Code Check");
-        await SuspendOrgAsync(orgId.Value);
+        await SuspendOrgAsync(orgId);
 
         var client = _factory.CreateAuthenticatedClient(userId, orgId);
         var response = await client.GetAsync($"/v1/orgs/{orgId.Value}/jobs");
@@ -77,7 +78,7 @@ public sealed class OrgSuspensionTests
     public async Task SuspendedOrg_ArchitectureEndpoint_Returns403()
     {
         var (orgId, userId) = await _factory.SeedOrgAndOwnerAsync("Suspended Architecture");
-        await SuspendOrgAsync(orgId.Value);
+        await SuspendOrgAsync(orgId);
 
         var client = _factory.CreateAuthenticatedClient(userId, orgId);
         var response = await client.GetAsync($"/v1/orgs/{orgId.Value}/jobs/{Guid.NewGuid()}/architecture");
@@ -89,7 +90,7 @@ public sealed class OrgSuspensionTests
     public async Task SuspendedOrg_ThreatsEndpoint_Returns403()
     {
         var (orgId, userId) = await _factory.SeedOrgAndOwnerAsync("Suspended Threats");
-        await SuspendOrgAsync(orgId.Value);
+        await SuspendOrgAsync(orgId);
 
         var client = _factory.CreateAuthenticatedClient(userId, orgId);
         var response = await client.GetAsync($"/v1/orgs/{orgId.Value}/threats");
@@ -103,7 +104,7 @@ public sealed class OrgSuspensionTests
     public async Task SuspendedOrg_AdminToken_CanStillReachAdminRoutes()
     {
         var (orgId, _) = await _factory.SeedOrgAndOwnerAsync("Suspended Admin Still Works");
-        await SuspendOrgAsync(orgId.Value);
+        await SuspendOrgAsync(orgId);
 
         var client = _factory.CreateAdminClient();
         var response = await client.GetAsync("/v1/admin/stats");
@@ -116,7 +117,7 @@ public sealed class OrgSuspensionTests
     public async Task SuspendedOrg_AdminToken_CanUnsuspendOrg()
     {
         var (orgId, _) = await _factory.SeedOrgAndOwnerAsync("Suspended Can Unsuspend");
-        await SuspendOrgAsync(orgId.Value);
+        await SuspendOrgAsync(orgId);
 
         var client = _factory.CreateAdminClient();
         var response = await client.PostAsync($"/v1/admin/orgs/{orgId.Value}/unsuspend", null);
@@ -132,13 +133,13 @@ public sealed class OrgSuspensionTests
         var (orgId, userId) = await _factory.SeedOrgAndOwnerAsync("Restored Access");
 
         // Suspend
-        await SuspendOrgAsync(orgId.Value);
+        await SuspendOrgAsync(orgId);
         var client = _factory.CreateAuthenticatedClient(userId, orgId);
         var blockedResponse = await client.GetAsync($"/v1/orgs/{orgId.Value}/jobs");
         blockedResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
         // Unsuspend
-        await UnsuspendOrgAsync(orgId.Value);
+        await UnsuspendOrgAsync(orgId);
         var restoredResponse = await client.GetAsync($"/v1/orgs/{orgId.Value}/jobs");
         restoredResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -151,7 +152,7 @@ public sealed class OrgSuspensionTests
         var (orgAId, _) = await _factory.SeedOrgAndOwnerAsync("Cross Suspended A");
         var (orgBId, userBId) = await _factory.SeedOrgAndOwnerAsync("Cross Active B");
 
-        await SuspendOrgAsync(orgAId.Value);
+        await SuspendOrgAsync(orgAId);
 
         // Org B member should still have full access
         var clientB = _factory.CreateAuthenticatedClient(userBId, orgBId);

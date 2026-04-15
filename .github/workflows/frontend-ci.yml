@@ -13,6 +13,14 @@ on:
       - "frontend/**"
       - "docs/api/openapi.yaml"
       - ".github/workflows/frontend-ci.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "staging"
+        type: choice
+        options: [staging, prod]
 
 defaults:
   run:
@@ -94,7 +102,8 @@ jobs:
           retention-days: 1
 
   # ── Deploy to Azure Static Web Apps ────────────────────────────────────────
-  # Runs only on push to main, after the build job succeeds.
+  # Runs on push to main (default: staging) or manual dispatch (staging/prod),
+  # after the build job succeeds.
   # Uses OIDC (no long-lived secrets) to authenticate with Azure and retrieve
   # the SWA deployment token at deploy time.
 
@@ -102,8 +111,8 @@ jobs:
     name: Deploy to Azure Static Web Apps
     runs-on: ubuntu-latest
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: prod
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'staging' }}
     permissions:
       id-token: write  # Required for OIDC login
       contents: read
@@ -125,9 +134,12 @@ jobs:
       - name: Get SWA deployment token
         id: swa-token
         run: |
+          ENV=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'staging' }}
+          SWA_NAME="tma-${ENV}-swa"
+          SWA_RG="tma-${ENV}-rg"
           TOKEN=$(az staticwebapp secrets list \
-            --name tma-prod-swa \
-            --resource-group tma-prod-rg \
+            --name "$SWA_NAME" \
+            --resource-group "$SWA_RG" \
             --query "properties.apiKey" \
             --output tsv)
           echo "::add-mask::$TOKEN"

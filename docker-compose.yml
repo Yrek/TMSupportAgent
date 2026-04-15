@@ -1,22 +1,23 @@
 version: "3.9"
 
-# Local development stack for ThreatModelingAgent
-# Provides: PostgreSQL, Azurite (blob storage), Azure Service Bus emulator
-#
-# Usage:
-#   docker compose up -d
-#   # then run migrations (see docs/deployment/local.md)
-#   dotnet ef database update --project src/ThreatModelingAgent.Infrastructure
-#
-# Ports exposed to host:
-#   5432  — PostgreSQL
-#   10000 — Azurite blob
-#   10001 — Azurite queue
-#   10002 — Azurite table
-#   5672  — Service Bus emulator AMQP
-#   8080  — Service Bus emulator management UI
-
 services:
+  frontend:
+    profiles: ["frontend"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://host.docker.internal:5240/v1}
+        VITE_WORKOS_CLIENT_ID: ${VITE_WORKOS_CLIENT_ID:-client_localdev}
+        VITE_WORKOS_REDIRECT_URI: ${VITE_WORKOS_REDIRECT_URI:-http://localhost:4173/auth/callback}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+        VITE_APPINSIGHTS_CONNECTION_STRING: ${VITE_APPINSIGHTS_CONNECTION_STRING:-}
+        VITE_APP_VERSION: ${VITE_APP_VERSION:-local}
+    container_name: tma-frontend
+    restart: unless-stopped
+    ports:
+      - "4173:80"
+
   postgres:
     image: postgres:16-alpine
     container_name: tma-postgres
@@ -47,28 +48,8 @@ services:
     volumes:
       - azurite_data:/data
 
-  servicebus-emulator:
-    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
-    container_name: tma-servicebus
-    restart: unless-stopped
-    environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "LocalDev!23"
-    ports:
-      - "5672:5672"
-      - "8080:8080"
-    volumes:
-      - ./infra/local/servicebus-config.json:/ServiceBus_Emulator/ConfigFiles/Config.json
-    depends_on:
-      - sqledge
-    healthcheck:
-      test: ["CMD-SHELL", "exit 0"]
-      interval: 10s
-      timeout: 10s
-      retries: 20
-
-  sqledge:
-    image: mcr.microsoft.com/azure-sql-edge:latest
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: tma-sqledge
     restart: unless-stopped
     environment:
@@ -76,6 +57,31 @@ services:
       MSSQL_SA_PASSWORD: "LocalDev!23"
     volumes:
       - sqledge_data:/var/opt/mssql
+    networks:
+      - sb-emulator
+
+  servicebus-emulator:
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    container_name: tma-servicebus
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "LocalDev!23"
+      SQL_SERVER: "mssql"
+      EMULATOR_HTTP_PORT: "5300"
+      SQL_WAIT_INTERVAL: "30"
+    ports:
+      - "5672:5672"
+      - "5300:5300"
+    volumes:
+      - ./infra/local/servicebus-config.json:/ServiceBus_Emulator/ConfigFiles/Config.json
+    depends_on:
+      - mssql
+    networks:
+      - sb-emulator
+
+networks:
+  sb-emulator:
 
 volumes:
   postgres_data:

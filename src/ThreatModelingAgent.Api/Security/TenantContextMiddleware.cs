@@ -10,7 +10,8 @@ namespace ThreatModelingAgent.Api.Security;
 /// Runs after authentication middleware — JWT has already been validated by this point.
 ///
 /// Security invariants:
-/// - platform:admin tokens are allowed through to /v1/admin/* routes only; rejected everywhere else.
+/// - platform:admin tokens are allowed through to /v1/admin/* and /v1/auth/session;
+///   rejected everywhere else.
 /// - Authenticated non-admin requests MUST carry a valid org_id — missing or unresolvable org_id
 ///   returns 403 MISSING_ORG_CONTEXT (fail-secure, CLAUDE.md §4.3).
 /// - Org-scoped routes reject requests where the org is suspended (ORG_SUSPENDED).
@@ -35,9 +36,13 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
 
             if (isPlatformAdmin)
             {
-                // Platform admin tokens are only accepted on /v1/admin/* routes.
+                // Platform admin tokens are accepted on:
+                //   - /v1/admin/* (platform admin API)
+                //   - /v1/auth/session (session introspection/sign-out)
                 // All other routes reject them — service identity separation (CLAUDE.md §8.2).
-                if (!context.Request.Path.StartsWithSegments("/v1/admin", StringComparison.OrdinalIgnoreCase))
+                var isAdminRoute = context.Request.Path.StartsWithSegments("/v1/admin", StringComparison.OrdinalIgnoreCase);
+                var isSessionRoute = context.Request.Path.StartsWithSegments("/v1/auth/session", StringComparison.OrdinalIgnoreCase);
+                if (!isAdminRoute && !isSessionRoute)
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     await context.Response.WriteAsJsonAsync(new
@@ -48,7 +53,7 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                     return;
                 }
 
-                // Admin route — no org_id claim required; skip tenant context setup
+                // Allowed admin/session route — no org_id claim required; skip tenant context setup
                 await next(context);
                 return;
             }

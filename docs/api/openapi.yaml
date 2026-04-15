@@ -130,15 +130,18 @@ components:
 
     SessionResponse:
       type: object
-      required: [userId, orgs]
+      required: [userId, orgs, isPlatformAdmin]
       properties:
         userId:
           type: string
           format: uuid
+          nullable: true
         orgs:
           type: array
           items:
             $ref: '#/components/schemas/OrgSummary'
+        isPlatformAdmin:
+          type: boolean
 
     # ── Organisations ────────────────────────────────────────────────────────────
 
@@ -155,6 +158,9 @@ components:
           type: string
         role:
           $ref: '#/components/schemas/OrgMemberRole'
+        workosOrgId:
+          type: string
+          nullable: true
 
     OrgDetail:
       type: object

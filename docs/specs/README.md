@@ -26,6 +26,7 @@ All specifications for the Threat Modeling Agent. **No implementation begins wit
 | 04 | [../api/openapi.yaml](../api/openapi.yaml) | API Specification (OpenAPI) | **Approved** | 2026-03-31 | OpenAPI 3.1; authoritative API contract |
 | 05 | [05-llm-workflow.md](05-llm-workflow.md) | LLM Workflow Specification | **Approved** | 2026-03-31 | Pipeline stages, model routing, typed contracts |
 | 06 | [06-security.md](06-security.md) | Security Specification | **Approved** | 2026-03-31 | ISO 27001 + CLAUDE.md scoped to this system |
+| 09 | [09-security-baseline.md](09-security-baseline.md) | Security Baseline (CLAUDE.md Enforcement) | **Approved** | 2026-04-15 | Implementation baseline; maps code-time controls and tracked TODO gaps |
 
 ---
 

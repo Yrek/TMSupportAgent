@@ -56,7 +56,7 @@ public sealed class SessionController(
 
             orgList.Add(new
             {
-                orgId = org.Id.Value,
+                id = org.Id.Value,
                 name = org.Name,
                 slug = org.Slug,
                 role = membership.Role.ToString().ToLower(),

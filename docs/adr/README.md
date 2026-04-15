@@ -16,6 +16,7 @@ ADRs capture significant architectural decisions: why they were made, what alter
 | ADR | Title | Status | Date |
 |---|---|---|---|
 | [ADR-001](ADR-001-workos-identity.md) | Identity Provider: WorkOS over Azure Entra External ID / Auth0 | **Accepted** | 2026-03-31 |
+| [ADR-002](ADR-002-azure-region-strategy.md) | Azure Region Strategy: Sweden Central Primary, West Europe Fallback | **Accepted** | 2026-04-15 |
 
 ## Template
 

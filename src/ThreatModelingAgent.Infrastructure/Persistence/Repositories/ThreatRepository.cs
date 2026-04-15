@@ -44,8 +44,26 @@ internal sealed class ThreatRepository(AppDbContext db) : IThreatRepository
 
     public async Task<string> NextIdentifierAsync(JobId jobId, OrgId orgId, CancellationToken ct = default)
     {
-        var count = await CountByJobAsync(jobId, orgId, ct);
-        return $"T-{count + 1:D3}";
+        // Use max numeric suffix, not count+1, so numbering remains monotonic even
+        // when threats are deleted (avoids accidental identifier reuse).
+        var identifiers = await db.Threats
+            .Where(t => t.JobId == jobId && t.OrgId == orgId)
+            .Select(t => t.Identifier)
+            .ToListAsync(ct);
+
+        var max = 0;
+        foreach (var identifier in identifiers)
+        {
+            if (identifier is { Length: > 2 } &&
+                identifier.StartsWith("T-", StringComparison.OrdinalIgnoreCase) &&
+                int.TryParse(identifier[2..], out var parsed) &&
+                parsed > max)
+            {
+                max = parsed;
+            }
+        }
+
+        return $"T-{max + 1:D3}";
     }
 
     public async Task DeleteSystemGeneratedAsync(JobId jobId, OrgId orgId, CancellationToken ct = default)

@@ -62,8 +62,8 @@ public sealed class MembersControllerTests
         // Seed the org with a WorkOS org ID so the invite can proceed
         await _factory.SeedAsync(async db =>
         {
-            var org = await db.Organizations.FindAsync(orgId.Value);
-            org!.SetWorkOsOrgId("workos_org_123");
+            var org = await db.Organizations.FindAsync(orgId);
+            org!.SetWorkOsOrgId($"workos_org_{Guid.NewGuid():N}");
             await db.SaveChangesAsync();
         });
 
@@ -89,8 +89,8 @@ public sealed class MembersControllerTests
 
         await _factory.SeedAsync(async db =>
         {
-            var org = await db.Organizations.FindAsync(orgId.Value);
-            org!.SetWorkOsOrgId("workos_org_enum");
+            var org = await db.Organizations.FindAsync(orgId);
+            org!.SetWorkOsOrgId($"workos_org_{Guid.NewGuid():N}");
             await db.SaveChangesAsync();
         });
 
@@ -120,7 +120,7 @@ public sealed class MembersControllerTests
 
         await _factory.SeedAsync(async db =>
         {
-            var memberUser = User.Create("workos_member", "member@test.invalid");
+            var memberUser = User.Create($"workos_member_{Guid.NewGuid():N}", "member@test.invalid");
             db.Users.Add(memberUser);
             var membership = OrgMembership.Create(orgId, memberUser.Id, OrgMemberRole.Member);
             db.OrgMemberships.Add(membership);
@@ -165,7 +165,7 @@ public sealed class MembersControllerTests
 
         await _factory.SeedAsync(async db =>
         {
-            var u = User.Create("workos_rm", "remove@test.invalid");
+            var u = User.Create($"workos_rm_{Guid.NewGuid():N}", "remove@test.invalid");
             db.Users.Add(u);
             db.OrgMemberships.Add(OrgMembership.Create(orgId, u.Id, OrgMemberRole.Member));
             await db.SaveChangesAsync();

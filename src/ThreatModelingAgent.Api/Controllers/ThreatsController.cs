@@ -29,6 +29,7 @@ namespace ThreatModelingAgent.Api.Controllers;
 public sealed class ThreatsController(
     IJobRepository jobs,
     IMembershipRepository memberships,
+    IArchitectureRepository architectures,
     IThreatRepository threats,
     IBlobStorage blob,
     IAuditLogger audit,
@@ -127,6 +128,21 @@ public sealed class ThreatsController(
             {
                 code = "ELEMENT_REQUIRED",
                 message = "At least one affected element ID is required (spec data-model §9)."
+            });
+
+        // Enforce data-model §9: every affected element ID must belong to this job's architecture.
+        var arch = await architectures.GetByJobIdAsync(JobId.From(jobId), orgIdValue, ct);
+        if (arch is null) return NotFound();
+
+        var jobElements = await architectures.ListElementsAsync(arch.Id, orgIdValue, ct);
+        var validElementIds = jobElements.Select(e => e.Id).ToHashSet();
+        var invalidElementIds = request.AffectedElementIds.Where(id => !validElementIds.Contains(id)).ToArray();
+        if (invalidElementIds.Length > 0)
+            return UnprocessableEntity(new
+            {
+                code = "INVALID_AFFECTED_ELEMENT",
+                message = "One or more affected elements do not belong to this job.",
+                invalidElementIds
             });
 
         var identifier = await threats.NextIdentifierAsync(JobId.From(jobId), orgIdValue, ct);

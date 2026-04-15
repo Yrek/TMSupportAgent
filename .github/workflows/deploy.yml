@@ -136,6 +136,7 @@ jobs:
           parameters: >
             environmentName=${{ needs.set-env.outputs.environment }}
             workosClientId=${{ secrets.WORKOS_CLIENT_ID }}
+            workosApiKey=${{ secrets.WORKOS_API_KEY }}
             anthropicApiKey=${{ secrets.ANTHROPIC_API_KEY }}
             azureOpenAiResourceName=${{ vars.AZURE_OPENAI_RESOURCE_NAME }}
             pgAdminLogin=${{ secrets.PG_ADMIN_LOGIN }}

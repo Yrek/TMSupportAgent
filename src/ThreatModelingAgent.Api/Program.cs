@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Threading.RateLimiting;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -55,6 +56,7 @@ try
 
     // ── Infrastructure (DB, repos, audit logger) ────────────────────────────
     builder.Services.AddInfrastructure(builder.Configuration);
+    builder.Services.AddHttpContextAccessor();
 
     // ── WorkOS HTTP client — explicit timeout (CLAUDE.md §9.8) ─────────────
     builder.Services.AddHttpClient("WorkOS", c =>
@@ -114,6 +116,18 @@ try
     builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
     // ── Rate limiting — app-layer fixed window (CLAUDE.md §9.1, OD-6) ──────
+    static string GetRateLimitPartitionKey(HttpContext context)
+    {
+        // Prefer authenticated user identity when available so test/automation traffic
+        // does not collapse into one shared loopback bucket. Fallback remains per-IP.
+        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!string.IsNullOrWhiteSpace(userId))
+            return $"user:{userId}";
+
+        var ip = context.Connection.RemoteIpAddress?.ToString();
+        return $"ip:{(string.IsNullOrWhiteSpace(ip) ? "unknown" : ip)}";
+    }
+
     builder.Services.AddRateLimiter(options =>
     {
         options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -127,23 +141,29 @@ try
             }, ct);
         };
 
-        // General API: 60 req/min per IP
-        options.AddFixedWindowLimiter("api", o =>
-        {
-            o.Window = TimeSpan.FromMinutes(1);
-            o.PermitLimit = 60;
-            o.QueueLimit = 0;
-            o.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        });
+        // General API: 60 req/min per caller partition.
+        options.AddPolicy("api", context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: GetRateLimitPartitionKey(context),
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    Window = TimeSpan.FromMinutes(1),
+                    PermitLimit = 60,
+                    QueueLimit = 0,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+                }));
 
-        // Job submission / sensitive operations: 10 req/min per IP (CLAUDE.md §9.1)
-        options.AddFixedWindowLimiter("strict", o =>
-        {
-            o.Window = TimeSpan.FromMinutes(1);
-            o.PermitLimit = 10;
-            o.QueueLimit = 0;
-            o.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        });
+        // Job submission / sensitive operations: 10 req/min per caller partition.
+        options.AddPolicy("strict", context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: GetRateLimitPartitionKey(context),
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    Window = TimeSpan.FromMinutes(1),
+                    PermitLimit = 10,
+                    QueueLimit = 0,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+                }));
     });
 
     // ── Exception handling — no internal detail to clients (CLAUDE.md §7.6) ─
@@ -171,17 +191,16 @@ try
 
     // 3. Exception handler — before anything that can throw
     app.UseExceptionHandler();
-
-    // 4. Rate limiting
-    app.UseRateLimiter();
-
-    // 5. HTTPS redirect (CLAUDE.md §11.4)
+    // 4. HTTPS redirect (CLAUDE.md ?11.4)
     app.UseHttpsRedirection();
 
-    // 6. Authentication — validates JWT against WorkOS JWKS
+    // 5. Authentication ? validates JWT against WorkOS JWKS
     app.UseAuthentication();
 
-    // 7. Tenant context — reads org_id from the now-validated JWT
+    // 6. Rate limiting (after auth so partitions can use user claims)
+    app.UseRateLimiter();
+
+    // 7. Tenant context ? reads org_id from the now-validated JWT
     app.UseMiddleware<TenantContextMiddleware>();
 
     // 8. Authorization

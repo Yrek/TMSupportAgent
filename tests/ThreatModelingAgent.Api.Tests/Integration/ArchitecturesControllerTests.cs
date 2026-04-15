@@ -293,7 +293,7 @@ public sealed class ArchitecturesControllerTests
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("name").GetString().Should().Be("Payment Service");
-        doc.RootElement.GetProperty("source").GetString().Should().Be("UserAdded");
+        doc.RootElement.GetProperty("source").GetString().Should().Be("user_added");
     }
 
     [Fact]

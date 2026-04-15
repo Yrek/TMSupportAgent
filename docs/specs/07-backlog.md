@@ -317,6 +317,9 @@ These gaps were found during a full cross-spec review. Each violates a MUST or S
 | GAP-TH5 | **SHOULD** | Frontend | `ElementDetailPanel` does not show related threats, mitigations, assumptions, or control mappings for the selected element — violates `01-product.md §19` SHOULD per-element views | `01-product.md §19` |
 | GAP-TH6 | **SHOULD** | Frontend | Diagram state comparison (original extracted vs user-corrected overlay) is not implemented and is not listed in the deferred-by-design table — `01-product.md §19` SHOULD; should be explicitly deferred or implemented | `01-product.md §19` |
 | GAP-TH7 | **MUST** | Frontend / API | Pre-analysis threat/concern addition (during `AwaitingReview` status) is blocked by the API status gate (`Complete or Partial` only) and not surfaced in the UI; `01-product.md §19` MUST "the user can add their own threats or concerns" in the pre-analysis correction workflow | `01-product.md §19` |
+| GAP-SEC1 | **MUST** | API / Messaging | Job/org destructive delete flow purges DB rows and blobs but does not explicitly purge queued Service Bus messages tied to the deleted job/org | `02-architecture.md §13` |
+| GAP-SEC2 | **MUST** | Frontend / Deployment | CSP policy in `staticwebapp.config.json` still uses permissive directives (`style-src 'unsafe-inline'`, broad `connect-src`), requiring production tightening | `08-frontend.md §3.3`, `CLAUDE.md §11` |
+| GAP-SEC3 | **SHOULD** | Worker / Domain | Per-job persisted token usage (`jobs.llm_token_usage`) lacks aggregate input/output token counts across pipeline calls; currently stores routing metadata/blob path only | `02-architecture.md §9`, `CLAUDE.md §16.6` |
 
 ### Implementation notes
 

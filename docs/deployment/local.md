@@ -97,7 +97,7 @@ This starts:
 |---|---|---|
 | `tma-postgres` | PostgreSQL 16 | `localhost:5432` |
 | `tma-azurite` | Azure Blob Storage emulator | `localhost:10000` |
-| `tma-servicebus` | Azure Service Bus emulator | `localhost:5672` (AMQP), `localhost:8080` (UI) |
+| `tma-servicebus` | Azure Service Bus emulator | `localhost:5672` (AMQP), `localhost:5300` (management endpoint) |
 | `tma-sqledge` | SQL Edge (required by Service Bus emulator) | — |
 
 Wait for all containers to be healthy:
@@ -108,13 +108,13 @@ docker compose ps
 
 ### Service Bus emulator connection string
 
-After the emulator starts, get the connection string from the management UI at http://localhost:8080, or use:
+The emulator uses a fixed well-known key — no UI visit required. The Worker's `appsettings.Development.json.example` already contains the correct value:
 
 ```
-Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=<key-from-ui>
+Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KbHBXKmv/+Kg==;UseDevelopmentEmulator=true;
 ```
 
-Set this as `AzureServiceBus:ConnectionString` in the Worker's `appsettings.Development.json`.
+No further configuration is needed for the Service Bus connection string.
 
 ### Azurite connection string
 
@@ -127,8 +127,11 @@ Azurite uses a fixed well-known development connection string. The API's example
 ```bash
 dotnet ef database update \
   --project src/ThreatModelingAgent.Infrastructure \
-  --startup-project src/ThreatModelingAgent.Api
+  --startup-project src/ThreatModelingAgent.Api \
+  --connection "Host=localhost;Port=5432;Database=threatmodeling_dev;Username=postgres;Password=localdev"
 ```
+
+The `--connection` flag is required because `dotnet ef` runs a design-time host that may not load `appsettings.Development.json` automatically. Passing the connection string explicitly bypasses this.
 
 This applies all migrations including the Row-Level Security policies (spec §7.2).
 
@@ -172,7 +175,52 @@ The Worker connects to Service Bus and polls for `analysis-jobs` messages. It lo
 
 ---
 
-## 7. Run tests
+## 7. Run the frontend (dev mode)
+
+In a third terminal:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Frontend URL:
+- http://localhost:5173
+
+Required frontend env values (copy `frontend/.env.example` to `frontend/.env.local`):
+- `VITE_API_BASE_URL=http://localhost:5240/v1`
+- `VITE_WORKOS_CLIENT_ID=<client_...>`
+- `VITE_WORKOS_REDIRECT_URI=http://localhost:5173/auth/callback`
+
+---
+
+## 8. Local frontend deployment (containerized static build)
+
+This builds the production frontend bundle and serves it with Nginx via Docker Compose.
+
+```bash
+# Optional: override build-time frontend env vars
+export VITE_API_BASE_URL=http://host.docker.internal:5240/v1
+export VITE_WORKOS_CLIENT_ID=client_XXXXXXXXXXXX
+export VITE_WORKOS_REDIRECT_URI=http://localhost:4173/auth/callback
+
+# Build + run frontend container only
+docker compose --profile frontend up -d --build frontend
+```
+
+Frontend deployed URL:
+- http://localhost:4173
+
+To stop it:
+
+```bash
+docker compose --profile frontend stop frontend
+```
+
+---
+
+## 9. Run tests
 
 ```bash
 dotnet test ThreatModelingAgent.slnx
@@ -201,6 +249,11 @@ The emulator depends on SQL Edge which can take 30–60 seconds to start. Check 
 
 ---
 
+**Frontend build fails with missing `VITE_*` values**  
+Set `VITE_API_BASE_URL`, `VITE_WORKOS_CLIENT_ID`, and `VITE_WORKOS_REDIRECT_URI` before running `npm run build` or the containerized frontend deployment.
+
+---
+
 ## Resetting local state
 
 ```bash
@@ -211,5 +264,6 @@ docker compose down -v
 docker compose up -d
 dotnet ef database update \
   --project src/ThreatModelingAgent.Infrastructure \
-  --startup-project src/ThreatModelingAgent.Api
+  --startup-project src/ThreatModelingAgent.Api \
+  --connection "Host=localhost;Port=5432;Database=threatmodeling_dev;Username=postgres;Password=localdev"
 ```

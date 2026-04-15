@@ -37,6 +37,9 @@ public sealed class IdpController(
 {
     private static readonly HashSet<string> AllowedProviderTypes =
         ["okta", "google_workspace", "entra_id", "oidc", "saml"];
+    private static readonly System.Text.RegularExpressions.Regex DomainHintRegex =
+        new(@"^(?=.{1,253}$)(?!-)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
 
     // GET /v1/orgs/{orgId}/idp
     [HttpGet]
@@ -82,10 +85,27 @@ public sealed class IdpController(
         if (request.DomainHints is not { Length: > 0 })
             return BadRequest(new { code = "DOMAIN_HINTS_REQUIRED", message = "At least one domain hint is required." });
 
-        foreach (var hint in request.DomainHints)
+        var normalizedHints = request.DomainHints
+            .Select(NormalizeDomainHint)
+            .ToArray();
+
+        if (normalizedHints.Any(string.IsNullOrWhiteSpace))
+            return BadRequest(new { code = "INVALID_DOMAIN_HINT", message = "Domain hints must not be empty." });
+
+        if (normalizedHints.Distinct(StringComparer.Ordinal).Count() != normalizedHints.Length)
+            return BadRequest(new { code = "DUPLICATE_DOMAIN_HINT", message = "Domain hints must be unique." });
+
+        foreach (var hint in normalizedHints)
         {
-            if (string.IsNullOrWhiteSpace(hint) || hint.Length > 253 || !hint.Contains('.'))
+            if (!DomainHintRegex.IsMatch(hint))
                 return BadRequest(new { code = "INVALID_DOMAIN_HINT", message = $"Invalid domain hint: '{hint}'." });
+
+            if (await idpConfigs.DomainHintInUseByAnotherOrgAsync(orgIdValue, hint, ct))
+                return Conflict(new
+                {
+                    code = "DOMAIN_HINT_ALREADY_CLAIMED",
+                    message = $"Domain hint '{hint}' is already configured by another organization."
+                });
         }
 
         // Replace existing config if present (idempotent PUT)
@@ -97,7 +117,7 @@ public sealed class IdpController(
             orgIdValue,
             request.WorkOsConnectionId,
             request.ProviderType,
-            request.DomainHints);
+            normalizedHints);
 
         await idpConfigs.AddAsync(config, ct);
         await idpConfigs.SaveChangesAsync(ct);
@@ -151,4 +171,7 @@ public sealed class IdpController(
         updatedAt = c.UpdatedAt
         // WorkOsConnectionId intentionally omitted from response — internal identifier
     };
+
+    private static string NormalizeDomainHint(string hint)
+        => hint.Trim().TrimEnd('.').ToLowerInvariant();
 }

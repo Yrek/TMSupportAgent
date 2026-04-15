@@ -90,7 +90,7 @@ public sealed class MeControllerTests
         // User record must still exist in DB (fail-secure — WorkOS failed before DB update)
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ThreatModelingAgent.Infrastructure.Persistence.AppDbContext>();
-        var user = await db.Users.FindAsync(userId.Value);
+        var user = await db.Users.FindAsync(userId);
         user.Should().NotBeNull();
         user!.IsDeleted.Should().BeFalse();
     }

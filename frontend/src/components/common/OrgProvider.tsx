@@ -12,7 +12,7 @@ interface OrgProviderProps {
 export function OrgProvider({ children }: OrgProviderProps) {
   const { orgId } = useParams<{ orgId: string }>();
   const { data: session } = useSession();
-  const { user, getAccessToken } = useAuth();
+  const { user, getAccessToken, switchToOrganization } = useAuth();
 
   const allOrgs = session?.orgs ?? [];
   const currentOrg = orgId ? (allOrgs.find((o) => o.id === orgId) ?? null) : null;
@@ -31,14 +31,17 @@ export function OrgProvider({ children }: OrgProviderProps) {
   useEffect(() => {
     if (!workosOrgId) return;
 
-    void getAccessToken({ organizationId: workosOrgId }).then((token) => {
-      setAccessToken(token ?? null);
-    });
+    void switchToOrganization({ organizationId: workosOrgId })
+      .then(() => getAccessToken({ forceRefresh: true }))
+      .then((token) => {
+        setAccessToken(token ?? null);
+      });
     registerSilentRefresh(async () => {
-      const t = await getAccessToken({ organizationId: workosOrgId });
+      await switchToOrganization({ organizationId: workosOrgId });
+      const t = await getAccessToken({ forceRefresh: true });
       return t ?? null;
     });
-  }, [workosOrgId, getAccessToken]);
+  }, [workosOrgId, getAccessToken, switchToOrganization]);
 
   return (
     <OrgContext.Provider value={{ currentOrg, allOrgs, currentRole, isOwner, currentUserId, isPlatformAdmin }}>

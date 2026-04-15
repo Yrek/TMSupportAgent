@@ -24,6 +24,9 @@ namespace ThreatModelingAgent.Api.Tests.Integration;
 /// </summary>
 public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
+    private static readonly TimeSpan ContainerStartupTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan MigrationTimeout = TimeSpan.FromSeconds(60);
+
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder()
         .WithImage("postgres:16-alpine")
         .Build();
@@ -74,12 +77,38 @@ public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>, I
 
     public async Task InitializeAsync()
     {
-        await _postgres.StartAsync();
+        try
+        {
+            using var startCts = new CancellationTokenSource(ContainerStartupTimeout);
+            await _postgres.StartAsync(startCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            throw new TimeoutException(
+                $"Testcontainers PostgreSQL startup exceeded {ContainerStartupTimeout.TotalSeconds}s. " +
+                "Check Docker Desktop status/permissions.");
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                "Failed to start Testcontainers PostgreSQL. " +
+                "Check Docker Desktop status and access to the Docker engine.", ex);
+        }
 
         // Apply all EF migrations to the fresh database.
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await db.Database.MigrateAsync();
+        try
+        {
+            using var migrateCts = new CancellationTokenSource(MigrationTimeout);
+            await db.Database.MigrateAsync(migrateCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            throw new TimeoutException(
+                $"EF migrations exceeded {MigrationTimeout.TotalSeconds}s in test setup. " +
+                "Check DB container health and migration lock contention.");
+        }
     }
 
     public new async Task DisposeAsync()
@@ -164,6 +193,7 @@ public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>, I
     {
         var claims = new Dictionary<string, string>
         {
+            [ClaimTypes.NameIdentifier] = Guid.NewGuid().ToString(),
             [ClaimTypes.Role] = "platform:admin",
         };
 

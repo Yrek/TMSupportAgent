@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using ThreatModelingAgent.Domain.Entities;
 using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Domain.ValueObjects;
@@ -10,7 +11,7 @@ namespace ThreatModelingAgent.Infrastructure.Services;
 /// Writes to the append-only audit_log table.
 /// Serializes only non-PII identifiers in the details payload (CLAUDE.md §10.4).
 /// </summary>
-internal sealed class AuditLogger(AppDbContext db) : IAuditLogger
+internal sealed class AuditLogger(AppDbContext db, IHttpContextAccessor? httpContextAccessor = null) : IAuditLogger
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -27,9 +28,11 @@ internal sealed class AuditLogger(AppDbContext db) : IAuditLogger
         string? ipAddress = null,
         CancellationToken ct = default)
     {
-        // Correlation ID should come from the request context; fall back to new Guid
-        // In production this is enriched by the middleware pipeline
-        var correlationId = Guid.NewGuid();
+        // Correlation ID should come from request middleware when available.
+        // Worker/background flows have no HttpContext, so we safely fall back.
+        var correlationId = httpContextAccessor?.HttpContext?.Items["CorrelationId"] is Guid g
+            ? g
+            : Guid.NewGuid();
 
         var detailsJson = details is null
             ? "{}"

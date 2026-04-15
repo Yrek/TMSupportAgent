@@ -219,6 +219,7 @@ public sealed class JobsControllerTests
         await _factory.SeedAsync(async db =>
         {
             var job = Job.Create(orgId, userId, "To Delete");
+            job.Transition(JobStatus.Failed); // terminal => deletable
             db.Jobs.Add(job);
             await db.SaveChangesAsync();
             jobId = job.Id;

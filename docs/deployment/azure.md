@@ -1,6 +1,6 @@
 # Azure Deployment
 
-Deploys the Threat Modeling Agent to Azure Container Apps in West Europe (EU data residency — spec §3).
+Deploys the Threat Modeling Agent with primary workloads in Sweden Central (EU data residency — spec §3). Services that are unavailable in Sweden Central (for example SWA management) are placed in West Europe.
 
 ---
 
@@ -10,7 +10,7 @@ Deploys the Threat Modeling Agent to Azure Container Apps in West Europe (EU dat
 Internet (HTTPS)
     │
     ▼
-Container Apps Environment (West Europe)
+Container Apps Environment (Sweden Central)
     ├── api            (public ingress, always-on)
     └── worker         (no ingress, scales to zero, KEDA queue trigger)
         │
@@ -41,7 +41,7 @@ You also need:
 - An Azure subscription with Contributor access
 - A WorkOS account with an application configured
 - An Anthropic API key
-- An Azure OpenAI resource pre-provisioned in West Europe with `gpt-4o` and `gpt-4o-mini` deployments
+- An Azure OpenAI resource pre-provisioned in a supported EU region (`swedencentral` preferred; use `westeurope` if required by quota/availability) with `gpt-4o` and `gpt-4o-mini` deployments
 
 ---
 
@@ -59,7 +59,7 @@ az account set --subscription YOUR_SUBSCRIPTION_ID
 Azure OpenAI cannot be provisioned via standard Bicep — it requires quota approval.
 
 1. Go to the Azure portal → Create a resource → Azure OpenAI
-2. Choose **West Europe** as the region
+2. Choose **Sweden Central** when available in your subscription/quota; otherwise use **West Europe**
 3. Deploy `gpt-4o` and `gpt-4o-mini` in that resource
 4. Note the resource name — you will need it as `azureOpenAiResourceName`
 
@@ -76,13 +76,15 @@ Edit `infra/parameters/production.bicepparam` with your values. This file is git
 
 ```bash
 az deployment sub create \
-  --location westeurope \
+  --location swedencentral \
   --template-file infra/main.bicep \
   --parameters infra/parameters/production.bicepparam \
   --name tma-prod-$(date +%Y%m%d)
 ```
 
 This creates a resource group `tma-prod-rg` and all resources inside it. The deployment is **idempotent** — safe to re-run.
+
+`infra/main.bicep` keeps primary resources in `swedencentral` (`location`) and places Static Web Apps management in `westeurope` (`swaLocation`), because SWA does not currently support `swedencentral`.
 
 Output values (save these):
 - `apiUrl` — public HTTPS URL for the API
@@ -172,6 +174,10 @@ az containerapp update \
 
 For day-to-day deployments, use the GitHub Actions [deploy workflow](../../.github/workflows/deploy.yml), which handles build, push, migration, and Container App update in sequence.
 
+Frontend deployment is handled by [frontend-ci workflow](../../.github/workflows/frontend-ci.yml):
+- Push to `main` deploys frontend to `staging` SWA (`tma-staging-swa`)
+- Manual dispatch can deploy to either `staging` or `prod`
+
 For a manual deploy:
 
 ```bash
@@ -205,6 +211,7 @@ The [deploy workflow](../../.github/workflows/deploy.yml) uses OIDC federation �
 | `PG_ADMIN_LOGIN` | PostgreSQL admin login |
 | `PG_ADMIN_PASSWORD` | PostgreSQL admin password |
 | `DATABASE_CONNECTION_STRING` | Full connection string for migration job |
+| `SENTRY_AUTH_TOKEN` | Optional: Sentry source-map upload token (frontend build) |
 
 ### Required GitHub variables (per environment)
 
@@ -213,6 +220,13 @@ The [deploy workflow](../../.github/workflows/deploy.yml) uses OIDC federation �
 | `ACR_NAME` | ACR name (without `.azurecr.io`) |
 | `ACR_LOGIN_SERVER` | Full ACR login server (e.g. `tmaprodc.azurecr.io`) |
 | `AZURE_OPENAI_RESOURCE_NAME` | Azure OpenAI resource name |
+| `VITE_API_BASE_URL` | Frontend API base URL (for Vite build, e.g. `https://api-host/v1`) |
+| `VITE_WORKOS_CLIENT_ID` | WorkOS client id used by frontend AuthKit |
+| `VITE_WORKOS_REDIRECT_URI` | Frontend callback URL (`https://<swa-host>/auth/callback`) |
+| `VITE_SENTRY_DSN` | Optional frontend Sentry DSN |
+| `VITE_APPINSIGHTS_CONNECTION_STRING` | Optional frontend App Insights connection string |
+| `SENTRY_ORG` | Optional Sentry org slug (if source maps enabled) |
+| `SENTRY_PROJECT` | Optional Sentry project slug (if source maps enabled) |
 
 ### Setting up OIDC federation
 

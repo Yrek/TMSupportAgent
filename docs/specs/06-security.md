@@ -100,6 +100,7 @@ All of the following MUST be treated as untrusted (per CLAUDE.md §5):
 | PT-8 | Operator privilege abuse | Azure PIM JIT access before GA; all privileged actions in audit log |
 | PT-9 | LLM provider compromise | LLM output is always untrusted regardless of provider; schema validation on all outputs |
 | PT-10 | GDPR data subject rights not honoured | Erasure workflow; data minimization; retention enforcement |
+| PT-11 | Unmapped-but-authenticated user gains tenant access | Enforce org resolution + `org_memberships` mapping at middleware before org-scoped routes |
 
 ---
 
@@ -175,6 +176,11 @@ All infrastructure is hosted in Azure. Physical security controls are inherited 
 | A.8.32 | Change management | All changes via PR; spec change requires spec update; ADR for architectural changes |
 | A.8.33 | Test information | No production data (including customer architecture data) in test environments |
 | A.8.34 | Protection of information systems during audit | Audit access read-only; no production config changes during audit |
+
+Additional mandatory authorization rules:
+- Only `platform:admin` can create organisations.
+- `platform:admin` is restricted to platform endpoints; org-scoped endpoints require org membership.
+- Non-admin users must be mapped in `org_memberships` for the resolved org before requests are accepted.
 
 ---
 

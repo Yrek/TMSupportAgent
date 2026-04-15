@@ -182,8 +182,7 @@ All routes except `/login` and `/auth/callback` require authentication. Unauthen
 | `/login` | `LoginPage` | Sign-in screen — WorkOS AuthKit widget |
 | `/auth/callback` | `AuthCallbackPage` | WorkOS OIDC callback handler |
 | `/` | redirect | Redirect to `/orgs/{firstOrgId}/jobs` or org picker if multiple orgs |
-| `/orgs` | `OrgPickerPage` | Choose or create organisation |
-| `/orgs/new` | `CreateOrgPage` | Create new organisation |
+| `/orgs` | `OrgPickerPage` | Choose organisation (or see no-access state if user has no mapped orgs) |
 | `/orgs/:orgId/jobs` | `DashboardPage` | Job list — main landing page for an org |
 | `/orgs/:orgId/jobs/new` | `SubmitJobPage` | Choose: upload file or draw manually |
 | `/orgs/:orgId/jobs/new/upload` | `UploadJobPage` | Drag-and-drop file upload with title |
@@ -419,7 +418,7 @@ This is the most complex screen in the application.
 
 - List of organisations user belongs to.
 - Click → navigate to that org's dashboard.
-- "Create new organisation" button → `/orgs/new`.
+- No self-service org creation in user plane. If user has no mapped organisations, show access guidance.
 - Shown on first login or when user belongs to multiple orgs and navigates to `/`.
 
 ---
@@ -567,8 +566,8 @@ Items are ordered by dependency. Do not start a group until all items marked as 
 
 - [x] **F-200** — Create `AppShell` component: sidebar (desktop) + top nav; sidebar items: Jobs, Settings (members, IDP, org), Profile link, Sign out
 - [x] **F-201** — Create `OrgSwitcher` component in top nav: shows current org name + role badge; dropdown to switch org or create new
-- [x] **F-202** — Create `OrgPickerPage` (`/orgs`): list user's orgs with role badges; "Create new org" link; **handle empty-orgs state explicitly** — show welcome/onboarding empty state with prominent "Create your organisation" CTA rather than a bare empty list (see GAP-6)
-- [x] **F-203** — Create `CreateOrgPage` (`/orgs/new`): form with name + slug fields; Zod validation (slug pattern `^[a-z0-9][a-z0-9-]*[a-z0-9]$`); submit → `POST /v1/orgs`; on 201 redirect to new org dashboard; on 409 show "Slug already taken"
+- [x] **F-202** — Create `OrgPickerPage` (`/orgs`): list user's orgs with role badges; **handle empty-orgs state explicitly** — show "No organization access" guidance to contact a platform admin or org admin for membership mapping.
+- [ ] **F-203** — Remove self-service `CreateOrgPage` from primary user navigation (platform-admin-only org creation via admin plane).
 - [x] **F-204** — Create `NotFoundPage`, `UnauthorizedPage`, `ErrorPage`
 - [x] **F-205** — Create `src/api/orgs.ts`: `useOrgs()`, `useOrg(orgId)`, `useCreateOrg()`, `useUpdateOrg()`, `useDeleteOrg()`
 
@@ -737,12 +736,13 @@ These are discrepancies between `openapi.yaml`, the actual controller implementa
 
 `POST /orgs/:orgId/jobs/:jobId/architecture/reanalyze` implemented. State machine allows `Complete/Partial → AwaitingReview`. `Architecture.ResetForReanalysis()` clears confirmation and bumps version. System-generated threats deleted on reanalyze. "Re-analyze" button added to F-711 `AnalysisPage`. OD-F7 is no longer deferred.
 
-### GAP-6 — First-time user / no-orgs state not specified
+### GAP-6 — First-time user / no-orgs state (authority model update)
 
-When a user authenticates for the first time and `GET /auth/session` returns `orgs: []`, the current spec sends them to `/orgs` (OrgPickerPage), which shows a list (empty) and a "Create new org" link. This is functional but the UX is unclear — there is no explicit empty-state or onboarding flow.
+When a user authenticates and `GET /auth/session` returns `orgs: []` (or org-scoped calls are denied due to no membership mapping), the user is authenticated but not authorised for any org context.
 
 **Resolution (frontend only):**
-- F-202 must handle the empty-orgs case explicitly: show a welcome/onboarding empty state with a prominent "Create your organisation" CTA rather than an empty list.
+- F-202 must handle the empty-orgs case explicitly: show a no-access state and remove self-service org creation CTA from user routes.
+- The message should direct the user to contact a platform admin for org provisioning and membership mapping.
 
 ### GAP-7 — `RequireOwner` guard not in backlog
 

@@ -21,6 +21,11 @@ export interface AdminSystemStats {
   jobsLast30Days: number;
 }
 
+export interface CreateAdminOrgRequest {
+  name: string;
+  slug: string;
+}
+
 interface ListOrgsParams {
   search?: string | undefined;
   page?: number | undefined;
@@ -93,6 +98,20 @@ export function useAdminDeleteOrg(orgId: string) {
   return useMutation({
     mutationFn: async () => {
       await apiClient.delete(`/admin/orgs/${orgId}`);
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "orgs"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "stats"] });
+    },
+  });
+}
+
+export function useAdminCreateOrg() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (req: CreateAdminOrgRequest) => {
+      const res = await apiClient.post<AdminOrgDto>("/admin/orgs", req);
+      return res.data;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "orgs"] });

@@ -1,6 +1,8 @@
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using NSubstitute;
 using ThreatModelingAgent.Domain.Entities;
 using ThreatModelingAgent.Domain.Enums;
 
@@ -26,6 +28,41 @@ public sealed class AdminControllerTests
     public AdminControllerTests(ApiWebApplicationFactory factory)
     {
         _factory = factory;
+    }
+
+    [Fact]
+    public async Task CreateOrg_AdminToken_CreatesOrg()
+    {
+        var client = _factory.CreateAdminClient();
+        var slug = "admin-create-" + Guid.NewGuid().ToString("N")[..8];
+        var body = JsonSerializer.Serialize(new { name = "Admin Created Org", slug });
+
+        _factory.WorkOsClient
+            .CreateOrganizationAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("org_workos_test");
+
+        var response = await client.PostAsync(
+            "/v1/admin/orgs",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("name").GetString().Should().Be("Admin Created Org");
+        doc.RootElement.GetProperty("slug").GetString().Should().Be(slug);
+    }
+
+    [Fact]
+    public async Task CreateOrg_OrgScopedToken_Returns403()
+    {
+        var (orgId, userId) = await _factory.SeedOrgAndOwnerAsync("Admin Create Auth");
+        var client = _factory.CreateAuthenticatedClient(userId, orgId);
+        var body = JsonSerializer.Serialize(new { name = "Should Fail", slug = "should-fail" });
+
+        var response = await client.PostAsync(
+            "/v1/admin/orgs",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     // ── Authorization ────────────────────────────────────────────────────────

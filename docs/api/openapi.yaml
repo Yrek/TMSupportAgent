@@ -825,7 +825,7 @@ paths:
 
     post:
       operationId: createOrg
-      summary: Create a new organisation. Caller becomes owner.
+      summary: Create organisation via user plane (disabled)
       tags: [organisations]
       requestBody:
         required: true
@@ -834,12 +834,12 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateOrgRequest'
       responses:
-        '201':
-          description: Organisation created
+        '403':
+          description: Platform admin required. Use /v1/admin/orgs.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrgDetail'
+                $ref: '#/components/schemas/Error'
         '409':
           description: Slug already taken
           content:

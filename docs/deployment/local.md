@@ -208,6 +208,64 @@ If these values are missing or set on the wrong app/environment, login can fail 
 - CORS errors against `https://api.workos.com/user_management/authenticate`
 - Frontend stuck on `/auth/callback` with "Completing sign-in…"
 
+### Bootstrap the first platform admin (manual DB + WorkOS)
+
+For the very first platform admin, you can bootstrap manually.
+
+Important:
+- This API authorizes platform admin from the JWT role claim (`platform:admin`).
+- Adding a user in Postgres alone is not enough; the user must also have `platform:admin` in WorkOS.
+
+Steps:
+
+1. Sign in once with the target account via the frontend (`http://localhost:5173`).
+2. Get the WorkOS user id (`sub`) from the access token (example: `user_01...`).
+3. In WorkOS dashboard, assign role `platform:admin` to that user in the same environment as your `client_...`.
+4. Insert (or upsert) the user row in local Postgres:
+
+```sql
+INSERT INTO users (
+  id, workos_user_id, email, display_name, created_at, updated_at, deleted_at
+)
+VALUES (
+  '11111111-1111-1111-1111-111111111111',
+  'user_01YOUR_WORKOS_USER_ID',
+  'admin@example.com',
+  'First Platform Admin',
+  NOW(),
+  NOW(),
+  NULL
+)
+ON CONFLICT (workos_user_id) DO UPDATE SET
+  email = EXCLUDED.email,
+  display_name = EXCLUDED.display_name,
+  updated_at = NOW(),
+  deleted_at = NULL;
+```
+
+Use any valid UUID for `id` (the example value is just a placeholder).
+
+Run it in local container:
+
+```bash
+docker exec -it tma-postgres psql -U postgres -d threatmodeling_dev
+```
+
+5. Verify with the user’s token:
+
+```bash
+curl -H "Authorization: Bearer <token>" http://localhost:5240/v1/auth/session
+curl -H "Authorization: Bearer <token>" http://localhost:5240/v1/admin/stats
+```
+
+Expected:
+- `/v1/auth/session` includes `"isPlatformAdmin": true`
+- `/v1/admin/stats` returns `200 OK`
+
+Notes:
+- Platform admins are intentionally rejected on org-scoped routes.
+- If you also want this person to operate inside a specific org, add an `org_memberships` row separately with role `owner` or `member`.
+
 ---
 
 ## 8. Local frontend deployment (containerized static build)

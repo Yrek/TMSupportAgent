@@ -28,9 +28,6 @@ function withSuspense(Component: React.ComponentType) {
 const OrgPickerPage = lazy(() =>
   import("@/pages/dashboard/OrgPickerPage").then((m) => ({ default: m.OrgPickerPage })),
 );
-const CreateOrgPage = lazy(() =>
-  import("@/pages/dashboard/CreateOrgPage").then((m) => ({ default: m.CreateOrgPage })),
-);
 const DashboardPage = lazy(() =>
   import("@/pages/dashboard/DashboardPage").then((m) => ({ default: m.DashboardPage })),
 );
@@ -127,14 +124,10 @@ export const router = createBrowserRouter([
     ),
   },
 
-  // Org picker / creation (authenticated, no org scope)
+  // Org picker (authenticated, no org scope)
   {
     path: "/orgs",
     element: <AuthRequired>{withSuspense(OrgPickerPage)}</AuthRequired>,
-  },
-  {
-    path: "/orgs/new",
-    element: <AuthRequired>{withSuspense(CreateOrgPage)}</AuthRequired>,
   },
 
   // Org-scoped routes

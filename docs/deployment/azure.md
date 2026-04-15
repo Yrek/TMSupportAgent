@@ -269,6 +269,60 @@ az containerapp logs show --name tma-prod-worker --resource-group tma-prod-rg --
 
 ---
 
+## Bootstrap first platform admin (manual DB + WorkOS)
+
+Use this once to create your first platform admin so they can access `/v1/admin/*`.
+
+Important:
+- Platform-admin authorization is based on JWT role claim `platform:admin`.
+- A DB insert alone is not enough; the user must also be assigned `platform:admin` in WorkOS.
+
+Steps:
+
+1. Sign in once with the target account through the deployed frontend.
+2. Get the WorkOS user id (`sub`, usually like `user_01...`) from the access token.
+3. In WorkOS dashboard (same environment as your `WORKOS_CLIENT_ID`), assign role `platform:admin` to that user.
+4. Insert (or upsert) the user directly in PostgreSQL:
+
+```sql
+INSERT INTO users (
+  id, workos_user_id, email, display_name, created_at, updated_at, deleted_at
+)
+VALUES (
+  '11111111-1111-1111-1111-111111111111',
+  'user_01YOUR_WORKOS_USER_ID',
+  'admin@example.com',
+  'First Platform Admin',
+  NOW(),
+  NOW(),
+  NULL
+)
+ON CONFLICT (workos_user_id) DO UPDATE SET
+  email = EXCLUDED.email,
+  display_name = EXCLUDED.display_name,
+  updated_at = NOW(),
+  deleted_at = NULL;
+```
+
+Use any valid UUID for `id` (the value above is only a placeholder).
+
+5. Verify with that user token:
+
+```bash
+curl -H "Authorization: Bearer <token>" https://$API_URL/v1/auth/session
+curl -H "Authorization: Bearer <token>" https://$API_URL/v1/admin/stats
+```
+
+Expected:
+- `/v1/auth/session` contains `"isPlatformAdmin": true`
+- `/v1/admin/stats` returns `200 OK`
+
+Notes:
+- Platform admins are intentionally rejected on org-scoped routes.
+- If this user should also work inside a specific org, add an `org_memberships` row separately (`owner` or `member`).
+
+---
+
 ## Security post-MVP hardening
 
 These steps are deferred from day-one MVP but **MUST** be done before GA:

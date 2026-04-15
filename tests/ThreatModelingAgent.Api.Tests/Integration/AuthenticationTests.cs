@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using FluentAssertions;
 using ThreatModelingAgent.Domain.ValueObjects;
 
@@ -81,6 +82,22 @@ public sealed class AuthenticationTests
         var response = await client.GetAsync($"/v1/orgs/{orgId.Value}/jobs");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task OrgCreation_OnUserPlane_Returns403()
+    {
+        var (orgId, userId) = await _factory.SeedOrgAndOwnerAsync();
+        var client = _factory.CreateAuthenticatedClient(userId, orgId);
+        var payload = """
+                      { "name": "Blocked", "slug": "blocked-org" }
+                      """;
+
+        var response = await client.PostAsync(
+            "/v1/orgs",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [Fact]

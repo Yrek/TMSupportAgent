@@ -26,7 +26,8 @@ namespace ThreatModelingAgent.Api.Security;
 public sealed class TenantContextMiddleware(RequestDelegate next)
 {
     public async Task InvokeAsync(HttpContext context, TenantContext tenantContext,
-        IOrganizationRepository orgs)
+        IOrganizationRepository orgs,
+        IMembershipRepository memberships)
     {
         if (context.User.Identity?.IsAuthenticated == true)
         {
@@ -97,6 +98,32 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                 {
                     code = "MISSING_ORG_CONTEXT",
                     message = "This request requires an organization context."
+                });
+                return;
+            }
+
+            var sub = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                      ?? context.User.FindFirstValue("sub");
+            if (!Guid.TryParse(sub, out var userGuid))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    code = "MISSING_USER_CONTEXT",
+                    message = "This request requires a valid user context."
+                });
+                return;
+            }
+
+            var isMappedMember = await memberships.GetAsync(org.Id, UserId.From(userGuid), context.RequestAborted);
+            if (isMappedMember is null)
+            {
+                // Non-admin users must exist in org_memberships for the resolved org.
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    code = "ORG_MEMBERSHIP_REQUIRED",
+                    message = "Your account is not mapped to this organization."
                 });
                 return;
             }

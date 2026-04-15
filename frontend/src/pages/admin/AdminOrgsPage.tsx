@@ -2,17 +2,22 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { AdminShell } from "@/components/layout/AdminShell";
-import { useAdminOrgs } from "@/api/admin";
+import { useAdminCreateOrg, useAdminOrgs } from "@/api/admin";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { toast } from "sonner";
 
 export function AdminOrgsPage() {
   usePageTitle("Admin — Organizations");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newSlug, setNewSlug] = useState("");
+  const createOrg = useAdminCreateOrg();
 
   // Simple debounce
   function handleSearch(val: string) {
@@ -29,6 +34,18 @@ export function AdminOrgsPage() {
 
   const orgs = data?.data ?? [];
   const pagination = data?.pagination;
+
+  async function handleCreateOrg() {
+    if (!newName.trim() || !newSlug.trim()) return;
+    try {
+      await createOrg.mutateAsync({ name: newName.trim(), slug: newSlug.trim() });
+      setNewName("");
+      setNewSlug("");
+      toast.success("Organization created");
+    } catch {
+      toast.error("Failed to create organization");
+    }
+  }
 
   return (
     <AdminShell>
@@ -50,6 +67,22 @@ export function AdminOrgsPage() {
             value={search}
             onChange={(e) => handleSearch(e.target.value)}
           />
+        </div>
+
+        <div className="grid gap-3 rounded-lg border p-4 md:grid-cols-[1fr_1fr_auto]">
+          <Input
+            placeholder="Organization name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+          />
+          <Input
+            placeholder="slug-name"
+            value={newSlug}
+            onChange={(e) => setNewSlug(e.target.value)}
+          />
+          <Button onClick={handleCreateOrg} disabled={createOrg.isPending}>
+            {createOrg.isPending ? "Creating..." : "Create org"}
+          </Button>
         </div>
 
         {isLoading ? (

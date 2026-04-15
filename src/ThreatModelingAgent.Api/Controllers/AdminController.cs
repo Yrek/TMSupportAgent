@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using ThreatModelingAgent.Api.Extensions;
 using ThreatModelingAgent.Api.Dtos;
 using ThreatModelingAgent.Api.Security;
+using ThreatModelingAgent.Domain.Entities;
 using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Domain.ValueObjects;
 
@@ -23,6 +25,8 @@ namespace ThreatModelingAgent.Api.Controllers;
 [EnableRateLimiting("api")]
 public sealed class AdminController(
     IAdminRepository admin,
+    IOrganizationRepository orgs,
+    IWorkOsClient workOs,
     IAuditLogger audit,
     ILogger<AdminController> logger) : ControllerBase
 {
@@ -67,6 +71,51 @@ public sealed class AdminController(
         var summary = await admin.GetOrgSummaryAsync(OrgId.From(orgId), ct);
         if (summary is null) return NotFound();
         return Ok(AdminOrgDto.From(summary));
+    }
+
+    // POST /v1/admin/orgs
+    [HttpPost("orgs")]
+    [EnableRateLimiting("strict")]
+    public async Task<IActionResult> CreateOrg(
+        [FromBody] CreateOrgRequest request,
+        [FromServices] FluentValidation.IValidator<CreateOrgRequest> validator,
+        CancellationToken ct)
+    {
+        var validation = await validator.ValidateAsync(request, ct);
+        if (!validation.IsValid)
+            return ValidationProblem(validation.ToModelStateDictionary());
+
+        if (await orgs.SlugExistsAsync(request.Slug, ct))
+            return Conflict(new { code = "SLUG_TAKEN", message = "This slug is already in use." });
+
+        var org = Organization.Create(request.Name, request.Slug);
+
+        try
+        {
+            var workOsOrgId = await workOs.CreateOrganizationAsync(org.Name, ct);
+            org.SetWorkOsOrgId(workOsOrgId);
+        }
+        catch (WorkOsException ex)
+        {
+            logger.LogWarning(ex,
+                "WorkOS org creation failed for app org {OrgId}. Org created without WorkOS ID.",
+                org.Id);
+        }
+
+        await orgs.AddAsync(org, ct);
+        await orgs.SaveChangesAsync(ct);
+
+        await audit.LogAsync("admin.org.created",
+            orgId: org.Id,
+            userId: User.GetUserId(),
+            resourceType: "organization",
+            resourceId: org.Id.Value,
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+            ct: ct);
+
+        logger.LogInformation("Org created by platform admin. OrgId={OrgId}", org.Id);
+
+        return CreatedAtAction(nameof(GetOrg), new { orgId = org.Id.Value }, OrgDetailDto.From(org));
     }
 
     // POST /v1/admin/orgs/{orgId}/suspend

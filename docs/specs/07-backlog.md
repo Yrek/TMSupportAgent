@@ -301,6 +301,7 @@ Items below are intentionally out of scope for MVP. Each requires an architectur
 | D-10 | ~~Interactive diagram frontend SPA~~ | **Moved to MVP scope.** Full React/Vite SPA is part of the MVP. See [08-frontend.md](08-frontend.md) for spec and backlog. |
 | D-11 | Evaluation regression suite | Spec §20; test architectures with expected threat outcomes; required before any prompt template change in production |
 | D-12 | Retention enforcement job | Automated purge of blobs and DB rows older than retention policy; requires scheduled trigger |
+| D-13 | Dedicated `org:admin` role (distinct from `org:owner`) | Current MVP uses `org:owner` as org-admin authority. Introduce explicit admin tier when delegated admin workflows require non-owner admin privileges. |
 
 ---
 

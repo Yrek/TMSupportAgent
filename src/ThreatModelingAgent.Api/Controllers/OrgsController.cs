@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.RateLimiting;
 using ThreatModelingAgent.Api.Dtos;
 using ThreatModelingAgent.Api.Extensions;
 using ThreatModelingAgent.Api.Security;
-using ThreatModelingAgent.Domain.Entities;
 using ThreatModelingAgent.Domain.Enums;
 using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Domain.ValueObjects;
@@ -23,7 +22,6 @@ public sealed class OrgsController(
     IMembershipRepository memberships,
     IAuditLogger audit,
     AppDbContext db,
-    IWorkOsClient workOs,
     ILogger<OrgsController> logger) : ControllerBase
 {
     // GET /v1/orgs — list orgs for the current user
@@ -45,7 +43,7 @@ public sealed class OrgsController(
         return Ok(new { data = result });
     }
 
-    // POST /v1/orgs — create org; caller becomes owner
+    // POST /v1/orgs — disabled for non-admin plane; org creation is platform-admin only
     [HttpPost]
     [EnableRateLimiting("strict")]
     public async Task<IActionResult> CreateOrg(
@@ -53,51 +51,14 @@ public sealed class OrgsController(
         [FromServices] IValidator<CreateOrgRequest> validator,
         CancellationToken ct)
     {
-        var validation = await validator.ValidateAsync(request, ct);
-        if (!validation.IsValid)
-            return ValidationProblem(validation.ToModelStateDictionary());
-
-        if (await orgs.SlugExistsAsync(request.Slug, ct))
-            return Conflict(new { code = "SLUG_TAKEN", message = "This slug is already in use." });
-
-        var userId = User.GetUserId();
-        var org = Organization.Create(request.Name, request.Slug);
-
-        // Create matching WorkOS organization so users can receive org-scoped JWTs.
-        // Non-fatal: if WorkOS creation fails, the app org is still created and the
-        // WorkOS org ID can be back-filled later. Without it, users cannot access this
-        // org until the ID is set (org-scoped token lookup will fail — fail-secure).
-        try
+        _ = request;
+        _ = validator;
+        _ = ct;
+        return StatusCode(StatusCodes.Status403Forbidden, new
         {
-            var workOsOrgId = await workOs.CreateOrganizationAsync(org.Name, ct);
-            org.SetWorkOsOrgId(workOsOrgId);
-        }
-        catch (WorkOsException ex)
-        {
-            logger.LogWarning(ex,
-                "WorkOS org creation failed for app org {OrgId}. Org created without WorkOS ID.",
-                org.Id);
-        }
-
-        await orgs.AddAsync(org, ct);
-
-        // Creator becomes owner
-        var membership = OrgMembership.Create(org.Id, userId, OrgMemberRole.Owner);
-        await memberships.AddAsync(membership, ct);
-        await orgs.SaveChangesAsync(ct);
-
-        await audit.LogAsync("org.created",
-            orgId: org.Id,
-            userId: userId,
-            resourceType: "organization",
-            resourceId: org.Id.Value,
-            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
-            ct: ct);
-
-        logger.LogInformation("Org created. OrgId={OrgId} UserId={UserId}", org.Id, userId);
-
-        return CreatedAtAction(nameof(GetOrg), new { orgId = org.Id.Value },
-            OrgDetailDto.From(org));
+            code = "PLATFORM_ADMIN_REQUIRED",
+            message = "Organization creation is restricted to platform administrators via /v1/admin/orgs."
+        });
     }
 
     // GET /v1/orgs/{orgId}

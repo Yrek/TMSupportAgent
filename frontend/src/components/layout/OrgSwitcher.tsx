@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { ChevronsUpDown, Building2, PlusCircle } from "lucide-react";
+import { ChevronsUpDown, Building2 } from "lucide-react";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { Badge } from "@/components/ui/badge";
 import { useState, useRef, useEffect } from "react";
@@ -67,19 +67,6 @@ export function OrgSwitcher() {
               </Badge>
             </button>
           ))}
-
-          <div className="my-1 border-t" />
-
-          <button
-            onClick={() => {
-              setOpen(false);
-              navigate("/orgs/new");
-            }}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted transition-colors"
-          >
-            <PlusCircle className="h-3.5 w-3.5" />
-            Create new organisation
-          </button>
         </div>
       )}
     </div>

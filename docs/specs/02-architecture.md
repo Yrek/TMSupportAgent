@@ -160,15 +160,20 @@ All service-to-service and service-to-Azure-resource authentication uses **Azure
 
 No service principal credentials. No connection strings. No API keys in environment variables.
 
-### 6.3 Application roles
+### 6.3 Application roles and authority boundaries
 
 Three roles, defined canonically in the `api` service codebase. Roles are enforced server-side on every request. Client-supplied role claims are never trusted without server-side validation.
 
 | Role | Scope | Capabilities |
 |---|---|---|
-| `org:owner` | Organisation | Full org management, IDP config, user management, all threat models in org |
-| `org:member` | Organisation | Create and view threat models within their org |
-| `platform:admin` | Platform | Org management only; no access to org threat model data |
+| `org:owner` | Organisation | Organisation admin role in MVP: org settings, member management, IDP config, all threat models in own org |
+| `org:member` | Organisation | Create and view threat models within own org |
+| `platform:admin` | Platform | Platform-level organisation lifecycle and oversight only; no access to org threat model data |
+
+Authority model:
+- Only `platform:admin` may create new organisations.
+- Org-internal administration is performed by `org:owner` (org admin in MVP).
+- Platform admin and org admin planes are separate; a platform admin token is not accepted on org-scoped routes.
 
 Role definitions are in a single canonical location in code. Do not infer role hierarchy from usage patterns. See CLAUDE.md §8.2.
 
@@ -201,6 +206,10 @@ An **organisation** is the top-level tenant. All tenant data is scoped to an org
 
 - No endpoint MAY return data from an org the authenticated user does not belong to
 - Admin access to org data on behalf of support MUST be explicitly designed with per-access logging before it is implemented (deferred)
+- Non-admin authentication MUST satisfy two checks before any org-scoped access:
+  - JWT `org_id` resolves to a known internal organisation.
+  - JWT `sub` (user) is mapped to that organisation in `org_memberships`.
+- If either check fails, access is denied (fail-secure); self-service org bootstrap is not allowed.
 
 ---
 

@@ -1,7 +1,6 @@
 import { Link, Navigate } from "react-router-dom";
-import { Building2, PlusCircle, ArrowRight } from "lucide-react";
+import { Building2, ArrowRight } from "lucide-react";
 import { useSession } from "@/api/auth";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -20,7 +19,7 @@ export function OrgPickerPage() {
         <div className="text-center">
           <h1 className="text-2xl font-bold">Choose organisation</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Select an organisation to continue, or create a new one.
+            Select an organisation you are a member of.
           </p>
         </div>
 
@@ -30,19 +29,14 @@ export function OrgPickerPage() {
             <Skeleton className="h-14 w-full" />
           </div>
         ) : !session?.orgs.length ? (
-          /* Empty state — no orgs yet */
+          /* Empty state — authenticated but no mapped org memberships */
           <div className="rounded-lg border border-dashed p-8 text-center">
             <Building2 className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
-            <h2 className="font-semibold">No organisations yet</h2>
+            <h2 className="font-semibold">No organization access</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Create your first organisation to get started with threat modeling.
+              Your account is signed in, but not mapped to an organization yet. Contact a platform
+              admin or your org admin to be added.
             </p>
-            <Button asChild className="mt-4">
-              <Link to="/orgs/new">
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Create your organisation
-              </Link>
-            </Button>
           </div>
         ) : (
           <div className="space-y-2">
@@ -65,15 +59,6 @@ export function OrgPickerPage() {
                 <ArrowRight className="h-4 w-4 text-muted-foreground" />
               </Link>
             ))}
-
-            <div className="pt-2">
-              <Button variant="outline" asChild className="w-full">
-                <Link to="/orgs/new">
-                  <PlusCircle className="mr-2 h-4 w-4" />
-                  Create new organisation
-                </Link>
-              </Button>
-            </div>
           </div>
         )}
       </div>

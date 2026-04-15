@@ -26,6 +26,7 @@ public sealed class TenantContextMiddlewareTests
         bool isAuthenticated,
         string? role = null,
         string? orgId = null,
+        string? userId = null,
         string path = "/v1/orgs/something")
     {
         var context = new DefaultHttpContext();
@@ -40,6 +41,8 @@ public sealed class TenantContextMiddlewareTests
             claims.Add(new Claim(ClaimTypes.Role, role));
         if (orgId is not null)
             claims.Add(new Claim("org_id", orgId));
+        if (userId is not null)
+            claims.Add(new Claim(ClaimTypes.NameIdentifier, userId));
 
         var identity = new ClaimsIdentity(claims, authenticationType: "Bearer");
         context.User = new ClaimsPrincipal(identity);
@@ -51,6 +54,16 @@ public sealed class TenantContextMiddlewareTests
     {
         var repo = Substitute.For<IOrganizationRepository>();
         repo.GetByIdAsync(Arg.Any<OrgId>(), Arg.Any<CancellationToken>()).Returns(org);
+        return repo;
+    }
+
+    private static IMembershipRepository MembershipRepoReturning(bool hasMembership)
+    {
+        var repo = Substitute.For<IMembershipRepository>();
+        repo.GetAsync(Arg.Any<OrgId>(), Arg.Any<UserId>(), Arg.Any<CancellationToken>())
+            .Returns(hasMembership
+                ? OrgMembership.Create(OrgId.New(), UserId.New(), Domain.Enums.OrgMemberRole.Member)
+                : null);
         return repo;
     }
 
@@ -80,7 +93,7 @@ public sealed class TenantContextMiddlewareTests
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         nextCalled.Should().BeFalse("admin tokens must be rejected on org-scoped routes");
@@ -99,7 +112,7 @@ public sealed class TenantContextMiddlewareTests
         var tenantContext = new TenantContext();
 
         var middleware = new TenantContextMiddleware(_ => Task.CompletedTask);
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
     }
@@ -113,7 +126,7 @@ public sealed class TenantContextMiddlewareTests
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         nextCalled.Should().BeTrue("admin tokens are allowed on /v1/admin/* routes");
@@ -129,7 +142,7 @@ public sealed class TenantContextMiddlewareTests
         var tenantContext = new TenantContext();
 
         var middleware = new TenantContextMiddleware(_ => Task.CompletedTask);
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
 
         tenantContext.CurrentOrgId.Should().BeNull("TenantContext must not be set for rejected requests");
     }
@@ -144,7 +157,7 @@ public sealed class TenantContextMiddlewareTests
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         nextCalled.Should().BeFalse();
@@ -160,12 +173,44 @@ public sealed class TenantContextMiddlewareTests
         var tenantContext = new TenantContext();
 
         var middleware = new TenantContextMiddleware(_ => Task.CompletedTask);
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
 
         var body = await ReadResponseBodyAsync(context);
         body!.RootElement.GetProperty("code").GetString().Should().Be("MISSING_ORG_CONTEXT");
+    }
+
+    [Fact]
+    public async Task AuthenticatedWithoutUserIdClaim_Returns403WithMissingUserContext()
+    {
+        var orgId = Guid.NewGuid();
+        var org = Organization.Create("Active Org", "active-org");
+        var context = BuildContext(isAuthenticated: true, role: "member", orgId: orgId.ToString(), userId: null);
+        var tenantContext = new TenantContext();
+
+        var middleware = new TenantContextMiddleware(_ => Task.CompletedTask);
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(true));
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var body = await ReadResponseBodyAsync(context);
+        body!.RootElement.GetProperty("code").GetString().Should().Be("MISSING_USER_CONTEXT");
+    }
+
+    [Fact]
+    public async Task AuthenticatedWithoutMembership_Returns403WithOrgMembershipRequired()
+    {
+        var orgId = Guid.NewGuid();
+        var org = Organization.Create("Active Org", "active-org");
+        var context = BuildContext(isAuthenticated: true, role: "member", orgId: orgId.ToString(), userId: Guid.NewGuid().ToString());
+        var tenantContext = new TenantContext();
+
+        var middleware = new TenantContextMiddleware(_ => Task.CompletedTask);
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(false));
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var body = await ReadResponseBodyAsync(context);
+        body!.RootElement.GetProperty("code").GetString().Should().Be("ORG_MEMBERSHIP_REQUIRED");
     }
 
     // ── Org suspension ────────────────────────────────────────────────────────
@@ -177,12 +222,12 @@ public sealed class TenantContextMiddlewareTests
         var org = Organization.Create("Suspended Org", "suspended-org");
         org.Suspend();
 
-        var context = BuildContext(isAuthenticated: true, role: "member", orgId: orgId.ToString());
+        var context = BuildContext(isAuthenticated: true, role: "member", orgId: orgId.ToString(), userId: Guid.NewGuid().ToString());
         var tenantContext = new TenantContext();
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(true));
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         nextCalled.Should().BeFalse();
@@ -198,12 +243,12 @@ public sealed class TenantContextMiddlewareTests
     {
         var orgId = Guid.NewGuid();
         var org = Organization.Create("Active Org", "active-org");
-        var context = BuildContext(isAuthenticated: true, role: "member", orgId: orgId.ToString());
+        var context = BuildContext(isAuthenticated: true, role: "member", orgId: orgId.ToString(), userId: Guid.NewGuid().ToString());
         var tenantContext = new TenantContext();
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(true));
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         nextCalled.Should().BeTrue();
@@ -216,12 +261,12 @@ public sealed class TenantContextMiddlewareTests
     {
         var orgId = Guid.NewGuid();
         var org = Organization.Create("Active Org", "active-org");
-        var context = BuildContext(isAuthenticated: true, role: null, orgId: orgId.ToString());
+        var context = BuildContext(isAuthenticated: true, role: null, orgId: orgId.ToString(), userId: Guid.NewGuid().ToString());
         var tenantContext = new TenantContext();
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(true));
 
         nextCalled.Should().BeTrue();
         tenantContext.CurrentOrgId.Should().NotBeNull();
@@ -237,7 +282,7 @@ public sealed class TenantContextMiddlewareTests
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         nextCalled.Should().BeTrue("unauthenticated requests pass through — auth is enforced at the endpoint");

@@ -158,7 +158,7 @@ OpenAPI docs (development only): https://localhost:7036/openapi/v1.json
 To test authentication, you need a valid WorkOS JWT. Use the WorkOS AuthKit or CLI to get a test token, then:
 
 ```bash
-curl -H "Authorization: Bearer <token>" https://localhost:7036/orgs
+curl -H "Authorization: Bearer <token>" https://localhost:7036/v1/orgs
 ```
 
 ---
@@ -192,6 +192,21 @@ Required frontend env values (copy `frontend/.env.example` to `frontend/.env.loc
 - `VITE_API_BASE_URL=http://localhost:5240/v1`
 - `VITE_WORKOS_CLIENT_ID=<client_...>`
 - `VITE_WORKOS_REDIRECT_URI=http://localhost:5173/auth/callback`
+
+### WorkOS local AuthKit setup (required)
+
+In the WorkOS dashboard, open the AuthKit application that matches your `VITE_WORKOS_CLIENT_ID` and configure:
+
+- Redirect URL: `http://localhost:5173/auth/callback`
+- Allowed origin / CORS origin: `http://localhost:5173`
+- Logout / return URL: `http://localhost:5173`
+
+Important:
+- Ensure this is the same WorkOS environment/project as your `client_...` value (not a different tenant or environment).
+
+If these values are missing or set on the wrong app/environment, login can fail with:
+- CORS errors against `https://api.workos.com/user_management/authenticate`
+- Frontend stuck on `/auth/callback` with "Completing sign-in…"
 
 ---
 

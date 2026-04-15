@@ -179,6 +179,34 @@ try
     builder.Services.AddControllers();
     builder.Services.AddOpenApi();
 
+    // CORS for browser frontend (local dev + configured origins in higher envs)
+    var corsOrigins =
+        builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+        ?? [];
+    if (corsOrigins.Length == 0 && builder.Environment.IsDevelopment())
+    {
+        corsOrigins =
+        [
+            "http://localhost:5173",
+            "https://localhost:5173",
+            "http://localhost:4173",
+            "https://localhost:4173"
+        ];
+    }
+
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("Frontend", policy =>
+        {
+            if (corsOrigins.Length == 0)
+                return;
+
+            policy.WithOrigins(corsOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        });
+    });
+
     var app = builder.Build();
 
     // ── Middleware pipeline — ORDER MATTERS ──────────────────────────────────
@@ -193,6 +221,9 @@ try
     app.UseExceptionHandler();
     // 4. HTTPS redirect (CLAUDE.md ?11.4)
     app.UseHttpsRedirection();
+
+    // 4.5 CORS for browser-based frontend clients
+    app.UseCors("Frontend");
 
     // 5. Authentication ? validates JWT against WorkOS JWKS
     app.UseAuthentication();

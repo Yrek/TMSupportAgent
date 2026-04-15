@@ -18,6 +18,13 @@ export function AuthCallbackPage() {
       const returnTo = searchParams.get("return_to");
       const dest = isInternalPath(returnTo) ? returnTo! : "/";
       navigate(dest, { replace: true });
+      return;
+    }
+
+    // Callback finished but no authenticated user was established.
+    // Redirect to login with an explicit error instead of showing an infinite spinner.
+    if (!isLoading && !user) {
+      navigate("/login?error=auth_callback_failed", { replace: true });
     }
   }, [user, isLoading, navigate, searchParams]);
 

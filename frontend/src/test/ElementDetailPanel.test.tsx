@@ -7,7 +7,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { ElementDetailPanel } from "@/components/architecture/ElementDetailPanel";
-import type { ArchitectureElement } from "@/api/architecture";
+import type {
+  ArchitectureElement,
+  CorrectElementRequest,
+  PatchElementRequest,
+} from "@/api/architecture";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -58,14 +62,19 @@ function renderPanel(
   element: ArchitectureElement,
   overrides: {
     readOnly?: boolean;
-    onPatch?: ReturnType<typeof vi.fn>;
-    onDelete?: ReturnType<typeof vi.fn>;
-    onCorrect?: ReturnType<typeof vi.fn>;
+    onPatch?: (req: PatchElementRequest) => Promise<void>;
+    onDelete?: () => Promise<void>;
+    onCorrect?: (req: CorrectElementRequest) => Promise<void>;
   } = {},
 ) {
-  const onPatch = overrides.onPatch ?? vi.fn().mockResolvedValue(undefined);
-  const onDelete = overrides.onDelete ?? vi.fn().mockResolvedValue(undefined);
-  const onCorrect = overrides.onCorrect ?? vi.fn().mockResolvedValue(undefined);
+  const onPatch =
+    overrides.onPatch ??
+    vi.fn<(req: PatchElementRequest) => Promise<void>>().mockResolvedValue(undefined);
+  const onDelete =
+    overrides.onDelete ?? vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+  const onCorrect =
+    overrides.onCorrect ??
+    vi.fn<(req: CorrectElementRequest) => Promise<void>>().mockResolvedValue(undefined);
 
   render(
     <ElementDetailPanel

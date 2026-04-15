@@ -12,8 +12,7 @@ RUN dotnet restore "src/ThreatModelingAgent.Worker/ThreatModelingAgent.Worker.cs
 COPY . .
 RUN dotnet build "src/ThreatModelingAgent.Worker/ThreatModelingAgent.Worker.csproj" \
     -c Release \
-    --no-restore \
-    -o /app/build
+    --no-restore
 
 # Publish
 FROM build AS publish
@@ -28,8 +27,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 # Run as non-root (CLAUDE.md §4.4 Least Privilege)
-RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
-USER appuser
+USER app
 
 ENV DOTNET_ENVIRONMENT=Production
 

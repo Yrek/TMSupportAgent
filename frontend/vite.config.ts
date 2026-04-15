@@ -32,20 +32,14 @@ export default defineConfig(({ mode }) => ({
     sourcemap: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          "vendor-react": ["react", "react-dom", "react-router-dom"],
-          "vendor-query": ["@tanstack/react-query"],
-          "vendor-reactflow": ["reactflow"],
-          "vendor-radix": [
-            "@radix-ui/react-dialog",
-            "@radix-ui/react-dropdown-menu",
-            "@radix-ui/react-label",
-            "@radix-ui/react-select",
-            "@radix-ui/react-separator",
-            "@radix-ui/react-tabs",
-            "@radix-ui/react-toast",
-            "@radix-ui/react-tooltip",
-          ],
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (id.includes("/react/") || id.includes("/react-dom/") || id.includes("/react-router-dom/")) {
+            return "vendor-react";
+          }
+          if (id.includes("/@tanstack/react-query/")) return "vendor-query";
+          if (id.includes("/reactflow/")) return "vendor-reactflow";
+          if (id.includes("/@radix-ui/")) return "vendor-radix";
         },
       },
     },
@@ -60,6 +54,7 @@ export default defineConfig(({ mode }) => ({
       VITE_API_BASE_URL: "http://localhost:5000",
       VITE_WORKOS_CLIENT_ID: "test-client-id",
       VITE_WORKOS_REDIRECT_URI: "http://localhost:3000/auth/callback",
+      VITE_SENTRY_DSN: "https://public@example.ingest.sentry.io/1",
     },
   },
 }));

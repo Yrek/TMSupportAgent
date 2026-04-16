@@ -29,6 +29,7 @@ const CONFIDENCES: FilterSection<string>["values"] = [
 
 interface ThreatFilterBarProps {
   methodCategories?: string[];
+  frameworks?: string[];
   /** GAP-TH3: active element filter set by canvas click */
   elementFilter?: { id: string; name: string } | undefined;
   onClearElement?: () => void;
@@ -36,6 +37,7 @@ interface ThreatFilterBarProps {
 
 export function ThreatFilterBar({
   methodCategories = [],
+  frameworks = [],
   elementFilter,
   onClearElement,
 }: ThreatFilterBarProps) {
@@ -69,7 +71,8 @@ export function ThreatFilterBar({
     searchParams.getAll("findingType").length > 0 ||
     searchParams.getAll("status").length > 0 ||
     searchParams.getAll("confidence").length > 0 ||
-    searchParams.get("method") !== null;
+    searchParams.getAll("method").length > 0 ||
+    searchParams.getAll("framework").length > 0;
 
   return (
     <div className="space-y-2 rounded-lg border p-3">
@@ -130,6 +133,16 @@ export function ThreatFilterBar({
           label="Method"
           values={methodCategories.map((c) => ({ label: c, value: c }))}
           param="method"
+          isActive={isActive}
+          toggle={toggle}
+        />
+      )}
+
+      {frameworks.length > 0 && (
+        <FilterGroup
+          label="Framework"
+          values={frameworks.map((f) => ({ label: f, value: f }))}
+          param="framework"
           isActive={isActive}
           toggle={toggle}
         />

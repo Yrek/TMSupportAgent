@@ -2,12 +2,14 @@ import type { Threat } from "@/api/threats";
 import { ThreatStatusBadge } from "./ThreatStatusBadge";
 import { FindingTypeBadge } from "./FindingTypeBadge";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface ThreatCardProps {
   threat: Threat;
   selected?: boolean;
   onClick: (threat: Threat) => void;
+  onShowInArchitecture?: ((threat: Threat) => void) | undefined;
 }
 
 const CONFIDENCE_VARIANT: Record<string, "success" | "warning" | "destructive"> = {
@@ -16,12 +18,24 @@ const CONFIDENCE_VARIANT: Record<string, "success" | "warning" | "destructive"> 
   Low: "destructive",
 };
 
-export function ThreatCard({ threat, selected, onClick }: ThreatCardProps) {
+export function ThreatCard({ threat, selected, onClick, onShowInArchitecture }: ThreatCardProps) {
+  const canShowInArchitecture =
+    typeof onShowInArchitecture === "function" && threat.affectedElementIds.length > 0;
+
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onClick(threat)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick(threat);
+        }
+      }}
+      aria-pressed={selected}
       className={cn(
-        "w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/40",
+        "w-full cursor-pointer rounded-lg border p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         selected && "border-primary bg-primary/5",
       )}
     >
@@ -46,6 +60,22 @@ export function ThreatCard({ threat, selected, onClick }: ThreatCardProps) {
       <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
         {threat.description}
       </p>
-    </button>
+
+      {canShowInArchitecture && (
+        <div className="mt-3 flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={(e) => {
+              e.stopPropagation();
+              onShowInArchitecture?.(threat);
+            }}
+          >
+            Show in architecture
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }

@@ -40,6 +40,27 @@ public sealed class ArchitecturesController(
     IAuditLogger audit,
     ILogger<ArchitecturesController> logger) : ControllerBase
 {
+    private static readonly HashSet<string> AllowedThreatMethods = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "stride",
+        "linddun",
+        "abuse_case",
+        "tenant_isolation",
+        "identity_session_delegation",
+        "ai_llm_threat",
+        "vast",
+        "pasta",
+        "octave",
+        "trike",
+        "mitre_attack",
+        "owasp_cumulus",
+        "owasp_cornucopia",
+        "maestro",
+        "emlsg",
+        "supply_chain",
+        "availability_resilience"
+    };
+
     // GET /v1/orgs/{orgId}/jobs/{jobId}/architecture
     [HttpGet("architecture")]
     public async Task<IActionResult> GetArchitecture(Guid orgId, Guid jobId, CancellationToken ct)
@@ -94,6 +115,27 @@ public sealed class ArchitecturesController(
         if (arch.IsConfirmed)
             return Conflict(new { code = "ALREADY_CONFIRMED", message = "Architecture is already confirmed." });
 
+        var selectedMethods = (request?.SelectedMethods ?? [])
+            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Select(m => m.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (selectedMethods.Length == 0)
+            return UnprocessableEntity(new
+            {
+                code = "METHOD_SELECTION_REQUIRED",
+                message = "At least one threat modeling method/framework must be selected before confirmation."
+            });
+
+        var invalid = selectedMethods.Where(m => !AllowedThreatMethods.Contains(m)).ToArray();
+        if (invalid.Length > 0)
+            return UnprocessableEntity(new
+            {
+                code = "INVALID_METHOD_SELECTION",
+                message = $"Unsupported methods/frameworks: {string.Join(", ", invalid)}"
+            });
+
         // Mark as confirmed and load the artifact details needed to enqueue Phase 2
         arch.Confirm(userId);
         await architectures.SaveChangesAsync(ct);
@@ -105,7 +147,7 @@ public sealed class ArchitecturesController(
         var artifactType = job.ArtifactType ?? "manual";
 
         await jobQueue.EnqueueAnalyzePhaseAsync(
-            JobId.From(jobId), orgIdValue, blobPath, artifactType, ct);
+            JobId.From(jobId), orgIdValue, blobPath, artifactType, selectedMethods, ct);
 
         // Transition job to Classifying so the status reflects Phase 2 starting
         job.Transition(JobStatus.Classifying);

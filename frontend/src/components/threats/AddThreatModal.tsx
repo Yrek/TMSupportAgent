@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -49,6 +50,10 @@ export function AddThreatModal({
 }: AddThreatModalProps) {
   // DataFlow elements are edges, not selectable threat targets
   const selectableElements = elements.filter((e) => e.elementType !== "DataFlow");
+  const validPreselectedElementId =
+    preselectedElementId && selectableElements.some((e) => e.id === preselectedElementId)
+      ? preselectedElementId
+      : undefined;
 
   const {
     register,
@@ -58,9 +63,23 @@ export function AddThreatModal({
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      affectedElementIds: preselectedElementId ? [preselectedElementId] : [],
+      affectedElementIds: validPreselectedElementId ? [validPreselectedElementId] : [],
     },
   });
+
+  useEffect(() => {
+    if (!open) return;
+    reset({
+      title: "",
+      methodCategory: "",
+      description: "",
+      attackScenario: "",
+      affectedElementIds: validPreselectedElementId ? [validPreselectedElementId] : [],
+      preconditions: "",
+      securityImpact: "",
+      privacyImpact: "",
+    });
+  }, [open, validPreselectedElementId, reset]);
 
   async function onFormSubmit(values: FormValues) {
     await onSubmit({

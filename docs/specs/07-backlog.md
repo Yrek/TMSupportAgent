@@ -2,14 +2,20 @@
 
 **Status:** Living document  
 **Spec ref:** All specs in this directory  
-**Version:** 0.6  
-**Date:** 2026-04-11
+**Version:** 0.7  
+**Date:** 2026-04-16
 
 ---
 
 ## 1. Overview
 
 This document tracks all remaining implementation work across the API, Worker pipeline, CI security controls, tests, and pre-GA operational requirements. Items are grouped by theme and ordered within each group by priority.
+
+### Task-first workflow rule (enforced)
+
+- Every non-trivial implementation change MUST be tracked as a backlog task before coding starts.
+- Task lifecycle: `Proposed -> In Progress -> Implemented -> Verified -> Spec Updated`.
+- Spec updates are part of done criteria; code is not considered complete until the relevant spec/backlog sections are updated.
 
 ### What is complete
 
@@ -141,6 +147,19 @@ This document tracks all remaining implementation work across the API, Worker pi
   - `tests/ThreatModelingAgent.Worker.Tests/Pipeline/SynthesizeStageTests.cs` — strong model enforced, `UserAddedThreats` always normalised to `[]`, `EnforcePartialStatus` for critical gaps, remediation validation, framework mapping sub-step (merge, failure swallowed, unknown framework discarded), `PersistAsync` blob path
 - **Go-live requirements** — `docs/go-live.md` created: comprehensive standalone document covering OPS-1–14 (each with description, owner, acceptance criteria, and why), Azure hardening items H-1–H-5, E2E infrastructure items E-1–E-5, and sign-off tracking table
 
+### Implemented in session 12 (2026-04-16)
+
+- **Expanded threat-method and framework support** - worker prompt/method guidance and framework normalization expanded to support STRIDE, VAST, PASTA, OCTAVE, TRIKE, MITRE ATT&CK, OWASP Cumulus, OWASP Cornucopia, plus AI-focused MAESTRO and EMLSG.
+- **Threat filtering enhancements** - backend and frontend now support filtering by method and framework, while keeping unmapped threats visible by default.
+- **Job submission context inputs** - upload flow now includes optional pplicationDescription and rchitectureDescription; values are carried through queue message and parse pipeline context.
+- **Analyze runtime stability improvements** - classify now applies deterministic selected-method cap for predictable runtime, and analyze stage now logs per-method start/completion with elapsed time for easier RCA when jobs run long.
+- **Architecture interaction UX upgrades** - edge selection highlighting improved for flow readability; flow selection and threat filtering behavior aligned with node selection model.
+
+### Implemented in session 13 (2026-04-16)
+
+- **Mandatory baseline expert analysis** - ANALYZE stage now always runs `security_expert_baseline` for every architecture, regardless of selected methods. Selected methods remain additive targeted lenses.
+- **Prompt hardening (analyze v2.2.0)** - `BuildAnalyzeSystem` updated with explicit baseline expert-security expectations, stronger “methods are additive” language, and method-category guidance for baseline analysis output.
+- **Prompt governance tasking** - added explicit prompt approval gate requirements in `05-llm-workflow.md` to ensure prompt changes are treated as security-critical and reviewed with grounding/injection/contract rigor.
 ### What remains (future tasks)
 
 | # | Section | Theme |
@@ -302,6 +321,7 @@ Items below are intentionally out of scope for MVP. Each requires an architectur
 | D-11 | Evaluation regression suite | Spec §20; test architectures with expected threat outcomes; required before any prompt template change in production |
 | D-12 | Retention enforcement job | Automated purge of blobs and DB rows older than retention policy; requires scheduled trigger |
 | D-13 | Dedicated `org:admin` role (distinct from `org:owner`) | Current MVP uses `org:owner` as org-admin authority. Introduce explicit admin tier when delegated admin workflows require non-owner admin privileges. |
+| D-14 | Prompt quality regression benchmark pack | Curated architecture corpus + expected threat-quality rubric (coverage, precision, traceability, duplication rate) to gate `PromptTemplates.cs` changes in CI. |
 
 ---
 
@@ -351,3 +371,4 @@ The MVP is considered complete when all of the following are true:
 - [ ] All OPS items in §8 are complete or have signed-off deferrals with named owner and deadline.
 - [x] No `TODO` or `FIXME` placeholders exist in production code paths (CLAUDE.md §13).
 - [ ] Dependency vulnerability scan passes in CI with no critical or high findings.
+

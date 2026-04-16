@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using ThreatModelingAgent.Api.Dtos;
@@ -26,7 +26,8 @@ public sealed class JobsController(
         [".png", ".jpg", ".jpeg", ".gif", ".webp", ".puml", ".txt", ".md", ".mmd", ".drawio", ".xml"];
 
     private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB (CLAUDE.md §9.7)
-
+    private const int MaxApplicationDescriptionLength = 2000;
+    private const int MaxArchitectureDescriptionLength = 4000;
     // GET /v1/orgs/{orgId}/jobs
     [HttpGet]
     public async Task<IActionResult> ListJobs(
@@ -42,7 +43,7 @@ public sealed class JobsController(
         if (!await memberships.HasOrgAccessAsync(orgIdValue, userId, ct: ct))
             return Forbid();
 
-        // Cap page size — CLAUDE.md §9.3
+        // Cap page size â€” CLAUDE.md Â§9.3
         var clampedSize = Math.Clamp(pageSize, 1, 100);
         var (items, hasMore) = await jobs.ListAsync(orgIdValue, status, clampedSize, cursor, ct);
 
@@ -53,7 +54,7 @@ public sealed class JobsController(
         });
     }
 
-    // POST /v1/orgs/{orgId}/jobs — submit a new analysis job
+    // POST /v1/orgs/{orgId}/jobs â€” submit a new analysis job
     [HttpPost]
     [EnableRateLimiting("strict")]
     [RequestSizeLimit(11 * 1024 * 1024)]
@@ -71,23 +72,40 @@ public sealed class JobsController(
 
         var artifact = request.Artifact;
 
-        // Validate file size (CLAUDE.md §9.7)
+        // Validate file size (CLAUDE.md Â§9.7)
         if (artifact.Length > MaxFileSizeBytes)
             return StatusCode(StatusCodes.Status413RequestEntityTooLarge,
                 new { code = "ARTIFACT_TOO_LARGE", message = "Artifact must not exceed 10 MB." });
 
-        // Validate extension against allowlist (CLAUDE.md §9.6 — do not trust Content-Type alone)
+        // Validate extension against allowlist (CLAUDE.md Â§9.6 â€” do not trust Content-Type alone)
         var ext = Path.GetExtension(artifact.FileName).ToLowerInvariant();
         if (!AllowedExtensions.Contains(ext))
             return StatusCode(StatusCodes.Status415UnsupportedMediaType,
                 new { code = "UNSUPPORTED_ARTIFACT_TYPE", message = "Unsupported file type." });
+
+        var applicationDescription = request.ApplicationDescription?.Trim();
+        var architectureDescription = request.ArchitectureDescription?.Trim();
+
+        if (applicationDescription is { Length: > MaxApplicationDescriptionLength })
+            return BadRequest(new
+            {
+                code = "APPLICATION_DESCRIPTION_TOO_LONG",
+                message = $"ApplicationDescription must not exceed {MaxApplicationDescriptionLength} characters."
+            });
+
+        if (architectureDescription is { Length: > MaxArchitectureDescriptionLength })
+            return BadRequest(new
+            {
+                code = "ARCHITECTURE_DESCRIPTION_TOO_LONG",
+                message = $"ArchitectureDescription must not exceed {MaxArchitectureDescriptionLength} characters."
+            });
 
         // Create job record
         var job = Job.Create(orgIdValue, userId, request.Title);
         await jobs.AddAsync(job, ct);
         await jobs.SaveChangesAsync(ct);
 
-        // Upload artifact to org-scoped blob path — filename randomised on write (CLAUDE.md §9.6)
+        // Upload artifact to org-scoped blob path â€” filename randomised on write (CLAUDE.md Â§9.6)
         var blobPath = $"{orgIdValue}/uploads/{job.Id}/{Guid.NewGuid()}{ext}";
         await using var stream = artifact.OpenReadStream();
         await blob.UploadAsync(blobPath, stream, artifact.ContentType, ct);
@@ -96,8 +114,8 @@ public sealed class JobsController(
         job.SetArtifact(blobPath, artifactType);
         await jobs.SaveChangesAsync(ct);
 
-        // Enqueue Phase 1 (DETECT → PARSE → NORMALIZE) on the Service Bus
-        await jobQueue.EnqueueParsePhaseAsync(job.Id, orgIdValue, blobPath, artifactType, ct);
+        // Enqueue Phase 1 (DETECT â†’ PARSE â†’ NORMALIZE) on the Service Bus
+        await jobQueue.EnqueueParsePhaseAsync(job.Id, orgIdValue, blobPath, artifactType, applicationDescription, architectureDescription, ct);
 
         // Update job status to Parsing now that it's enqueued
         job.Transition(JobStatus.Parsing);
@@ -119,7 +137,7 @@ public sealed class JobsController(
             JobDetailDto.From(job));
     }
 
-    // POST /v1/orgs/{orgId}/jobs/manual — create a job with an empty architecture (no file upload)
+    // POST /v1/orgs/{orgId}/jobs/manual â€” create a job with an empty architecture (no file upload)
     [HttpPost("manual")]
     [EnableRateLimiting("strict")]
     public async Task<IActionResult> CreateManualJob(
@@ -133,7 +151,7 @@ public sealed class JobsController(
         if (!await memberships.HasOrgAccessAsync(orgIdValue, userId, ct: ct))
             return Forbid();
 
-        // Create job and skip straight to AwaitingReview — no pipeline phases needed
+        // Create job and skip straight to AwaitingReview â€” no pipeline phases needed
         var job = Job.Create(orgIdValue, userId, request.Title);
         await jobs.AddAsync(job, ct);
         await jobs.SaveChangesAsync(ct);
@@ -180,7 +198,7 @@ public sealed class JobsController(
         if (!await memberships.HasOrgAccessAsync(orgIdValue, userId, ct: ct))
             return Forbid();
 
-        // org_id scoping is defence-in-depth on top of RLS (CLAUDE.md §8.2 BOLA)
+        // org_id scoping is defence-in-depth on top of RLS (CLAUDE.md Â§8.2 BOLA)
         var job = await jobs.GetByIdAsync(JobId.From(jobId), orgIdValue, ct);
         if (job is null) return NotFound();
 
@@ -232,3 +250,7 @@ public sealed class JobsController(
         _ => "text"
     };
 }
+
+
+
+

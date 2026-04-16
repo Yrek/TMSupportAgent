@@ -117,17 +117,20 @@ public sealed class ArchitecturesControllerTests
         });
 
         _factory.JobQueue.EnqueueAnalyzePhaseAsync(
-            Arg.Any<JobId>(), Arg.Any<OrgId>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            Arg.Any<JobId>(), Arg.Any<OrgId>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string[]?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         var client = _factory.CreateAuthenticatedClient(userId, orgId);
         var response = await client.PostAsync(
             $"/v1/orgs/{orgId.Value}/jobs/{jobId.Value}/architecture/confirm",
-            new StringContent("{}", Encoding.UTF8, "application/json"));
+            new StringContent(
+                JsonSerializer.Serialize(new { selectedMethods = new[] { "stride", "abuse_case" } }),
+                Encoding.UTF8,
+                "application/json"));
 
         response.EnsureSuccessStatusCode();
         await _factory.JobQueue.Received(1).EnqueueAnalyzePhaseAsync(
-            Arg.Any<JobId>(), Arg.Any<OrgId>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<JobId>(), Arg.Any<OrgId>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string[]?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -152,6 +155,34 @@ public sealed class ArchitecturesControllerTests
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await response.Content.ReadAsStringAsync()).Should().Contain("INVALID_JOB_STATUS");
+    }
+
+    [Fact]
+    public async Task ConfirmArchitecture_MissingMethodSelection_Returns422()
+    {
+        var (orgId, userId) = await _factory.SeedOrgAndOwnerAsync("Arch Confirm Missing Methods");
+        JobId jobId = default!;
+
+        await _factory.SeedAsync(async db =>
+        {
+            var job = Job.Create(orgId, userId, "Confirm Missing Methods Job");
+            job.SetArtifact($"{orgId}/uploads/test.png", "image");
+            job.Transition(JobStatus.Parsing);
+            job.Transition(JobStatus.Normalizing);
+            job.Transition(JobStatus.AwaitingReview);
+            db.Jobs.Add(job);
+            db.Architectures.Add(Architecture.Create(job.Id, orgId, "sys", [], "[]", "[]", "[]"));
+            await db.SaveChangesAsync();
+            jobId = job.Id;
+        });
+
+        var client = _factory.CreateAuthenticatedClient(userId, orgId);
+        var response = await client.PostAsync(
+            $"/v1/orgs/{orgId.Value}/jobs/{jobId.Value}/architecture/confirm",
+            new StringContent("{}", Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("METHOD_SELECTION_REQUIRED");
     }
 
     [Fact]

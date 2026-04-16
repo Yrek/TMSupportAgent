@@ -23,6 +23,27 @@ public sealed class ClassifyStage(
     ILogger<ClassifyStage> logger) : IPipelineStage<ClassifyInput, ClassificationResult>
 {
     private const int MaxAttempts = 3;
+    private const int MaxSelectedMethods = 6;
+    private static readonly HashSet<string> AllowedMethods = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "stride",
+        "linddun",
+        "abuse_case",
+        "tenant_isolation",
+        "identity_session_delegation",
+        "ai_llm_threat",
+        "vast",
+        "pasta",
+        "octave",
+        "trike",
+        "mitre_attack",
+        "owasp_cumulus",
+        "owasp_cornucopia",
+        "maestro",
+        "emlsg",
+        "supply_chain",
+        "availability_resilience"
+    };
 
     // Required methods per architecture category (spec §4 Stage 4)
     private static readonly Dictionary<string, string[]> RequiredMethods = new()
@@ -32,8 +53,8 @@ public sealed class ClassifyStage(
         ["multi_tenant_saas"]         = ["stride", "abuse_case", "tenant_isolation"],
         ["identity_complex"]          = ["stride", "abuse_case", "identity_session_delegation"],
         ["privacy_heavy"]             = ["stride", "abuse_case", "linddun"],
-        ["llm_enabled"]               = ["stride", "abuse_case", "ai_llm_threat"],
-        ["agentic_mcp_enabled"]       = ["stride", "abuse_case", "ai_llm_threat"],
+        ["llm_enabled"]               = ["stride", "abuse_case", "ai_llm_threat", "maestro", "emlsg", "mitre_attack"],
+        ["agentic_mcp_enabled"]       = ["stride", "abuse_case", "ai_llm_threat", "maestro", "emlsg", "mitre_attack"],
         ["microservice_distributed"]  = ["stride", "abuse_case"],
         ["event_driven"]              = ["stride", "abuse_case"],
         ["integration_heavy"]         = ["stride", "abuse_case", "supply_chain"],
@@ -67,8 +88,10 @@ public sealed class ClassifyStage(
         var (output, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<ClassificationResult>(
             llmClient, request, Validate, "CLASSIFY_FAILED", MaxAttempts, logger, ct);
 
-        // Deterministic post-validation: enforce required methods
+        // Deterministic post-validation: enforce required methods and user-selected methods.
         output = EnforceRequiredMethods(output, model);
+        output = EnforceUserSelectedMethods(output, input.UserSelectedMethods);
+        output = LimitSelectedMethods(output, input.UserSelectedMethods);
 
         logger.LogInformation(
             "CLASSIFY complete. Categories={Categories} Methods={Methods} " +
@@ -109,6 +132,67 @@ public sealed class ClassifyStage(
         if (toAdd.Count == 0) return result;
 
         return result with { SelectedMethods = [.. result.SelectedMethods, .. toAdd] };
+    }
+
+    private ClassificationResult EnforceUserSelectedMethods(
+        ClassificationResult result,
+        IReadOnlyCollection<string> userSelectedMethods)
+    {
+        if (userSelectedMethods.Count == 0)
+            return result;
+
+        var existing = result.SelectedMethods.Select(m => m.Method).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var additions = new List<SelectedMethod>();
+        foreach (var method in userSelectedMethods)
+        {
+            if (!AllowedMethods.Contains(method))
+                continue;
+
+            if (existing.Contains(method))
+                continue;
+
+            additions.Add(new SelectedMethod(
+                Method: method,
+                Rationale: "Explicitly selected by reviewer at architecture confirmation.",
+                RequiredBySpec: false,
+                Stages: ["analyze"]));
+            existing.Add(method);
+        }
+
+        return additions.Count == 0
+            ? result
+            : result with { SelectedMethods = [.. result.SelectedMethods, .. additions] };
+    }
+
+    private ClassificationResult LimitSelectedMethods(
+        ClassificationResult result,
+        IReadOnlyCollection<string> userSelectedMethods)
+    {
+        if (result.SelectedMethods.Length <= MaxSelectedMethods)
+            return result;
+
+        var userSelectedSet = userSelectedMethods.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var required = result.SelectedMethods
+            .Where(m => m.RequiredBySpec || userSelectedSet.Contains(m.Method))
+            .ToList();
+
+        var optionalSlots = Math.Max(0, MaxSelectedMethods - required.Count);
+        var optional = result.SelectedMethods
+            .Where(m => !m.RequiredBySpec)
+            .Take(optionalSlots)
+            .ToList();
+
+        var limited = required
+            .Concat(optional)
+            .DistinctBy(m => m.Method, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        logger.LogWarning(
+            "CLASSIFY selected too many methods; limiting for runtime control. Selected={Selected} LimitedTo={Limited} RequiredKept={RequiredKept}",
+            result.SelectedMethods.Length, limited.Length, required.Count);
+
+        return result with { SelectedMethods = limited };
     }
 
     private static string? Validate(ClassificationResult o)

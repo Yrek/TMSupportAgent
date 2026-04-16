@@ -83,7 +83,11 @@ export function buildNodesAndEdges(
         label: edgeLabel,
         type: "smoothstep",
         animated: false,
-        style: { stroke: edgeThreatCount > 0 ? "#f59e0b" : "#94a3b8" },
+        style: {
+          stroke: edgeThreatCount > 0 ? "#f59e0b" : "#94a3b8",
+          strokeWidth: 2,
+        },
+        interactionWidth: 28,
         labelStyle: {
           fontSize: 10,
           fill: edgeThreatCount > 0 ? "#b45309" : "#64748b",

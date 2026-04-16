@@ -34,6 +34,7 @@ interface ElementDetailPanelProps {
   onPatch: (req: PatchElementRequest) => Promise<void>;
   onDelete: () => Promise<void>;
   onCorrect: (req: CorrectElementRequest) => Promise<void>;
+  onSoftRemove?: (() => Promise<void>) | undefined;
   /** GAP-TH5: related threats for this element shown when in analysis context */
   relatedThreats?: Threat[] | undefined;
   /** Called when user clicks a threat in the related-threats list */
@@ -46,6 +47,7 @@ export function ElementDetailPanel({
   onPatch,
   onDelete,
   onCorrect,
+  onSoftRemove,
   relatedThreats,
   onThreatClick,
 }: ElementDetailPanelProps) {
@@ -59,6 +61,7 @@ export function ElementDetailPanel({
 
   const config = ELEMENT_TYPE_CONFIG[element.elementType];
   const canDelete = element.source === "UserAdded";
+  const canSoftRemove = element.source === "Extracted";
 
   async function handleSave() {
     setIsSaving(true);
@@ -103,6 +106,18 @@ export function ElementDetailPanel({
                 size="icon"
                 onClick={() => setShowDeleteDialog(true)}
                 aria-label="Delete element"
+                className="text-destructive hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+            {canSoftRemove && onSoftRemove && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => void onSoftRemove()}
+                aria-label="Soft remove element"
+                title="Soft remove (excluded from analysis)"
                 className="text-destructive hover:text-destructive"
               >
                 <Trash2 className="h-4 w-4" />

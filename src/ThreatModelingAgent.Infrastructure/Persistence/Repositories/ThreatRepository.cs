@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using ThreatModelingAgent.Domain.Entities;
+using ThreatModelingAgent.Domain.Enums;
 using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Domain.ValueObjects;
 
@@ -14,15 +15,43 @@ internal sealed class ThreatRepository(AppDbContext db) : IThreatRepository
             .Include(t => t.Notes)
             .FirstOrDefaultAsync(t => t.Id == threatId && t.OrgId == orgId, ct);
 
-    public async Task<IReadOnlyList<Threat>> ListByJobAsync(JobId jobId, OrgId orgId, Guid? elementId = null, CancellationToken ct = default)
-        => await db.Threats
+    public async Task<IReadOnlyList<Threat>> ListByJobAsync(
+        JobId jobId,
+        OrgId orgId,
+        Guid? elementId = null,
+        FindingType[]? findingTypes = null,
+        ThreatStatus[]? statuses = null,
+        ConfidenceLevel[]? confidences = null,
+        string[]? methodCategories = null,
+        string[]? frameworks = null,
+        CancellationToken ct = default)
+    {
+        var query = db.Threats
             .Include(t => t.Mitigations)
             .Include(t => t.FrameworkMappings)
             .Where(t => t.JobId == jobId && t.OrgId == orgId)
             // GAP-TH3: filter by element when requested (Npgsql translates Contains → ANY())
-            .Where(t => elementId == null || t.AffectedElementIds.Contains(elementId.Value))
+            .Where(t => elementId == null || t.AffectedElementIds.Contains(elementId.Value));
+
+        if (findingTypes is { Length: > 0 })
+            query = query.Where(t => findingTypes.Contains(t.FindingType));
+
+        if (statuses is { Length: > 0 })
+            query = query.Where(t => statuses.Contains(t.Status));
+
+        if (confidences is { Length: > 0 })
+            query = query.Where(t => confidences.Contains(t.Confidence));
+
+        if (methodCategories is { Length: > 0 })
+            query = query.Where(t => methodCategories.Contains(t.MethodCategory));
+
+        if (frameworks is { Length: > 0 })
+            query = query.Where(t => t.FrameworkMappings.Any(fm => frameworks.Contains(fm.Framework)));
+
+        return await query
             .OrderBy(t => t.Identifier)
             .ToListAsync(ct);
+    }
 
     public Task<int> CountByJobAsync(JobId jobId, OrgId orgId, CancellationToken ct = default)
         => db.Threats.CountAsync(t => t.JobId == jobId && t.OrgId == orgId, ct);

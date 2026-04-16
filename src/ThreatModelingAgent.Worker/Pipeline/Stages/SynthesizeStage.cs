@@ -43,6 +43,7 @@ public sealed class SynthesizeStage(
         var modelRoutingSummary = new Dictionary<string, string>
         {
             ["synthesize"] = model,
+            ["analyzeBaseline"] = input.ClassificationResult.ModelRoutingPlan.AnalyzeStageSecurity,
             ["analyzeStrong"] = input.ClassificationResult.ModelRoutingPlan.AnalyzeStageSecurity,
             ["analyzeLight"] = input.ClassificationResult.ModelRoutingPlan.AnalyzeStageLight
         };

@@ -237,13 +237,16 @@ All routes except `/login` and `/auth/callback` require authentication. Unauthen
 
 ### 6.4 Upload Job (`/orgs/:orgId/jobs/new/upload`)
 
-**Purpose:** File upload with title.
+**Purpose:** File upload with title and optional architecture context.
 
 **Requirements:**
 - Drag-and-drop zone accepting: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.puml`, `.txt`, `.md`, `.mmd`, `.drawio`, `.xml`.
 - Client-side validation: extension must be in allowlist, file size ≤ 10 MB. Show error immediately if violated.
 - File type icons and a help tooltip listing all supported formats.
 - Optional title field (max 255 chars).
+- Optional **application description** textarea (max 2000 chars).
+- Optional **architecture description** textarea (max 4000 chars).
+- Both descriptions are submitted with the artifact and used as additional LLM context in PARSE/NORMALIZE flow.
 - Submit → `POST /orgs/:orgId/jobs` (multipart/form-data).
 - On 202 → redirect to `/jobs/:jobId` (progress page).
 - On 413 → show "File is too large (max 10 MB)".
@@ -285,7 +288,7 @@ This is the most complex screen in the application.
 - Left panel: element list (scrollable, grouped by type).
 - Centre: interactive canvas (`React Flow`) showing elements as nodes and data flows as edges.
 - Right panel: selected element detail / edit form (shown when an element is selected, hidden otherwise).
-- Top bar: job title, status chip, "Confirm architecture" button.
+- Top bar: job title, status chip, "Add threat" action (pre-analysis concern capture), and "Confirm architecture" button.
 
 **Canvas requirements:**
 - Each `ArchitectureElement` is a node. Node shape/color varies by `elementType`:
@@ -305,6 +308,7 @@ This is the most complex screen in the application.
 - Clicking a node → opens element detail panel on the right.
 - Canvas supports zoom/pan.
 - Auto-layout on first render (ELK or dagre via `@dagrejs/dagre`).
+- Draw-flow mode toggle allows the user to create a new data flow by selecting source and target nodes.
 
 **Element detail panel (right):**
 - Shown when an element is selected.
@@ -347,7 +351,8 @@ This is the most complex screen in the application.
 - Tabs: Threats | Architecture | Recommendations | Remediation | Export.
 
 **Threats tab:**
-- Filter bar: finding type (confirmed / conditional / user-added), status (open / accepted / mitigated / rejected), confidence (high / medium / low), method category.
+- Filter bar: finding type (confirmed / conditional / user-added), status (open / accepted / mitigated / rejected), confidence (high / medium / low), method category, framework.
+- Framework filter includes mapped framework values from threat mappings and keeps unmapped threats visible unless a framework filter is explicitly active.
 - Threat list — each card shows: identifier badge (e.g. T-001), title, method category, confidence badge, finding type badge, status badge, affected element names, short description excerpt.
 - Clicking a threat → opens threat detail panel (or navigates to threat detail view on mobile).
 - Threat detail panel shows all fields: full description, attack scenario, preconditions, impacted assets, security impact, privacy impact, existing controls, control gaps, evidence basis + strength, assumptions, mitigations list, framework mappings, notes.
@@ -358,7 +363,9 @@ This is the most complex screen in the application.
 **Architecture tab (on Analysis page):**
 - Same React Flow canvas as the review page, but **read-only**.
 - Clicking an element shows threats mapped to it (filtered from the threats list).
+- Clicking a data flow (edge) applies the same threat filter behavior as clicking a node.
 - Threats are displayed as overlaid badges on nodes (count of threats, color-coded by highest severity).
+- Selected edge highlighting uses stronger stroke/color to make flow selection obvious.
 - This satisfies spec §19 "interactive diagram requirements" — click element → see its threats.
 
 **Recommendations tab:**
@@ -857,3 +864,4 @@ The `POST /threats` endpoint requires job status `Complete or Partial`. During `
 | OD-F5 | **GAP-TH6** — Diagram state comparison (spec §19): deferred to post-MVP — shows original extracted vs corrected vs current overlay on the canvas | Architecture review UX |
 | OD-F6 | Mobile support for canvas: deferred; mobile shows list-only view; canvas is desktop-only | Mobile UX |
 | OD-F7 | ~~Re-analysis after completion: deferred to post-MVP~~ **RESOLVED** — backend endpoint `POST /architecture/reanalyze` implemented, state machine updated, "Re-analyze" button in F-711 | Analysis workflow |
+

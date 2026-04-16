@@ -50,8 +50,11 @@ export interface Threat {
 }
 
 export interface ThreatFilters {
-  findingType?: string | undefined;
-  status?: ThreatStatus | undefined;
+  findingType?: string[] | undefined;
+  status?: ThreatStatus[] | undefined;
+  confidence?: Array<"High" | "Medium" | "Low"> | undefined;
+  method?: string[] | undefined;
+  framework?: string[] | undefined;
   elementId?: string | undefined;
 }
 
@@ -72,8 +75,11 @@ export function useThreats(orgId: string, jobId: string, filters?: ThreatFilters
     queryKey: ["threats", orgId, jobId, filters],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (filters?.findingType) params.set("findingType", filters.findingType);
-      if (filters?.status) params.set("status", filters.status);
+      filters?.findingType?.forEach((v) => params.append("findingType", v));
+      filters?.status?.forEach((v) => params.append("status", v));
+      filters?.confidence?.forEach((v) => params.append("confidence", v));
+      filters?.method?.forEach((v) => params.append("method", v));
+      filters?.framework?.forEach((v) => params.append("framework", v));
       if (filters?.elementId) params.set("elementId", filters.elementId);
       const res = await apiClient.get<{ data: Threat[] }>(
         `/orgs/${orgId}/jobs/${jobId}/threats?${params.toString()}`,

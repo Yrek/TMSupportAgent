@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { toast } from "sonner";
-import { PlusCircle, ArrowLeft, ShieldAlert } from "lucide-react";
+import { PlusCircle, ArrowLeft } from "lucide-react";
 import {
   useArchitecture,
   useAddElement,
@@ -28,6 +28,24 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import type { ArchitectureElement } from "@/api/architecture";
 
+const METHOD_OPTIONS = [
+  { value: "stride", label: "STRIDE" },
+  { value: "vast", label: "VAST" },
+  { value: "pasta", label: "PASTA" },
+  { value: "octave", label: "OCTAVE" },
+  { value: "trike", label: "TRIKE" },
+  { value: "mitre_attack", label: "MITRE ATT&CK" },
+  { value: "owasp_cumulus", label: "OWASP Cumulus" },
+  { value: "owasp_cornucopia", label: "OWASP Cornucopia" },
+  { value: "linddun", label: "LINDDUN" },
+  { value: "abuse_case", label: "Abuse Cases" },
+  { value: "tenant_isolation", label: "Tenant Isolation" },
+  { value: "identity_session_delegation", label: "Identity/Session Delegation" },
+  { value: "ai_llm_threat", label: "AI/LLM Threats" },
+  { value: "maestro", label: "MAESTRO (AI)" },
+  { value: "emlsg", label: "EMLSG (ML)" },
+] as const;
+
 export function ReviewPage() {
   const { orgId, jobId } = useParams<{ orgId: string; jobId: string }>();
   const navigate = useNavigate();
@@ -49,18 +67,65 @@ export function ReviewPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmNote, setConfirmNote] = useState("");
+  const [selectedMethods, setSelectedMethods] = useState<string[]>([]);
   const [keyboardDeleteElement, setKeyboardDeleteElement] = useState<ArchitectureElement | null>(null);
+  const [drawFlowMode, setDrawFlowMode] = useState(false);
+  const [showRemovedElements, setShowRemovedElements] = useState(false);
   // GAP-TH7: pre-analysis concern modal
   const [showAddThreatModal, setShowAddThreatModal] = useState(false);
 
   const isReadOnly = job?.status !== "AwaitingReview";
-  const elements = architecture?.elements ?? [];
-  const nonDataFlow = elements.filter((e) => e.elementType !== "DataFlow");
+  const allElements = architecture?.elements ?? [];
+  const activeElements = allElements.filter((e) => {
+    if (e.source !== "Extracted") return true;
+    return !e.corrections.some((c) => c.correctionType === "MarkIncorrect");
+  });
+  const elements = showRemovedElements ? allElements : activeElements;
+  const nonDataFlow = activeElements.filter((e) => e.elementType !== "DataFlow");
   const canConfirm = !isReadOnly && nonDataFlow.length > 0;
 
+  useEffect(() => {
+    if (!selectedElement) return;
+    const stillVisible = elements.some((e) => e.id === selectedElement.id);
+    if (!stillVisible) setSelectedElement(null);
+  }, [elements, selectedElement]);
+
+  async function handleCreateDataFlow(from: ArchitectureElement, to: ArchitectureElement) {
+    const exists = elements.some(
+      (e) =>
+        e.elementType === "DataFlow" &&
+        String(e.properties?.["from"] ?? "").toLowerCase() === from.name.toLowerCase() &&
+        String(e.properties?.["to"] ?? "").toLowerCase() === to.name.toLowerCase(),
+    );
+
+    if (exists) {
+      toast.info("A flow between these elements already exists.");
+      return;
+    }
+
+    await addElement.mutateAsync({
+      elementType: "DataFlow",
+      name: `${from.name} -> ${to.name}`,
+      properties: {
+        from: from.name,
+        to: to.name,
+      },
+    });
+
+    toast.success("Data flow added");
+  }
+
   async function handleConfirm() {
+    if (selectedMethods.length === 0) {
+      toast.error("Select at least one method/framework before confirming.");
+      return;
+    }
+
     try {
-      await confirmArch.mutateAsync({ note: confirmNote || undefined });
+      await confirmArch.mutateAsync({
+        note: confirmNote || undefined,
+        selectedMethods,
+      });
       toast.success("Analysis started");
       navigate(`/orgs/${orgId!}/jobs/${jobId!}`);
     } catch {
@@ -112,7 +177,7 @@ export function ReviewPage() {
             <span className="text-sm text-muted-foreground">Read-only — {job?.status}</span>
           )}
 
-          {/* GAP-TH7: flag a pre-analysis concern while architecture is still under review */}
+          {/* GAP-TH7: add pre-analysis threat while architecture is still under review */}
           {!isReadOnly && nonDataFlow.length > 0 && (
             <Button
               variant="outline"
@@ -120,10 +185,27 @@ export function ReviewPage() {
               onClick={() => setShowAddThreatModal(true)}
               className="gap-1.5"
             >
-              <ShieldAlert className="h-4 w-4" />
-              Flag concern
+              Add threat
             </Button>
           )}
+
+          {!isReadOnly && (
+            <Button
+              variant={drawFlowMode ? "default" : "outline"}
+              size="sm"
+              onClick={() => setDrawFlowMode((v) => !v)}
+            >
+              {drawFlowMode ? "Draw flow: ON" : "Draw flow: OFF"}
+            </Button>
+          )}
+
+          <Button
+            variant={showRemovedElements ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowRemovedElements((v) => !v)}
+          >
+            {showRemovedElements ? "Show removed: ON" : "Show removed: OFF"}
+          </Button>
 
           {!isReadOnly && (
             <Button
@@ -168,8 +250,14 @@ export function ReviewPage() {
               <ArchCanvas
                 elements={elements}
                 readOnly={isReadOnly}
+                drawFlowMode={drawFlowMode}
                 selectedElementId={selectedElement?.id}
                 onElementSelect={setSelectedElement}
+                onEdgeClick={(edgeElementId) => {
+                  const edgeElement = elements.find((e) => e.id === edgeElementId);
+                  if (edgeElement) setSelectedElement(edgeElement);
+                }}
+                onCreateDataFlow={handleCreateDataFlow}
                 onDeleteElement={(id) => {
                   const el = elements.find((e) => e.id === id);
                   if (el) setKeyboardDeleteElement(el);
@@ -197,6 +285,29 @@ export function ReviewPage() {
                   await correctElement.mutateAsync({ elementId: selectedElement.id, req });
                   toast.success("Correction saved");
                 }}
+                onSoftRemove={
+                  isReadOnly
+                    ? undefined
+                    : async () => {
+                        if (selectedElement.source !== "Extracted") return;
+                        const alreadyRemoved = selectedElement.corrections.some(
+                          (c) => c.correctionType === "MarkIncorrect",
+                        );
+                        if (alreadyRemoved) {
+                          toast.info("Element is already soft-removed.");
+                          return;
+                        }
+                        await correctElement.mutateAsync({
+                          elementId: selectedElement.id,
+                          req: {
+                            correctionType: "MarkIncorrect",
+                            note: "Soft removed by reviewer.",
+                          },
+                        });
+                        setSelectedElement(null);
+                        toast.success("Element soft-removed and excluded from analysis");
+                      }
+                }
               />
             </aside>
           )}
@@ -235,7 +346,7 @@ export function ReviewPage() {
         onOpenChange={setShowAddThreatModal}
         onSubmit={async (req) => {
           await addThreat.mutateAsync(req);
-          toast.success("Concern flagged — it will be included in the analysis");
+          toast.success("Threat added — it will be included in the analysis");
         }}
         elements={elements}
         preselectedElementId={selectedElement?.id}
@@ -250,17 +361,70 @@ export function ReviewPage() {
         onConfirm={handleConfirm}
         isLoading={confirmArch.isPending}
       >
-        <div className="space-y-1.5">
-          <Label htmlFor="confirmNote">Note (optional)</Label>
-          <Textarea
-            id="confirmNote"
-            value={confirmNote}
-            onChange={(e) => setConfirmNote(e.target.value)}
-            placeholder="Any notes about this review…"
-            rows={3}
-          />
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <Label>Threat methods/frameworks * ({selectedMethods.length} selected)</Label>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setSelectedMethods(METHOD_OPTIONS.map((m) => m.value))}
+                >
+                  Select all
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setSelectedMethods([])}
+                >
+                  Clear all
+                </Button>
+              </div>
+            </div>
+            <div className="max-h-44 overflow-auto rounded-md border p-2">
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                {METHOD_OPTIONS.map((opt) => {
+                  const checked = selectedMethods.includes(opt.value);
+                  return (
+                    <label key={opt.value} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          setSelectedMethods((prev) =>
+                            e.target.checked
+                              ? [...new Set([...prev, opt.value])]
+                              : prev.filter((m) => m !== opt.value),
+                          );
+                        }}
+                      />
+                      <span>{opt.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">At least one selection is required.</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="confirmNote">Note (optional)</Label>
+            <Textarea
+              id="confirmNote"
+              value={confirmNote}
+              onChange={(e) => setConfirmNote(e.target.value)}
+              placeholder="Any notes about this review..."
+              rows={3}
+            />
+          </div>
         </div>
       </ConfirmDialog>
     </AppShell>
   );
 }
+

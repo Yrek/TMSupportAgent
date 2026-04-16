@@ -78,16 +78,35 @@ internal sealed class ServiceBusJobQueue : IJobQueue, IAsyncDisposable
         OrgId orgId,
         string artifactBlobPath,
         string artifactType,
+        string? applicationDescription = null,
+        string? architectureDescription = null,
         CancellationToken ct = default)
-        => SendAsync(new AnalysisJobMessage(jobId.Value, orgId.Value, artifactBlobPath, artifactType, PipelinePhase.Parse), ct);
+        => SendAsync(new AnalysisJobMessage(
+            jobId.Value,
+            orgId.Value,
+            artifactBlobPath,
+            artifactType,
+            applicationDescription,
+            architectureDescription,
+            null,
+            PipelinePhase.Parse), ct);
 
     public Task EnqueueAnalyzePhaseAsync(
         JobId jobId,
         OrgId orgId,
         string artifactBlobPath,
         string artifactType,
+        string[]? selectedMethods = null,
         CancellationToken ct = default)
-        => SendAsync(new AnalysisJobMessage(jobId.Value, orgId.Value, artifactBlobPath, artifactType, PipelinePhase.Analyze), ct);
+        => SendAsync(new AnalysisJobMessage(
+            jobId.Value,
+            orgId.Value,
+            artifactBlobPath,
+            artifactType,
+            null,
+            null,
+            selectedMethods,
+            PipelinePhase.Analyze), ct);
 
     private async Task SendAsync(AnalysisJobMessage message, CancellationToken ct)
     {

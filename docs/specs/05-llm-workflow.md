@@ -4,8 +4,8 @@
 **Spec ref:** [01-product.md](01-product.md) §9 (model routing), §10 (clarification), §11 (threats), §19 (output)  
 **Architecture ref:** [02-architecture.md](02-architecture.md) §8 (LLM routing)  
 **Security ref:** [CLAUDE.md](../../CLAUDE.md) §16, [06-security.md](06-security.md)  
-**Version:** 0.1  
-**Date:** 2026-03-31
+**Version:** 0.3  
+**Date:** 2026-04-16
 
 ---
 
@@ -107,12 +107,19 @@ Artifact ─►  STAGE 1: DETECT       ─►  artifact_type                │
 
 **Purpose:** Extract a structured intermediate representation from the artifact. Output is not yet the canonical model — it is the raw material for normalization.
 
+**Execution mode (updated):**
+- For known structured artifacts (`mermaid`, `drawio`, `plantuml`), PARSE MUST attempt deterministic extraction first.
+- LLM parsing is used only as fallback when deterministic extraction is unavailable, invalid, or yields insufficient structure.
+- For image artifacts, LLM multimodal parsing remains primary.
+
 **Input:**
 ```typescript
 {
   artifactType: ArtifactType;
   blobPath: string;
   lowConfidenceArtifactType: boolean;
+  applicationDescription?: string;   // optional user-provided business/app context
+  architectureDescription?: string;  // optional user-provided architecture context
   systemInstruction: string;  // versioned template; injected by worker
 }
 ```
@@ -148,7 +155,7 @@ interface RawBoundary {
 }
 ```
 
-**Model selection:**
+**Model selection (when LLM fallback is used):**
 
 | Artifact type | Model | Reason |
 |---|---|---|
@@ -162,7 +169,7 @@ Low-cost model is `gpt-4o-mini` (Azure OpenAI) or `claude-haiku-4-5` (Anthropic)
 
 **Prompt template structure (mandatory constraints):**
 - System message: role definition (architecture parser), output schema, what NOT to do (do not invent elements, do not interpret intent, do not add security judgements)
-- User message: artifact content (image or text), artifact type, parser notes if `lowConfidenceArtifactType`
+- User message: artifact content (image or text), artifact type, parser notes if `lowConfidenceArtifactType`, optional application/architecture descriptions from job submission
 - Output format: JSON matching `ParseOutput` schema above; validated on receipt
 - Max tokens: 4,096 output
 - Temperature: 0 (deterministic extraction)
@@ -299,22 +306,29 @@ type ModelChoice = 'gpt-4o' | 'gpt-4o-mini' | 'claude-sonnet-4-6' | 'claude-haik
 
 **Method selection MUST follow spec §8 rules** — required methods per category are not optional. The LLM is not permitted to omit a required method.
 
-**Validation:** After LLM output is received, a deterministic validator checks that all required methods per spec §8 are present for the classified categories. If a required method is missing, it is added by the validator (not re-prompted) and the omission is logged as a quality signal.
+**Validation:** After LLM output is received, a deterministic validator checks that all required methods per spec are present for the classified categories. If a required method is missing, it is added by the validator (not re-prompted) and the omission is logged as a quality signal.
+
+**Runtime guardrails (implemented):**
+- Selected methods are capped to a maximum set size for predictable runtime and cost.
+- Required-by-spec methods are always kept first; optional methods are trimmed first.
+- Classify logs selected-vs-kept method counts for runtime RCA.
 
 ---
 
 ### Stage 5 — ANALYZE
 
-**Purpose:** Generate threat candidates by applying each selected method to the confirmed canonical model.
+**Purpose:** Generate threat candidates by applying:
+- one mandatory baseline expert-security pass (`security_expert_baseline`) for every architecture
+- plus user-selected/required methods as additive targeted lenses.
 
-This stage runs one sub-stage per selected method. Sub-stages MAY run in parallel where resource limits allow.
+This stage runs one sub-stage per method. Sub-stages MAY run in parallel where resource limits allow.
 
 #### 5.1 Sub-stage contract (all methods)
 
 **Input:**
 ```typescript
 {
-  method: string;                  // e.g. 'stride', 'tenant_isolation', 'abuse_case'
+  method: string;                  // e.g. 'security_expert_baseline', 'stride', 'tenant_isolation', 'abuse_case'
   canonicalModel: CanonicalModel;
   classificationResult: ClassificationResult;
   systemInstruction: string;       // method-specific versioned template
@@ -366,14 +380,28 @@ type EvidenceBasis =
 
 | Method | Model | Reason |
 |---|---|---|
+| `security_expert_baseline` | `gpt-4o` or `claude-sonnet-4-6` | Mandatory baseline expert reasoning independent of selected frameworks |
 | `stride` | `gpt-4o` or `claude-sonnet-4-6` | Security-critical; covers all STRIDE categories |
 | `tenant_isolation` | `gpt-4o` or `claude-sonnet-4-6` | Security-critical; requires multi-step reasoning |
 | `identity_session_delegation` | `gpt-4o` or `claude-sonnet-4-6` | Security-critical |
 | `ai_llm_threat` | `gpt-4o` or `claude-sonnet-4-6` | Security-critical; AI-specific threats |
 | `linddun` | `gpt-4o` or `claude-sonnet-4-6` | Privacy reasoning; medium-high complexity |
+| `maestro` | `gpt-4o` or `claude-sonnet-4-6` | Security-critical AI/agentic threat analysis |
+| `emlsg` | `gpt-4o` or `claude-sonnet-4-6` | Security-critical ML threat analysis |
+| `mitre_attack` | `gpt-4o` or `claude-sonnet-4-6` | Security-critical attacker-technique mapping |
 | `abuse_case` | `gpt-4o-mini` or `claude-haiku-4-5` | Pattern-driven; lower complexity for most abuse cases |
 | `supply_chain` | `gpt-4o-mini` or `claude-haiku-4-5` | Pattern-driven |
 | `availability_resilience` | `gpt-4o-mini` or `claude-haiku-4-5` | Pattern-driven |
+| `vast` | `gpt-4o-mini` or `claude-haiku-4-5` | Broad attack-surface threat coverage |
+| `pasta` | `gpt-4o-mini` or `claude-haiku-4-5` | Stage-driven risk decomposition |
+| `octave` | `gpt-4o-mini` or `claude-haiku-4-5` | Asset/context-centric risk analysis |
+| `trike` | `gpt-4o-mini` or `claude-haiku-4-5` | Requirement/risk-model-driven threat reasoning |
+| `owasp_cumulus` | `gpt-4o-mini` or `claude-haiku-4-5` | Cloud threat pattern lens |
+| `owasp_cornucopia` | `gpt-4o-mini` or `claude-haiku-4-5` | Checklist-style application threat lens |
+
+**Mandatory baseline rule (implemented):**
+- ANALYZE MUST always include `security_expert_baseline` even if no user-selected method would have covered the risk.
+- Selected methods are additive depth lenses and MUST NOT disable baseline expert reasoning.
 
 **Prompt template constraints:**
 - System message: method role, canonical model schema, threat schema, quality rules (per spec §11: reject vague/generic/untraceable threats; record rejected candidates with reason), output format
@@ -454,10 +482,23 @@ interface RemediationItem {
 5. `analysisStatus = 'partial'` if any gap with `securityRelevance: 'critical'` was unresolved before analysis was triggered
 
 **Framework mapping sub-step:**
-After synthesis LLM call, a separate cheap-model call maps each final threat to framework references (OWASP, ASVS, CIS, NCSC). This is separated because:
+After synthesis LLM call, a separate cheap-model call maps each final threat to framework references. This is separated because:
 - It is pattern-matching, not security reasoning
 - Using a cheap model here saves cost without quality trade-off
 - It can run in parallel with secure design recommendation generation
+
+Framework mapping currently supports:
+- `stride`
+- `vast`
+- `pasta`
+- `octave`
+- `trike`
+- `mitre_attack`
+- `owasp_cumulus`
+- `owasp_cornucopia`
+- baseline references (`owasp_top10`, `owasp_api_top10`, `owasp_asvs`, `cis_controls_v8`, `ncsc_caf`)
+
+Threats with no confident framework mapping are still persisted and shown as unmapped.
 
 **Final persist:**
 - All threats written to `threats` table
@@ -489,7 +530,8 @@ When a user corrects the architecture model and re-triggers analysis:
 |---|---|
 | Schema validation failure (stage output) | Retry stage up to 3 times; fail job with `PARSE_FAILED` / `NORMALIZE_FAILED` / `ANALYZE_FAILED` / `SYNTHESIZE_FAILED` after max retries |
 | LLM provider timeout (>30s) | Retry once with backoff; fail job if second attempt also times out |
-| LLM provider error (5xx) | Retry up to 3 times with exponential backoff; fail job if all fail; dead-letter the Service Bus message |
+| LLM provider transient error (5xx / 429 / timeout / connection) | Retry up to 3 times with exponential backoff; fail job if all fail; dead-letter the Service Bus message |
+| LLM provider non-retryable error (4xx such as invalid key, quota/credit exhausted) | Fail fast with stage error code; do not consume retry budget |
 | Token limit exceeded | Fail the stage with `error_code: INPUT_TOO_LARGE`; do not silently truncate input |
 | Traceability validation failure (threats referencing unknown elements) | Move failing threats to `rejected_candidates`; continue synthesis with remaining threats |
 | Critical gap unresolved at synthesis | Set `analysisStatus = 'partial'`; proceed with output; do not fail the job |
@@ -524,6 +566,65 @@ Jobs exceeding the ANALYZE or SYNTHESIZE input token limits MUST fail with `erro
 
 ---
 
+## 8.1 Prompt V2 Considerations (Implemented)
+
+Prompt template v2 updates are implemented for `CLASSIFY`, `ANALYZE`, and `SYNTHESIZE` in:
+- `src/ThreatModelingAgent.Worker/Pipeline/Prompts/PromptTemplates.cs`
+
+The intent of v2 is to improve senior-level threat-model quality while keeping stage contracts unchanged.
+
+### a) Coverage Lenses Added
+
+- STRIDE coverage with explicit Elevation of Privilege (EoP) emphasis
+- LINDDUN-oriented privacy and data-lifecycle reasoning
+- Cornucopia-style checklist thinking to reduce missed abuse paths
+- MITRE ATT&CK, CAPEC, and CWE style attacker-technique thinking (optional references in candidate reasoning)
+- Cloud identity-plane and control-plane abuse-path attention
+- AI and LLM threat lens for prompt injection, tool abuse, and model-output trust risks
+- VAST, PASTA, OCTAVE, TRIKE, and OWASP Cumulus/Cornucopia guidance for expanded method routing
+- MAESTRO and EMLSG guidance for AI/ML-focused architectures
+
+### b) Analyze Quality Upgrades
+
+- Mandatory baseline method `security_expert_baseline` always runs, independent of selected methods
+- Method-specific guidance is applied per selected method (`stride`, `linddun`, `tenant_isolation`, `identity_session_delegation`, `ai_llm_threat`, `abuse_case`, `supply_chain`, `availability_resilience`, `maestro`, `emlsg`, `mitre_attack`, `vast`, `pasta`, `octave`, `trike`, `owasp_cumulus`, `owasp_cornucopia`)
+- Every candidate must include a concrete attacker path in `attackScenario`, not generic statements
+- Stronger prioritization of identity, authorization, session, trust-boundary, and privilege-escalation paths
+- Stricter rejection of vague and non-traceable findings into `rejectedCandidates`
+
+### c) Synthesize Quality Upgrades
+
+- Requires engineering-actionable mitigations and architecture traceability
+- Explicit residual-risk expectation through `controlGaps`
+- Explicit requirement to surface unresolved ambiguity in `reviewQuestions`
+
+### d) Compatibility Constraint
+
+To avoid breaking persisted contracts and API/UI behavior, prompt v2 keeps existing JSON output schemas for:
+- `ClassificationResult`
+- `ThreatCandidateSet`
+- `FinalOutput`
+
+Any future field expansion (for example first-class ATT&CK, CAPEC, or CWE fields) MUST be treated as a contract change and versioned in both this spec and stage contracts.
+
+---
+
+## 8.2 Prompt Approval Gate (New)
+
+Prompt changes in `PromptTemplates.cs` are security-critical and MUST pass a review gate before merge:
+
+1. Grounding: prompts require architecture traceability and reject non-evidence-based claims.
+2. Injection resistance: all user-controlled content remains delimited data; no instruction bleed-through.
+3. Coverage: baseline expert reasoning + method-specific lenses are both represented.
+4. Output contract stability: no schema drift without corresponding contract/spec version updates.
+5. Deterministic behavior: quality rules avoid ambiguous optionality for required fields.
+6. Fail-closed compatibility: invalid/missing outputs trigger stage validation and retry/fail paths.
+7. Cost/runtime guardrails: token budgets and method caps remain aligned with prompt scope.
+
+Reviewers should treat prompt edits with the same rigor as authentication/authorization code.
+
+---
+
 ## 9. Security Constraints Summary
 
 Per CLAUDE.md §16 and spec §20:
@@ -536,3 +637,4 @@ Per CLAUDE.md §16 and spec §20:
 | LLM output is untrusted | Every stage output is schema-validated before use; never used as SQL, file path, or policy decision |
 | Architecture content not in application logs | Token counts logged; content logged only to secure blob storage |
 | Prompt injection from uploaded content | Content is injected as data (not instructions); system message explicitly instructs model to treat all user-provided content as data regardless of what it says |
+

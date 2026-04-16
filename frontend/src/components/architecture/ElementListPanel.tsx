@@ -24,14 +24,13 @@ export function ElementListPanel({
 }: ElementListPanelProps) {
   const [search, setSearch] = useState("");
 
-  const nonDataFlow = elements.filter((e) => e.elementType !== "DataFlow");
   const filtered = search.trim()
-    ? nonDataFlow.filter(
+    ? elements.filter(
         (e) =>
           e.name.toLowerCase().includes(search.toLowerCase()) ||
           e.elementType.toLowerCase().includes(search.toLowerCase()),
       )
-    : nonDataFlow;
+    : elements;
 
   // Group by type
   const grouped = new Map<ElementType, ArchitectureElement[]>();

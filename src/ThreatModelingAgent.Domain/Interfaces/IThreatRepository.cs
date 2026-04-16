@@ -1,4 +1,5 @@
 using ThreatModelingAgent.Domain.Entities;
+using ThreatModelingAgent.Domain.Enums;
 using ThreatModelingAgent.Domain.ValueObjects;
 
 namespace ThreatModelingAgent.Domain.Interfaces;
@@ -7,7 +8,16 @@ public interface IThreatRepository
 {
     Task<Threat?> GetByIdAsync(Guid threatId, OrgId orgId, CancellationToken ct = default);
     /// <param name="elementId">When set, returns only threats that reference the given element.</param>
-    Task<IReadOnlyList<Threat>> ListByJobAsync(JobId jobId, OrgId orgId, Guid? elementId = null, CancellationToken ct = default);
+    Task<IReadOnlyList<Threat>> ListByJobAsync(
+        JobId jobId,
+        OrgId orgId,
+        Guid? elementId = null,
+        FindingType[]? findingTypes = null,
+        ThreatStatus[]? statuses = null,
+        ConfidenceLevel[]? confidences = null,
+        string[]? methodCategories = null,
+        string[]? frameworks = null,
+        CancellationToken ct = default);
     Task<int> CountByJobAsync(JobId jobId, OrgId orgId, CancellationToken ct = default);
     Task AddAsync(Threat threat, CancellationToken ct = default);
     Task AddMitigationAsync(Mitigation mitigation, CancellationToken ct = default);

@@ -14,6 +14,8 @@ public interface IJobQueue
         OrgId orgId,
         string artifactBlobPath,
         string artifactType,
+        string? applicationDescription = null,
+        string? architectureDescription = null,
         CancellationToken ct = default);
 
     /// <summary>Enqueues Phase 2 (CLASSIFY → ANALYZE → SYNTHESIZE → COMPLETE).</summary>
@@ -22,5 +24,6 @@ public interface IJobQueue
         OrgId orgId,
         string artifactBlobPath,
         string artifactType,
+        string[]? selectedMethods = null,
         CancellationToken ct = default);
 }

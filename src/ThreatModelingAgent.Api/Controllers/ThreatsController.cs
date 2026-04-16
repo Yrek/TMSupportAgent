@@ -49,6 +49,11 @@ public sealed class ThreatsController(
         Guid orgId,
         Guid jobId,
         [FromQuery] Guid? elementId,
+        [FromQuery] string[]? findingType,
+        [FromQuery] string[]? status,
+        [FromQuery] string[]? confidence,
+        [FromQuery] string[]? method,
+        [FromQuery] string[]? framework,
         CancellationToken ct)
     {
         var userId = User.GetUserId();
@@ -60,9 +65,74 @@ public sealed class ThreatsController(
         var job = await jobs.GetByIdAsync(JobId.From(jobId), orgIdValue, ct);
         if (job is null) return NotFound();
 
-        // GAP-TH3: pass elementId to repository for server-side filtering
-        var items = await threats.ListByJobAsync(JobId.From(jobId), orgIdValue, elementId, ct);
+        var findingTypes = (findingType ?? [])
+            .Select(v => Enum.TryParse<FindingType>(v, true, out var parsed) ? parsed : (FindingType?)null)
+            .Where(v => v is not null)
+            .Select(v => v!.Value)
+            .Distinct()
+            .ToArray();
+
+        var statuses = (status ?? [])
+            .Select(v => Enum.TryParse<ThreatStatus>(v, true, out var parsed) ? parsed : (ThreatStatus?)null)
+            .Where(v => v is not null)
+            .Select(v => v!.Value)
+            .Distinct()
+            .ToArray();
+
+        var confidences = (confidence ?? [])
+            .Select(v => Enum.TryParse<ConfidenceLevel>(v, true, out var parsed) ? parsed : (ConfidenceLevel?)null)
+            .Where(v => v is not null)
+            .Select(v => v!.Value)
+            .Distinct()
+            .ToArray();
+
+        var methods = (method ?? [])
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Select(v => v.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var frameworks = (framework ?? [])
+            .Select(NormalizeFramework)
+            .Where(v => v is not null)
+            .Select(v => v!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var items = await threats.ListByJobAsync(
+            JobId.From(jobId),
+            orgIdValue,
+            elementId,
+            findingTypes.Length > 0 ? findingTypes : null,
+            statuses.Length > 0 ? statuses : null,
+            confidences.Length > 0 ? confidences : null,
+            methods.Length > 0 ? methods : null,
+            frameworks.Length > 0 ? frameworks : null,
+            ct);
         return Ok(new { data = items.Select(ThreatDto.From) });
+    }
+
+    private static string? NormalizeFramework(string? framework)
+    {
+        if (string.IsNullOrWhiteSpace(framework)) return null;
+        return framework.Trim().ToLowerInvariant().Replace(" ", "_").Replace("-", "_") switch
+        {
+            "stride" => "stride",
+            "vast" => "vast",
+            "pasta" => "pasta",
+            "octave" or "ocatve" => "octave",
+            "trike" => "trike",
+            "mitre_attack" or "mitre_att&ck" or "mitre_attck" or "mitre" => "mitre_attack",
+            "owasp_cumulus" => "owasp_cumulus",
+            "owasp_cornucopia" or "owasp_conicopia" => "owasp_cornucopia",
+            "owasp_top10" or "owasp_top_10" or "owasp" => "owasp_top10",
+            "owasp_api_top10" or "owasp_api_top_10" or "owasp_api_security" => "owasp_api_top10",
+            "asvs" => "asvs",
+            "cis_controls" or "cis" or "cis_benchmarks" => "cis_controls",
+            "ncsc" => "ncsc",
+            "twelve_factor" or "12_factor" or "12factor" => "twelve_factor",
+            _ => null
+        };
     }
 
     // GET /v1/orgs/{orgId}/jobs/{jobId}/threats/{threatId}

@@ -144,7 +144,7 @@ export function useCorrectElement(orgId: string, jobId: string) {
 export function useConfirmArchitecture(orgId: string, jobId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (req?: { note?: string | undefined }) => {
+    mutationFn: async (req?: { note?: string | undefined; selectedMethods?: string[] | undefined }) => {
       const res = await apiClient.post<ArchitectureModel>(
         `/orgs/${orgId}/jobs/${jobId}/architecture/confirm`,
         req ?? {},

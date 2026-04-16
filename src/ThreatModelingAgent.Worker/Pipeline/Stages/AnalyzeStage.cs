@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Diagnostics;
 using ThreatModelingAgent.Worker.Llm;
 using ThreatModelingAgent.Worker.Pipeline.Contracts;
 using ThreatModelingAgent.Worker.Pipeline.Prompts;
@@ -27,11 +28,20 @@ public sealed class AnalyzeStage(
     ILlmClientFactory llmFactory,
     ILogger<AnalyzeStage> logger) : IPipelineStage<AnalyzeInput, ThreatCandidateSet>
 {
+    public const string SecurityExpertBaselineMethod = "security_expert_baseline";
     private const int MaxAttempts = 3;
 
     private static readonly HashSet<string> SecurityCriticalMethods = new(StringComparer.OrdinalIgnoreCase)
     {
-        "stride", "tenant_isolation", "identity_session_delegation", "ai_llm_threat", "linddun"
+        "stride",
+        "tenant_isolation",
+        "identity_session_delegation",
+        "ai_llm_threat",
+        "linddun",
+        "maestro",
+        "emlsg",
+        "mitre_attack",
+        SecurityExpertBaselineMethod
     };
 
     private static readonly JsonSerializerOptions SerializeOptions = new()
@@ -86,12 +96,43 @@ public sealed class AnalyzeStage(
         ClassificationResult classification,
         CancellationToken ct)
     {
-        var tasks = classification.SelectedMethods
-            .Select(m => ExecuteAsync(
-                new AnalyzeInput(m.Method, canonicalModel, classification), ct))
+        var methodsToRun = classification.SelectedMethods
+            .Select(m => m.Method)
+            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Select(m => m.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Always run a baseline expert-security pass, regardless of user-selected methods.
+        // Selected methods are additive targeted lenses.
+        if (!methodsToRun.Contains(SecurityExpertBaselineMethod, StringComparer.OrdinalIgnoreCase))
+            methodsToRun.Insert(0, SecurityExpertBaselineMethod);
+
+        logger.LogInformation(
+            "ANALYZE starting. MethodCount={MethodCount} Methods={Methods}",
+            methodsToRun.Count,
+            string.Join(",", methodsToRun));
+
+        var tasks = methodsToRun
+            .Select(method => ExecuteWithProgressAsync(
+                new AnalyzeInput(method, canonicalModel, classification), ct))
             .ToArray();
 
         return await Task.WhenAll(tasks);
+    }
+
+    private async Task<ThreatCandidateSet> ExecuteWithProgressAsync(AnalyzeInput input, CancellationToken ct)
+    {
+        var sw = Stopwatch.StartNew();
+        logger.LogInformation("ANALYZE method started. Method={Method}", input.Method);
+        var result = await ExecuteAsync(input, ct);
+        logger.LogInformation(
+            "ANALYZE method completed. Method={Method} Threats={Threats} Rejected={Rejected} ElapsedMs={ElapsedMs}",
+            input.Method,
+            result.Candidates.Length,
+            result.RejectedCandidates.Length,
+            sw.ElapsedMilliseconds);
+        return result;
     }
 
     private static ThreatCandidateSet EnforceTraceability(ThreatCandidateSet set, CanonicalModel model)

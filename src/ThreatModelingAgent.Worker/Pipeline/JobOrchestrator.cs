@@ -119,7 +119,9 @@ internal sealed class JobOrchestrator(
         var parseInput = new ParseInput(
             ArtifactType: detectOutput.ArtifactType,
             BlobPath: message.ArtifactBlobPath,
-            LowConfidenceArtifactType: detectOutput.LowConfidence);
+            LowConfidenceArtifactType: detectOutput.LowConfidence,
+            ApplicationDescription: message.ApplicationDescription,
+            ArchitectureDescription: message.ArchitectureDescription);
 
         var parseOutput = await parseStage.ExecuteAsync(parseInput, ct);
 
@@ -127,6 +129,19 @@ internal sealed class JobOrchestrator(
         await TransitionAsync(job, JobStatus.Normalizing, ct);
         var normalizeInput = new NormalizeInput(parseOutput, detectOutput.ArtifactType);
         var canonicalModel = await normalizeStage.ExecuteAsync(normalizeInput, ct);
+        var sampleFlows = canonicalModel.DataFlows
+            .Take(3)
+            .Select(f => $"{f.From}->{f.To}")
+            .ToArray();
+
+        logger.LogInformation(
+            "Canonical model summary. JobId={JobId} Components={Components} Actors={Actors} DataStores={DataStores} DataFlows={DataFlows} SampleFlows={SampleFlows}",
+            job.Id,
+            canonicalModel.Components.Length,
+            canonicalModel.Actors.Length,
+            canonicalModel.DataStores.Length,
+            canonicalModel.DataFlows.Length,
+            sampleFlows.Length == 0 ? "none" : string.Join(", ", sampleFlows));
 
         // Persist canonical model to blob — survives AWAITING_REVIEW pause and feeds Phase 2
         await NormalizeStage.PersistAsync(canonicalModel, orgId.Value, job.Id.Value, blobStorage, ct);
@@ -202,7 +217,12 @@ internal sealed class JobOrchestrator(
                     CorrectionType: c.CorrectionType.ToString()))
                 .ToArray()
             : [];
-        var classifyInput = new ClassifyInput(canonicalModel, userCorrections);
+        var selectedMethods = (message.SelectedMethods ?? [])
+            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Select(m => m.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var classifyInput = new ClassifyInput(canonicalModel, userCorrections, selectedMethods);
         var classification = await classifyStage.ExecuteAsync(classifyInput, ct);
 
         // Update architecture classification in DB now that CLASSIFY has run

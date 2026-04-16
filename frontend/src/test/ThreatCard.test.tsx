@@ -49,7 +49,19 @@ describe("ThreatCard", () => {
         <ThreatCard threat={mockThreat} onClick={onClick} />
       </MemoryRouter>,
     );
-    await userEvent.click(screen.getByText("T-001").closest("button")!);
+    await userEvent.click(screen.getByRole("button"));
     expect(onClick).toHaveBeenCalledWith(mockThreat);
+  });
+
+  it("calls onShowInArchitecture when action is clicked", async () => {
+    const onShowInArchitecture = vi.fn();
+    render(
+      <MemoryRouter>
+        <ThreatCard threat={mockThreat} onClick={vi.fn()} onShowInArchitecture={onShowInArchitecture} />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /show in architecture/i }));
+    expect(onShowInArchitecture).toHaveBeenCalledWith(mockThreat);
   });
 });

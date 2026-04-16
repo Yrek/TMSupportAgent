@@ -1,5 +1,5 @@
 import { memo } from "react";
-import type { NodeProps } from "reactflow";
+import { Handle, Position, type NodeProps } from "reactflow";
 import { cn } from "@/lib/utils";
 import type { ArchitectureElement } from "@/api/architecture";
 import { ELEMENT_TYPE_CONFIG } from "./elementTypeConfig";
@@ -9,6 +9,7 @@ export interface ElementNodeData {
   selected?: boolean | undefined;
   threatCount?: number | undefined;
   maxSeverity?: "critical" | "high" | "medium" | "low" | null;
+  drawFlowMode?: boolean | undefined;
 }
 
 const CONFIDENCE_COLOR: Record<string, string> = {
@@ -25,7 +26,7 @@ const SEVERITY_BORDER: Record<string, string> = {
 };
 
 export const ElementNode = memo(function ElementNode({ data, selected }: NodeProps<ElementNodeData>) {
-  const { element, threatCount, maxSeverity } = data;
+  const { element, threatCount, maxSeverity, drawFlowMode } = data;
   const config = ELEMENT_TYPE_CONFIG[element.elementType];
 
   return (
@@ -84,6 +85,25 @@ export const ElementNode = memo(function ElementNode({ data, selected }: NodePro
           </span>
         )}
       </div>
+
+      <Handle
+        id="in-left"
+        type="target"
+        position={Position.Left}
+        className={cn(
+          "!h-2.5 !w-2.5 !border !border-muted-foreground/40 !bg-background transition-opacity",
+          drawFlowMode ? "!opacity-100" : "!opacity-0",
+        )}
+      />
+      <Handle
+        id="out-right"
+        type="source"
+        position={Position.Right}
+        className={cn(
+          "!h-2.5 !w-2.5 !border !border-muted-foreground/40 !bg-background transition-opacity",
+          drawFlowMode ? "!opacity-100" : "!opacity-0",
+        )}
+      />
     </div>
   );
 });

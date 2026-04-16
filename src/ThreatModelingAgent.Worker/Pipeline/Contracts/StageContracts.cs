@@ -15,7 +15,9 @@ public sealed record DetectOutput(
 public sealed record ParseInput(
     string ArtifactType,
     string BlobPath,
-    bool LowConfidenceArtifactType);
+    bool LowConfidenceArtifactType,
+    string? ApplicationDescription = null,
+    string? ArchitectureDescription = null);
 
 public sealed record ParseOutput(
     RawElement[] RawElements,
@@ -103,7 +105,8 @@ public sealed record UserCorrection(
 
 public sealed record ClassifyInput(
     CanonicalModel ConfirmedModel,
-    UserCorrection[] UserCorrections);
+    UserCorrection[] UserCorrections,
+    string[] UserSelectedMethods);
 
 public sealed record ClassificationResult(
     string[] Categories,

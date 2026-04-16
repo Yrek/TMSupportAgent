@@ -36,6 +36,11 @@ export function ThreatDetailPanel({
   onUpdateStatus,
   onAddNote,
 }: ThreatDetailPanelProps) {
+  const impactedAssets = Array.isArray(threat.impactedAssets) ? threat.impactedAssets : [];
+  const mitigations = Array.isArray(threat.mitigations) ? threat.mitigations : [];
+  const frameworkMappings = Array.isArray(threat.frameworkMappings) ? threat.frameworkMappings : [];
+  const notes = Array.isArray(threat.notes) ? threat.notes : [];
+
   const [newStatus, setNewStatus] = useState<ThreatStatus>(threat.status);
   const [noteBody, setNoteBody] = useState("");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
@@ -110,10 +115,10 @@ export function ThreatDetailPanel({
           </Section>
         )}
 
-        {threat.impactedAssets.length > 0 && (
+        {impactedAssets.length > 0 && (
           <Section title="Impacted assets">
             <div className="flex flex-wrap gap-1">
-              {threat.impactedAssets.map((a) => <Badge key={a} variant="outline" className="text-xs">{a}</Badge>)}
+              {impactedAssets.map((a) => <Badge key={a} variant="outline" className="text-xs">{a}</Badge>)}
             </div>
           </Section>
         )}
@@ -132,10 +137,10 @@ export function ThreatDetailPanel({
         )}
 
         {/* Mitigations */}
-        {threat.mitigations.length > 0 && (
+        {mitigations.length > 0 && (
           <Section title="Mitigations">
             <div className="space-y-2">
-              {threat.mitigations.map((m) => (
+              {mitigations.map((m) => (
                 <div key={m.id} className="rounded-md border p-3 space-y-1">
                   <div className="flex items-center gap-2">
                     <Shield className="h-3.5 w-3.5 text-green-600" />
@@ -152,10 +157,10 @@ export function ThreatDetailPanel({
         )}
 
         {/* Framework mappings */}
-        {threat.frameworkMappings.length > 0 && (
+        {frameworkMappings.length > 0 && (
           <Section title="Framework mappings">
             <div className="space-y-1">
-              {threat.frameworkMappings.map((fm, idx) => (
+              {frameworkMappings.map((fm, idx) => (
                 <div key={idx} className="flex items-center gap-2 text-xs">
                   <Badge variant="outline">{fm.framework}</Badge>
                   <span className="font-mono">{fm.reference}</span>
@@ -192,9 +197,9 @@ export function ThreatDetailPanel({
         </Section>
 
         {/* Notes */}
-        <Section title={`Notes (${threat.notes.length})`}>
+        <Section title={`Notes (${notes.length})`}>
           <div className="space-y-2">
-            {threat.notes.map((note) => (
+            {notes.map((note) => (
               <div key={note.id} className="rounded-md bg-muted/50 p-3">
                 <p className="text-sm">{note.body}</p>
                 <p className="mt-1 text-xs text-muted-foreground">

@@ -39,6 +39,8 @@ public class SubmitJobRequest
 {
     public IFormFile Artifact { get; set; } = null!;
     public string? Title { get; set; }
+    public string? ApplicationDescription { get; set; }
+    public string? ArchitectureDescription { get; set; }
 }
 
 /// <summary>

@@ -110,6 +110,7 @@ public sealed class AnalyzeStageTests
     [InlineData("identity_session_delegation")]
     [InlineData("ai_llm_threat")]
     [InlineData("linddun")]
+    [InlineData("security_expert_baseline")]
     public async Task SecurityCriticalMethod_UsesStrongModel(string method)
     {
         var (stage, factory, client) = BuildStage(strongModel: "gpt-4o");
@@ -283,11 +284,13 @@ public sealed class AnalyzeStageTests
     public async Task RunAllMethodsAsync_TwoMethods_ReturnsTwoSets()
     {
         var (stage, _, client) = BuildStage();
+        var baselineSet   = GoodCandidateSet("security_expert_baseline", ["API"]);
         var strideSet     = GoodCandidateSet("stride",     ["API"]);
         var abuseCaseSet  = GoodCandidateSet("abuse_case", ["API"]);
 
         client.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
             .Returns(
+                ResponseFor(baselineSet),
                 ResponseFor(strideSet),
                 ResponseFor(abuseCaseSet));
 
@@ -302,16 +305,19 @@ public sealed class AnalyzeStageTests
 
         var results = await stage.RunAllMethodsAsync(MinimalCanonical("API"), classification, None);
 
-        results.Should().HaveCount(2);
-        results.Select(r => r.Method).Should().BeEquivalentTo(["stride", "abuse_case"]);
+        results.Should().HaveCount(3);
+        results.Select(r => r.Method).Should().BeEquivalentTo(["security_expert_baseline", "stride", "abuse_case"]);
     }
 
     [Fact]
     public async Task RunAllMethodsAsync_SingleMethod_ReturnsOneSet()
     {
         var (stage, _, client) = BuildStage();
+        var baselineSet = GoodCandidateSet("security_expert_baseline", ["API"]);
         client.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
-            .Returns(ResponseFor(GoodCandidateSet("stride", ["API"])));
+            .Returns(
+                ResponseFor(baselineSet),
+                ResponseFor(GoodCandidateSet("stride", ["API"])));
 
         var classification = new ClassificationResult(
             Categories: ["standard_web_app"],
@@ -320,7 +326,8 @@ public sealed class AnalyzeStageTests
 
         var results = await stage.RunAllMethodsAsync(MinimalCanonical("API"), classification, None);
 
-        results.Should().HaveCount(1);
+        results.Should().HaveCount(2);
+        results.Select(r => r.Method).Should().BeEquivalentTo(["security_expert_baseline", "stride"]);
     }
 
     // ── Token budget ──────────────────────────────────────────────────────────

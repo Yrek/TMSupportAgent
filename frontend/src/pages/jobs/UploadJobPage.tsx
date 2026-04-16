@@ -9,10 +9,13 @@ import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import type { AxiosError } from "axios";
 
 interface FormValues {
   title: string;
+  applicationDescription: string;
+  architectureDescription: string;
 }
 
 export function UploadJobPage() {
@@ -35,6 +38,12 @@ export function UploadJobPage() {
     const formData = new FormData();
     formData.append("Artifact", selectedFile, selectedFile.name);
     if (values.title.trim()) formData.append("Title", values.title.trim());
+    if (values.applicationDescription.trim()) {
+      formData.append("ApplicationDescription", values.applicationDescription.trim());
+    }
+    if (values.architectureDescription.trim()) {
+      formData.append("ArchitectureDescription", values.architectureDescription.trim());
+    }
 
     setUploadProgress(0);
 
@@ -91,6 +100,28 @@ export function UploadJobPage() {
               {...register("title")}
               placeholder="e.g. Payment Service v2"
               maxLength={255}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="applicationDescription">Application Description (optional)</Label>
+            <Textarea
+              id="applicationDescription"
+              {...register("applicationDescription")}
+              placeholder="What does this application do? Main users, business purpose, and critical flows."
+              rows={3}
+              maxLength={2000}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="architectureDescription">Architecture Description (optional)</Label>
+            <Textarea
+              id="architectureDescription"
+              {...register("architectureDescription")}
+              placeholder="Any context not obvious from the diagram (trust boundaries, assumptions, external dependencies)."
+              rows={4}
+              maxLength={4000}
             />
           </div>
 

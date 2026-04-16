@@ -57,7 +57,8 @@ public sealed class ClassifyStageTests
 
     private static ClassifyInput MinimalInput() => new(
         ConfirmedModel: BuildMinimalCanonical(),
-        UserCorrections: []);
+        UserCorrections: [],
+        UserSelectedMethods: []);
 
     private static CanonicalModel BuildMinimalCanonical() => new(
         SystemPurpose: "Test system",
@@ -268,7 +269,8 @@ public sealed class ClassifyStageTests
             UserCorrections:
             [
                 new UserCorrection("elem-1", "type", "service", "database", "Update")
-            ]);
+            ],
+            UserSelectedMethods: []);
 
         await stage.ExecuteAsync(inputWithCorrections, None);
 

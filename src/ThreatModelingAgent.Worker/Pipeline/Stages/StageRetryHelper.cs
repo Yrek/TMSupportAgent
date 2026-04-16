@@ -70,7 +70,7 @@ public static class StageRetryHelper
                     attempt, maxAttempts, stageErrorCode);
                 lastException = new PipelineStageException(stageErrorCode, $"JSON parse error: {ex.Message}");
             }
-            catch (HttpRequestException ex) when (IsRetryable(ex) && attempt < maxAttempts)
+            catch (HttpRequestException ex) when (IsRetryable(ex) && !IsQuotaExhausted(ex) && attempt < maxAttempts)
             {
                 logger.LogWarning(
                     "LLM request transient error on attempt {Attempt}/{Max}. Stage={StageErrorCode}",
@@ -86,7 +86,7 @@ public static class StageRetryHelper
 
                 // Non-retryable client errors (e.g., invalid API key, insufficient credits)
                 // should fail immediately to avoid useless retries and queue churn.
-                if (!IsRetryable(ex))
+                if (!IsRetryable(ex) || IsQuotaExhausted(ex))
                 {
                     throw new PipelineStageException(
                         stageErrorCode,
@@ -118,11 +118,23 @@ public static class StageRetryHelper
     }
 
     private static bool IsRetryable(HttpRequestException ex)
+        // Retry transient infrastructure and rate-limit failures.
         => ex.StatusCode is System.Net.HttpStatusCode.InternalServerError
             or System.Net.HttpStatusCode.BadGateway
             or System.Net.HttpStatusCode.ServiceUnavailable
             or System.Net.HttpStatusCode.GatewayTimeout
+            or System.Net.HttpStatusCode.RequestTimeout
+            or System.Net.HttpStatusCode.TooManyRequests
             or null; // no status = connection-level error
+
+    private static bool IsQuotaExhausted(HttpRequestException ex)
+    {
+        var msg = ex.Message ?? string.Empty;
+        return msg.Contains("insufficient_quota", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("quota", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("billing", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("credit balance is too low", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public sealed class PipelineStageException(string ErrorCode, string Detail)

@@ -66,7 +66,20 @@ public sealed class OpenAiClient(
         using var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
 
         using var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", httpContent, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var responseBody = await response.Content.ReadAsStringAsync(ct);
+            var summary = SummarizeError(responseBody);
+
+            logger.LogWarning(
+                "OpenAI request failed. Status={Status} Model={Model} Error={Error}",
+                (int)response.StatusCode, request.Model, summary);
+
+            throw new HttpRequestException(
+                $"OpenAI API error: {summary}",
+                inner: null,
+                statusCode: response.StatusCode);
+        }
 
         var responseJson = await response.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(responseJson);
@@ -96,4 +109,30 @@ public sealed class OpenAiClient(
             new { type = "text",      text },
             new { type = "image_url", image_url = new { url = $"data:{mediaType};base64,{imageBase64}" } }
         ];
+
+    private static string SummarizeError(string responseBody)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody)) return "empty error response";
+
+        try
+        {
+            using var doc = JsonDocument.Parse(responseBody);
+            if (doc.RootElement.TryGetProperty("error", out var err))
+            {
+                var type = err.TryGetProperty("type", out var t) ? t.GetString() : null;
+                var code = err.TryGetProperty("code", out var c) ? c.GetString() : null;
+                var message = err.TryGetProperty("message", out var m) ? m.GetString() : null;
+                var pieces = new[] { type, code, message }.Where(s => !string.IsNullOrWhiteSpace(s));
+                var joined = string.Join(": ", pieces!);
+                return string.IsNullOrWhiteSpace(joined) ? "unknown error" : joined;
+            }
+        }
+        catch
+        {
+            // Ignore parse errors; fall through to trimmed raw body.
+        }
+
+        const int max = 300;
+        return responseBody.Length <= max ? responseBody : responseBody[..max] + "...";
+    }
 }

@@ -124,6 +124,7 @@ public record CorrectionDto(
 public class ConfirmArchitectureRequest
 {
     public string? Note { get; set; }
+    public string[]? SelectedMethods { get; set; }
 }
 
 /// <summary>

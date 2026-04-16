@@ -27,7 +27,14 @@ public sealed class JobsControllerTests
         var (orgId, userId) = await _factory.SeedOrgAndOwnerAsync("Submit Happy Org");
         _factory.BlobStorage.UploadAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult("uploaded-path"));
-        _factory.JobQueue.EnqueueParsePhaseAsync(Arg.Any<JobId>(), Arg.Any<OrgId>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _factory.JobQueue.EnqueueParsePhaseAsync(
+                Arg.Any<JobId>(),
+                Arg.Any<OrgId>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         var client = _factory.CreateAuthenticatedClient(userId, orgId);

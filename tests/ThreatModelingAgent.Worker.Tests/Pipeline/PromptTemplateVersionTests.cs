@@ -53,9 +53,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void ClassifySystem_VersionIs_classify_1_0_0()
+    public void ClassifySystem_VersionIs_classify_2_1_0()
     {
-        PromptTemplates.ClassifySystem.Should().Contain("prompt-version: classify-1.0.0");
+        PromptTemplates.ClassifySystem.Should().Contain("prompt-version: classify-2.1.0");
     }
 
     [Theory]
@@ -68,7 +68,7 @@ public sealed class PromptTemplateVersionTests
         var system = PromptTemplates.BuildAnalyzeSystem(method);
         system.Should().Contain(VersionPrefix,
             because: $"ANALYZE system prompt for method {method} must carry a prompt-version");
-        system.Should().Contain("prompt-version: analyze-1.0.0");
+        system.Should().Contain("prompt-version: analyze-2.2.0");
     }
 
     [Fact]
@@ -79,9 +79,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void SynthesizeSystem_VersionIs_synthesize_1_0_0()
+    public void SynthesizeSystem_VersionIs_synthesize_2_0_0()
     {
-        PromptTemplates.SynthesizeSystem.Should().Contain("prompt-version: synthesize-1.0.0");
+        PromptTemplates.SynthesizeSystem.Should().Contain("prompt-version: synthesize-2.0.0");
     }
 
     [Fact]
@@ -92,9 +92,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void FrameworkMappingSystem_VersionIs_framework_mapping_1_0_0()
+    public void FrameworkMappingSystem_VersionIs_framework_mapping_1_1_0()
     {
-        PromptTemplates.FrameworkMappingSystem.Should().Contain("prompt-version: framework-mapping-1.0.0");
+        PromptTemplates.FrameworkMappingSystem.Should().Contain("prompt-version: framework-mapping-1.1.0");
     }
 
     // ── No secrets or credentials in any template ─────────────────────────────

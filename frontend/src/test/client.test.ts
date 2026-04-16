@@ -9,7 +9,7 @@ const locationStub = { href: "", pathname: "/orgs" };
 vi.stubGlobal("location", locationStub);
 
 function axiosError(status: number, config: Record<string, unknown>) {
-  const axiosCfg = config as any;
+  const axiosCfg = config as unknown as import("axios").InternalAxiosRequestConfig;
   return new axios.AxiosError(
     "Request failed",
     `ERR_${status}`,

@@ -39,7 +39,7 @@ public sealed class NormalizeStageTests
         factory.GetStrongModel().Returns(strongModel);
         factory.GetForModel(Arg.Any<string>()).Returns(client);
 
-        var stage = new NormalizeStage(factory, blob, NullLogger<NormalizeStage>.Instance);
+        var stage = new NormalizeStage(factory, NullLogger<NormalizeStage>.Instance);
         return (stage, factory, client, blob);
     }
 

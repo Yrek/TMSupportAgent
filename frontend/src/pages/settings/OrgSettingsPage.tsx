@@ -15,17 +15,19 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { requiredParam } from "@/lib/requiredParam";
 
 const nameSchema = z.object({ name: z.string().min(2).max(100) });
 type NameForm = z.infer<typeof nameSchema>;
 
 export function OrgSettingsPage() {
   usePageTitle("Settings");
-  const { orgId } = useParams<{ orgId: string }>();
+  const params = useParams<{ orgId: string }>();
+  const orgId = requiredParam(params.orgId, "orgId");
   const { isOwner } = useOrgContext();
-  const { data: org, isLoading } = useOrg(orgId!);
-  const updateOrg = useUpdateOrg(orgId!);
-  const deleteOrg = useDeleteOrg(orgId!);
+  const { data: org, isLoading } = useOrg(orgId);
+  const updateOrg = useUpdateOrg(orgId);
+  const deleteOrg = useDeleteOrg(orgId);
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [confirmName, setConfirmName] = useState("");
@@ -79,10 +81,10 @@ export function OrgSettingsPage() {
 
         {isOwner && (
           <div className="flex gap-1 overflow-x-auto border-b">
-            <NavLink to={`/orgs/${orgId!}/settings`} end className={settingsNavClass}>General</NavLink>
-            <NavLink to={`/orgs/${orgId!}/settings/members`} className={settingsNavClass}>Members</NavLink>
-            <NavLink to={`/orgs/${orgId!}/settings/idp`} className={settingsNavClass}>Enterprise SSO</NavLink>
-            <NavLink to={`/orgs/${orgId!}/settings/audit`} className={settingsNavClass}>Audit log</NavLink>
+            <NavLink to={`/orgs/${orgId}/settings`} end className={settingsNavClass}>General</NavLink>
+            <NavLink to={`/orgs/${orgId}/settings/members`} className={settingsNavClass}>Members</NavLink>
+            <NavLink to={`/orgs/${orgId}/settings/idp`} className={settingsNavClass}>Enterprise SSO</NavLink>
+            <NavLink to={`/orgs/${orgId}/settings/audit`} className={settingsNavClass}>Audit log</NavLink>
           </div>
         )}
 

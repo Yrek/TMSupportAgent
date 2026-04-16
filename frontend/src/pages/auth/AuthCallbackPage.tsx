@@ -16,7 +16,7 @@ export function AuthCallbackPage() {
   useEffect(() => {
     if (!isLoading && user) {
       const returnTo = searchParams.get("return_to");
-      const dest = isInternalPath(returnTo) ? returnTo! : "/";
+      const dest = isInternalPath(returnTo) && returnTo ? returnTo : "/";
       navigate(dest, { replace: true });
       return;
     }

@@ -1,20 +1,22 @@
 import { Link, useParams } from "react-router-dom";
 import { Upload, PenLine, ArrowLeft } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
+import { requiredParam } from "@/lib/requiredParam";
 
 export function SubmitJobPage() {
-  const { orgId } = useParams<{ orgId: string }>();
+  const params = useParams<{ orgId: string }>();
+  const orgId = requiredParam(params.orgId, "orgId");
 
   const options = [
     {
-      to: `/orgs/${orgId!}/jobs/new/upload`,
+      to: `/orgs/${orgId}/jobs/new/upload`,
       icon: <Upload className="h-10 w-10 text-primary" />,
       title: "Upload architecture file",
       description:
         "Upload a diagram, document, or markup file (.png, .jpg, .puml, .drawio, .xml, .md, and more). The AI will extract your architecture automatically.",
     },
     {
-      to: `/orgs/${orgId!}/jobs/new/manual`,
+      to: `/orgs/${orgId}/jobs/new/manual`,
       icon: <PenLine className="h-10 w-10 text-primary" />,
       title: "Draw manually",
       description:
@@ -27,7 +29,7 @@ export function SubmitJobPage() {
       <div className="mx-auto max-w-3xl space-y-6 p-6">
         <div className="flex items-center gap-3">
           <Link
-            to={`/orgs/${orgId!}/jobs`}
+            to={`/orgs/${orgId}/jobs`}
             className="text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Back to jobs"
           >

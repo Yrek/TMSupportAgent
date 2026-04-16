@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { requiredParam } from "@/lib/requiredParam";
 
 const schema = z.object({
   title: z.string().max(255).optional(),
@@ -19,9 +20,10 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export function ManualJobPage() {
-  const { orgId } = useParams<{ orgId: string }>();
+  const params = useParams<{ orgId: string }>();
+  const orgId = requiredParam(params.orgId, "orgId");
   const navigate = useNavigate();
-  const createManualJob = useCreateManualJob(orgId!);
+  const createManualJob = useCreateManualJob(orgId);
 
   const {
     register,
@@ -36,7 +38,7 @@ export function ManualJobPage() {
         systemPurpose: values.systemPurpose || undefined,
       });
       toast.success("Manual job created — add your architecture elements below");
-      navigate(`/orgs/${orgId!}/jobs/${job.id}/review`);
+      navigate(`/orgs/${orgId}/jobs/${job.id}/review`);
     } catch {
       toast.error("Failed to create job. Please try again.");
     }
@@ -47,7 +49,7 @@ export function ManualJobPage() {
       <div className="mx-auto max-w-2xl space-y-6 p-6">
         <div className="flex items-center gap-3">
           <Link
-            to={`/orgs/${orgId!}/jobs/new`}
+            to={`/orgs/${orgId}/jobs/new`}
             className="text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Back"
           >

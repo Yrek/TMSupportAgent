@@ -123,8 +123,10 @@ export function AppShell({ children }: AppShellProps) {
       {/* Mobile drawer */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div
+          <button
+            type="button"
             className="absolute inset-0 bg-black/50"
+            aria-label="Close menu overlay"
             onClick={() => setMobileOpen(false)}
           />
           <aside className="absolute left-0 top-0 h-full w-56 bg-background border-r">

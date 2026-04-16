@@ -5,12 +5,14 @@ import { AppShell } from "@/components/layout/AppShell";
 import { useOrgAuditLog } from "@/api/orgs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { requiredParam } from "@/lib/requiredParam";
 
 export function OrgAuditPage() {
   usePageTitle("Audit log");
-  const { orgId } = useParams<{ orgId: string }>();
+  const params = useParams<{ orgId: string }>();
+  const orgId = requiredParam(params.orgId, "orgId");
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useOrgAuditLog(orgId!, page);
+  const { data, isLoading } = useOrgAuditLog(orgId, page);
 
   const entries = data?.data ?? [];
   const pagination = data?.pagination;

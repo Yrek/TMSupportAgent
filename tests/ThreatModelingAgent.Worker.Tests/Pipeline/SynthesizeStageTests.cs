@@ -49,7 +49,7 @@ public sealed class SynthesizeStageTests
         factory.GetForModel(lowCostModel).Returns(cheapClient);
         factory.GetForModel(Arg.Is<string>(m => m != strongModel && m != lowCostModel)).Returns(strongClient);
 
-        var stage = new SynthesizeStage(factory, blob, NullLogger<SynthesizeStage>.Instance);
+        var stage = new SynthesizeStage(factory, NullLogger<SynthesizeStage>.Instance);
         return (stage, factory, strongClient, cheapClient, blob);
     }
 

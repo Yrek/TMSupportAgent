@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import type { AxiosError } from "axios";
+import { requiredParam } from "@/lib/requiredParam";
 
 const inviteSchema = z.object({
   email: z.string().email("Must be a valid email"),
@@ -27,15 +28,15 @@ type InviteForm = z.infer<typeof inviteSchema>;
 
 export function MembersPage() {
   usePageTitle("Members");
-  const { orgId } = useParams<{ orgId: string }>();
+  const params = useParams<{ orgId: string }>();
+  const orgId = requiredParam(params.orgId, "orgId");
   const { isOwner, currentUserId } = useOrgContext();
-  const { data: members = [], isLoading } = useMembers(orgId!);
-  const invite = useInviteMember(orgId!);
-  const updateRole = useUpdateMemberRole(orgId!);
-  const remove = useRemoveMember(orgId!);
+  const { data: members = [], isLoading } = useMembers(orgId);
+  const invite = useInviteMember(orgId);
+  const updateRole = useUpdateMemberRole(orgId);
+  const remove = useRemoveMember(orgId);
 
   const [memberToRemove, setMemberToRemove] = useState<string | null>(null);
-  const [inviteSent, setInviteSent] = useState(false);
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors, isSubmitting } } = useForm<InviteForm>({
     resolver: zodResolver(inviteSchema),
@@ -48,7 +49,6 @@ export function MembersPage() {
     try {
       await invite.mutateAsync({ email: values.email, role: values.role });
       reset();
-      setInviteSent(true);
       // Show same message regardless of whether user existed (no enumeration oracle)
       toast.success("Invitation sent");
     } catch {

@@ -25,9 +25,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { Threat } from "@/api/threats";
 import type { ArchitectureElement } from "@/api/architecture";
 import type { ThreatStatus } from "@/lib/constants";
+import { requiredParam } from "@/lib/requiredParam";
 
 export function AnalysisPage() {
-  const { orgId, jobId } = useParams<{ orgId: string; jobId: string }>();
+  const params = useParams<{ orgId: string; jobId: string }>();
+  const orgId = requiredParam(params.orgId, "orgId");
+  const jobId = requiredParam(params.jobId, "jobId");
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedThreat, setSelectedThreat] = useState<Threat | null>(null);
@@ -37,9 +40,9 @@ export function AnalysisPage() {
   const [selectedElement, setSelectedElement] = useState<ArchitectureElement | null>(null);
   const [activeTab, setActiveTab] = useState("threats");
 
-  const { data: job, isLoading: jobLoading } = useJob(orgId!, jobId!);
-  const { data: architecture } = useArchitecture(orgId!, jobId!);
-  const { data: analysisData } = useAnalysis(orgId!, jobId!);
+  const { data: job, isLoading: jobLoading } = useJob(orgId, jobId);
+  const { data: architecture } = useArchitecture(orgId, jobId);
+  const { data: analysisData } = useAnalysis(orgId, jobId);
 
   usePageTitle(job ? `${job.title} — Analysis` : "Threat Analysis");
 
@@ -77,15 +80,15 @@ export function AnalysisPage() {
     framework: frameworkFilters.length > 0 ? frameworkFilters : undefined,
     elementId: elementIdFilter,
   };
-  const { data: threats = [], isLoading: threatsLoading } = useThreats(orgId!, jobId!, filters);
+  const { data: threats = [], isLoading: threatsLoading } = useThreats(orgId, jobId, filters);
 
   // Unfiltered threats needed for overlay counts on the diagram
-  const { data: allThreats = [] } = useThreats(orgId!, jobId!);
+  const { data: allThreats = [] } = useThreats(orgId, jobId);
 
-  const updateStatus = useUpdateThreatStatus(orgId!, jobId!);
-  const addNote = useAddThreatNote(orgId!, jobId!);
-  const addThreat = useAddThreat(orgId!, jobId!);
-  const reanalyze = useReanalyzeJob(orgId!, jobId!);
+  const updateStatus = useUpdateThreatStatus(orgId, jobId);
+  const addNote = useAddThreatNote(orgId, jobId);
+  const addThreat = useAddThreat(orgId, jobId);
+  const reanalyze = useReanalyzeJob(orgId, jobId);
 
   const canReanalyze = job?.status === "Complete" || job?.status === "Partial";
   const analysis = analysisData as Record<string, unknown> | undefined;
@@ -170,7 +173,7 @@ export function AnalysisPage() {
     try {
       await reanalyze.mutateAsync();
       toast.success("Job reset for re-analysis");
-      navigate(`/orgs/${orgId!}/jobs/${jobId!}/review`);
+      navigate(`/orgs/${orgId}/jobs/${jobId}/review`);
     } catch {
       toast.error("Failed to reset job");
     } finally {
@@ -201,7 +204,7 @@ export function AnalysisPage() {
         {/* Top bar */}
         <div className="flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-3">
           <Link
-            to={`/orgs/${orgId!}/jobs`}
+            to={`/orgs/${orgId}/jobs`}
             className="text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Back to jobs"
           >
@@ -479,7 +482,7 @@ export function AnalysisPage() {
             {/* Export tab */}
             {activeTab === "export" && (
             <TabsContent value="export" className="flex-1 overflow-y-auto mt-0">
-              <ExportPanel orgId={orgId!} jobId={jobId!} analysisData={analysisData} />
+              <ExportPanel orgId={orgId} jobId={jobId} analysisData={analysisData} />
             </TabsContent>
             )}
           </Tabs>

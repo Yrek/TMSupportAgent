@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import type { ArchitectureElement } from "@/api/architecture";
+import { requiredParam } from "@/lib/requiredParam";
 
 const METHOD_OPTIONS = [
   { value: "stride", label: "STRIDE" },
@@ -47,19 +48,21 @@ const METHOD_OPTIONS = [
 ] as const;
 
 export function ReviewPage() {
-  const { orgId, jobId } = useParams<{ orgId: string; jobId: string }>();
+  const params = useParams<{ orgId: string; jobId: string }>();
+  const orgId = requiredParam(params.orgId, "orgId");
+  const jobId = requiredParam(params.jobId, "jobId");
   const navigate = useNavigate();
 
-  const { data: job, isLoading: jobLoading } = useJob(orgId!, jobId!);
-  const { data: architecture, isLoading: archLoading } = useArchitecture(orgId!, jobId!);
+  const { data: job, isLoading: jobLoading } = useJob(orgId, jobId);
+  const { data: architecture, isLoading: archLoading } = useArchitecture(orgId, jobId);
 
-  const addElement = useAddElement(orgId!, jobId!);
-  const patchElement = usePatchElement(orgId!, jobId!);
-  const deleteElement = useDeleteElement(orgId!, jobId!);
-  const correctElement = useCorrectElement(orgId!, jobId!);
-  const confirmArch = useConfirmArchitecture(orgId!, jobId!);
+  const addElement = useAddElement(orgId, jobId);
+  const patchElement = usePatchElement(orgId, jobId);
+  const deleteElement = useDeleteElement(orgId, jobId);
+  const correctElement = useCorrectElement(orgId, jobId);
+  const confirmArch = useConfirmArchitecture(orgId, jobId);
   // GAP-TH7: pre-analysis threat/concern addition during AwaitingReview
-  const addThreat = useAddThreat(orgId!, jobId!);
+  const addThreat = useAddThreat(orgId, jobId);
 
   usePageTitle(job ? `${job.title} — Review` : "Architecture Review");
 
@@ -127,7 +130,7 @@ export function ReviewPage() {
         selectedMethods,
       });
       toast.success("Analysis started");
-      navigate(`/orgs/${orgId!}/jobs/${jobId!}`);
+      navigate(`/orgs/${orgId}/jobs/${jobId}`);
     } catch {
       toast.error("Failed to confirm architecture");
     } finally {
@@ -162,7 +165,7 @@ export function ReviewPage() {
         {/* Top bar */}
         <div className="flex items-center gap-3 border-b px-4 py-3 shrink-0">
           <Link
-            to={`/orgs/${orgId!}/jobs/${jobId!}`}
+            to={`/orgs/${orgId}/jobs/${jobId}`}
             className="text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Back to job"
           >

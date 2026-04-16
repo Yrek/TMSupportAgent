@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { JobStatus } from "@/lib/constants";
+import { requiredParam } from "@/lib/requiredParam";
 
 const STATUS_FILTERS: Array<{ label: string; value: JobStatus | "all" }> = [
   { label: "All", value: "all" },
@@ -21,21 +22,22 @@ const STATUS_FILTERS: Array<{ label: string; value: JobStatus | "all" }> = [
 ];
 
 export function DashboardPage() {
-  const { orgId } = useParams<{ orgId: string }>();
+  const params = useParams<{ orgId: string }>();
+  const orgId = requiredParam(params.orgId, "orgId");
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
   const [jobToDelete, setJobToDelete] = useState<JobSummary | null>(null);
   const prevStatuses = useRef<Map<string, JobStatus>>(new Map());
   usePageTitle("Jobs");
 
-  const { data: statsData } = useOrgStats(orgId!);
+  const { data: statsData } = useOrgStats(orgId);
 
-  const { data, isLoading } = useJobs(orgId!, {
+  const { data, isLoading } = useJobs(orgId, {
     status: statusFilter === "all" ? undefined : statusFilter,
     pageSize: 20,
   });
 
-  const deleteJob = useDeleteJob(orgId!);
-  const jobs = data?.data ?? [];
+  const deleteJob = useDeleteJob(orgId);
+  const jobs = useMemo(() => data?.data ?? [], [data?.data]);
 
   // Auto-navigate and toast on status transitions
   useEffect(() => {
@@ -88,7 +90,7 @@ export function DashboardPage() {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Jobs</h1>
           <Button asChild>
-            <Link to={`/orgs/${orgId!}/jobs/new`}>
+            <Link to={`/orgs/${orgId}/jobs/new`}>
               <PlusCircle className="mr-2 h-4 w-4" />
               New analysis
             </Link>
@@ -128,7 +130,7 @@ export function DashboardPage() {
               </p>
             </div>
             <Button asChild>
-              <Link to={`/orgs/${orgId!}/jobs/new`}>
+              <Link to={`/orgs/${orgId}/jobs/new`}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 New analysis
               </Link>
@@ -140,7 +142,7 @@ export function DashboardPage() {
               <JobCard
                 key={job.id}
                 job={job}
-                orgId={orgId!}
+                orgId={orgId}
                 onDelete={setJobToDelete}
               />
             ))}

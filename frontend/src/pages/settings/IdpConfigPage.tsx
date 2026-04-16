@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { requiredParam } from "@/lib/requiredParam";
 
 const schema = z.object({
   providerType: z.string().min(1),
@@ -24,10 +25,11 @@ type FormValues = z.infer<typeof schema>;
 const PROVIDER_TYPES = ["okta", "google", "azure_ad", "generic_saml", "generic_oidc"];
 
 export function IdpConfigPage() {
-  const { orgId } = useParams<{ orgId: string }>();
-  const { data: config, isLoading } = useIdpConfig(orgId!);
-  const upsert = useUpsertIdpConfig(orgId!);
-  const deleteConfig = useDeleteIdpConfig(orgId!);
+  const params = useParams<{ orgId: string }>();
+  const orgId = requiredParam(params.orgId, "orgId");
+  const { data: config } = useIdpConfig(orgId);
+  const upsert = useUpsertIdpConfig(orgId);
+  const deleteConfig = useDeleteIdpConfig(orgId);
 
   const [domainHints, setDomainHints] = useState<string[]>(config?.domainHints ?? []);
   const [newHint, setNewHint] = useState("");

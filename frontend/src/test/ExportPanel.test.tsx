@@ -88,7 +88,9 @@ describe("ExportPanel", () => {
     await waitFor(() => {
       // An anchor was created for the Blob download
       expect(anchors.length).toBeGreaterThan(0);
-      const a = anchors[anchors.length - 1]!;
+      const a = anchors[anchors.length - 1];
+      expect(a).toBeDefined();
+      if (!a) return;
       expect(a.download).toMatch(/threat-model-job-abc\.md/);
     });
 

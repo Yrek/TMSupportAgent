@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { JobStatus } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { requiredParam } from "@/lib/requiredParam";
 
 const PIPELINE_STAGES: Array<{ status: JobStatus; label: string }> = [
   { status: "Pending", label: "Pending" },
@@ -53,9 +54,11 @@ function getStageState(
 }
 
 export function JobDetailPage() {
-  const { orgId, jobId } = useParams<{ orgId: string; jobId: string }>();
+  const params = useParams<{ orgId: string; jobId: string }>();
+  const orgId = requiredParam(params.orgId, "orgId");
+  const jobId = requiredParam(params.jobId, "jobId");
   const navigate = useNavigate();
-  const { data: job, isLoading } = useJob(orgId!, jobId!);
+  const { data: job, isLoading } = useJob(orgId, jobId);
   const prevStatus = useRef<JobStatus | null>(null);
   usePageTitle(job?.title ?? "Job");
 
@@ -66,10 +69,10 @@ export function JobDetailPage() {
     if (prev && prev !== job.status) {
       if (job.status === "AwaitingReview") {
         toast.info("Architecture ready for review");
-        navigate(`/orgs/${orgId!}/jobs/${jobId!}/review`, { replace: true });
+        navigate(`/orgs/${orgId}/jobs/${jobId}/review`, { replace: true });
       } else if (job.status === "Complete" || job.status === "Partial") {
         toast.success("Analysis complete");
-        navigate(`/orgs/${orgId!}/jobs/${jobId!}/analysis`, { replace: true });
+        navigate(`/orgs/${orgId}/jobs/${jobId}/analysis`, { replace: true });
       } else if (job.status === "Failed") {
         toast.error(`Job failed${job.errorCode ? `: ${job.errorCode}` : ""}`);
       }
@@ -100,7 +103,7 @@ export function JobDetailPage() {
       <div className="mx-auto max-w-2xl space-y-6 p-6">
         <div className="flex items-center gap-3">
           <Link
-            to={`/orgs/${orgId!}/jobs`}
+            to={`/orgs/${orgId}/jobs`}
             className="text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Back to jobs"
           >
@@ -185,7 +188,7 @@ export function JobDetailPage() {
         {/* CTAs */}
         {job.status === "AwaitingReview" && (
           <Button asChild className="w-full">
-            <Link to={`/orgs/${orgId!}/jobs/${jobId!}/review`}>
+            <Link to={`/orgs/${orgId}/jobs/${jobId}/review`}>
               Review architecture
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
@@ -194,7 +197,7 @@ export function JobDetailPage() {
 
         {(job.status === "Complete" || job.status === "Partial") && (
           <Button asChild className="w-full">
-            <Link to={`/orgs/${orgId!}/jobs/${jobId!}/analysis`}>
+            <Link to={`/orgs/${orgId}/jobs/${jobId}/analysis`}>
               View threat model
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>

@@ -1,5 +1,4 @@
 import { useSearchParams } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 type FilterSection<T extends string> = {

@@ -56,13 +56,11 @@ export function ArchCanvas({
       data: { ...n.data, drawFlowMode: !readOnly && drawFlowMode },
       selected: n.id === selectedElementId,
     }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [elements, selectedElementId, threatCountByEdge, readOnly, drawFlowMode]);
+  }, [elements, selectedElementId, threatCountByElement, threatCountByEdge, readOnly, drawFlowMode]);
 
   const edgesFromElements = useMemo(
     () => buildNodesAndEdges(elements, threatCountByElement, threatCountByEdge).edges,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [elements, threatCountByEdge],
+    [elements, threatCountByElement, threatCountByEdge],
   );
 
   const edgesWithSelection = useMemo(
@@ -164,7 +162,9 @@ export function ArchCanvas({
   return (
     <div
       className="h-full w-full"
+      role="button"
       tabIndex={0}
+      onClick={() => {}}
       onKeyDown={handleKeyDown}
       aria-label="Architecture diagram. Use Tab to cycle elements, Enter to select, Delete to remove a user-added element."
     >

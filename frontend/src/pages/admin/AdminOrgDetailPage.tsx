@@ -9,14 +9,16 @@ import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { useState } from "react";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { requiredParam } from "@/lib/requiredParam";
 
 export function AdminOrgDetailPage() {
-  const { orgId } = useParams<{ orgId: string }>();
+  const params = useParams<{ orgId: string }>();
+  const orgId = requiredParam(params.orgId, "orgId");
   const navigate = useNavigate();
-  const { data: org, isLoading } = useAdminOrg(orgId!);
-  const suspend   = useSuspendOrg(orgId!);
-  const unsuspend = useUnsuspendOrg(orgId!);
-  const deleteOrg = useAdminDeleteOrg(orgId!);
+  const { data: org, isLoading } = useAdminOrg(orgId);
+  const suspend   = useSuspendOrg(orgId);
+  const unsuspend = useUnsuspendOrg(orgId);
+  const deleteOrg = useAdminDeleteOrg(orgId);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -46,7 +48,7 @@ export function AdminOrgDetailPage() {
   async function handleSuspend() {
     try {
       await suspend.mutateAsync();
-      toast.success(`${org!.name} suspended`);
+      toast.success(`${org.name} suspended`);
     } catch {
       toast.error("Failed to suspend organization");
     }
@@ -55,7 +57,7 @@ export function AdminOrgDetailPage() {
   async function handleUnsuspend() {
     try {
       await unsuspend.mutateAsync();
-      toast.success(`${org!.name} unsuspended`);
+      toast.success(`${org.name} unsuspended`);
     } catch {
       toast.error("Failed to unsuspend organization");
     }

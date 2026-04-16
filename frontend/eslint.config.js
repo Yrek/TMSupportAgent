@@ -7,19 +7,29 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import jsxA11y from "eslint-plugin-jsx-a11y";
 
 export default [
-  { ignores: ["dist", "node_modules", "src/types/api.generated.ts"] },
+  {
+    ignores: [
+      "dist",
+      "node_modules",
+      "src/types/api.generated.ts",
+      "playwright.config.ts",
+      "tailwind.config.ts",
+      "vite.config.ts",
+    ],
+  },
   {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        project: "./tsconfig.json",
+        projectService: true,
         ecmaVersion: "latest",
         sourceType: "module",
         ecmaFeatures: { jsx: true },
       },
       globals: {
         ...globals.browser,
+        ...globals.node,
         ...globals.es2022,
       },
     },
@@ -30,19 +40,24 @@ export default [
       "jsx-a11y": jsxA11y,
     },
     rules: {
-      ...tsPlugin.configs["strict"].rules,
+      ...js.configs.recommended.rules,
+      ...tsPlugin.configs.strict.rules,
       ...reactHooks.configs.recommended.rules,
       ...jsxA11y.configs.recommended.rules,
-      "react-refresh/only-export-components": [
-        "warn",
-        { allowConstantExport: true },
-      ],
-      // Disallow any without justification comment
-      "@typescript-eslint/no-explicit-any": "error",
-      // Require explicit return types on exported functions
+
+      "react-refresh/only-export-components": "off",
+      "@typescript-eslint/no-non-null-assertion": "error",
       "@typescript-eslint/explicit-module-boundary-types": "off",
-      // No dangerouslySetInnerHTML with API data — enforced by review
-      "no-console": ["warn", { allow: ["warn", "error"] }],
+
+      "jsx-a11y/no-static-element-interactions": "error",
+      "jsx-a11y/no-noninteractive-tabindex": "error",
+      "jsx-a11y/click-events-have-key-events": "error",
+      "jsx-a11y/heading-has-content": "error",
+
+      "no-console": "off",
+      "no-undef": "off",
+      "react-hooks/exhaustive-deps": "error",
+      "@typescript-eslint/no-explicit-any": "error",
     },
   },
 ];

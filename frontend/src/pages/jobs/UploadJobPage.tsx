@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { AxiosError } from "axios";
+import { requiredParam } from "@/lib/requiredParam";
 
 interface FormValues {
   title: string;
@@ -19,12 +20,13 @@ interface FormValues {
 }
 
 export function UploadJobPage() {
-  const { orgId } = useParams<{ orgId: string }>();
+  const params = useParams<{ orgId: string }>();
+  const orgId = requiredParam(params.orgId, "orgId");
   const navigate = useNavigate();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | undefined>();
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  const submitJob = useSubmitJob(orgId!);
+  const submitJob = useSubmitJob(orgId);
 
   const { register, handleSubmit } = useForm<FormValues>();
 
@@ -50,7 +52,7 @@ export function UploadJobPage() {
     try {
       const job = await submitJob.mutateAsync(formData);
       toast.success("Job submitted");
-      navigate(`/orgs/${orgId!}/jobs/${job.id}`);
+      navigate(`/orgs/${orgId}/jobs/${job.id}`);
     } catch (err) {
       const axiosErr = err as AxiosError<{ code?: string }>;
       const status = axiosErr.response?.status;
@@ -73,7 +75,7 @@ export function UploadJobPage() {
       <div className="mx-auto max-w-2xl space-y-6 p-6">
         <div className="flex items-center gap-3">
           <Link
-            to={`/orgs/${orgId!}/jobs/new`}
+            to={`/orgs/${orgId}/jobs/new`}
             className="text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Back"
           >

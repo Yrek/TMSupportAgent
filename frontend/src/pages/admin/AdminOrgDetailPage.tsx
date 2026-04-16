@@ -46,6 +46,7 @@ export function AdminOrgDetailPage() {
   }
 
   async function handleSuspend() {
+    if (!org) return;
     try {
       await suspend.mutateAsync();
       toast.success(`${org.name} suspended`);
@@ -55,6 +56,7 @@ export function AdminOrgDetailPage() {
   }
 
   async function handleUnsuspend() {
+    if (!org) return;
     try {
       await unsuspend.mutateAsync();
       toast.success(`${org.name} unsuspended`);

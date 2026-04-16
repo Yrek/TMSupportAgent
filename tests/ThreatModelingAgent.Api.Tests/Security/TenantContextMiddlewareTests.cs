@@ -13,8 +13,8 @@ namespace ThreatModelingAgent.Api.Tests.Security;
 /// <summary>
 /// Tests for TenantContextMiddleware (CLAUDE.md §8.2, §4.4).
 /// Validates:
-/// - platform:admin tokens are allowed through to /v1/admin/* routes
-/// - platform:admin tokens are rejected with 403 ADMIN_TOKEN_NOT_ACCEPTED on all other routes
+/// - platform:admin tokens are allowed through to /v1/admin/* and /v1/auth/session
+/// - org-scoped requests without org_id claim are rejected with 403 MISSING_ORG_CONTEXT
 /// - authenticated requests without a valid org_id claim are rejected with 403 MISSING_ORG_CONTEXT
 /// - authenticated requests with a valid org_id pass through and populate TenantContext
 /// - suspended org requests are rejected with 403 ORG_SUSPENDED
@@ -92,7 +92,7 @@ public sealed class TenantContextMiddlewareTests
     // ── platform:admin on non-admin routes ───────────────────────────────────
 
     [Fact]
-    public async Task AdminToken_OnOrgRoute_Returns403WithAdminTokenNotAccepted()
+    public async Task AdminToken_OnOrgRouteWithoutOrgClaim_Returns403WithMissingOrgContext()
     {
         var orgId = Guid.NewGuid();
         var context = BuildContext(isAuthenticated: true, role: "platform:admin",
@@ -104,10 +104,10 @@ public sealed class TenantContextMiddlewareTests
         await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false), UsersRepoReturning());
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
-        nextCalled.Should().BeFalse("admin tokens must be rejected on org-scoped routes");
+        nextCalled.Should().BeFalse("org-scoped requests without org_id claim must be rejected");
 
         var body = await ReadResponseBodyAsync(context);
-        body!.RootElement.GetProperty("code").GetString().Should().Be("ADMIN_TOKEN_NOT_ACCEPTED");
+        body!.RootElement.GetProperty("code").GetString().Should().Be("MISSING_ORG_CONTEXT");
     }
 
     [Theory]

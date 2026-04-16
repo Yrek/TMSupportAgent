@@ -40,7 +40,7 @@ public sealed class MeControllerTests
     }
 
     [Fact]
-    public async Task GetMe_UnknownUser_Returns404()
+    public async Task GetMe_UnknownUser_Returns403FromTenantContext()
     {
         // Authenticated token with a userId that doesn't exist in the DB
         var (orgId, _) = await _factory.SeedOrgAndOwnerAsync("GetMe 404 Org");
@@ -50,7 +50,7 @@ public sealed class MeControllerTests
 
         var response = await client.GetAsync("/v1/me");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [Fact]

@@ -50,9 +50,9 @@ public sealed class AuthenticationTests
     }
 
     [Fact]
-    public async Task PlatformAdminRole_Returns403()
+    public async Task PlatformAdminRole_WithOrgMembership_Returns200()
     {
-        // platform:admin tokens must be rejected by TenantContextMiddleware
+        // platform:admin tokens are allowed on org routes when the subject is mapped as a member
         var (orgId, userId) = await _factory.SeedOrgAndOwnerAsync();
 
         var claims = new Dictionary<string, string>
@@ -68,7 +68,7 @@ public sealed class AuthenticationTests
 
         var response = await client.GetAsync($"/v1/orgs/{orgId.Value}/jobs");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]

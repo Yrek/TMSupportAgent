@@ -54,7 +54,7 @@ public sealed class SessionControllerTests
     }
 
     [Fact]
-    public async Task GetSession_AdminToken_UserIdIsNull()
+    public async Task GetSession_AdminToken_UserIdReflectsSubjectClaim()
     {
         var client = _factory.CreateAdminClient();
 
@@ -62,7 +62,7 @@ public sealed class SessionControllerTests
 
         response.EnsureSuccessStatusCode();
         var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        doc.RootElement.GetProperty("userId").ValueKind.Should().Be(JsonValueKind.Null);
+        doc.RootElement.GetProperty("userId").ValueKind.Should().Be(JsonValueKind.String);
     }
 
     [Fact]

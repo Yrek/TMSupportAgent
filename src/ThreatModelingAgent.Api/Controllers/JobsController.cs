@@ -218,6 +218,13 @@ public sealed class JobsController(
         var job = await jobs.GetByIdAsync(JobId.From(jobId), orgIdValue, ct);
         if (job is null) return NotFound();
 
+        if (job.IsInProgress)
+            return Conflict(new
+            {
+                code = "JOB_IN_PROGRESS",
+                message = "Cannot delete a job that is still in progress."
+            });
+
         // Delete blob artifacts before removing the DB record
         if (job.ArtifactBlobPath is not null)
             await blob.DeleteByPrefixAsync($"{orgIdValue}/uploads/{job.Id}/", ct);

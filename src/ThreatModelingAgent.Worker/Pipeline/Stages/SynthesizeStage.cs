@@ -25,7 +25,6 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 /// </summary>
 public sealed class SynthesizeStage(
     ILlmClientFactory llmFactory,
-    IBlobStorage blobStorage,
     ILogger<SynthesizeStage> logger) : IPipelineStage<SynthesizeInput, FinalOutput>
 {
     private const int MaxAttempts = 3;

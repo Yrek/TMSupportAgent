@@ -27,7 +27,6 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 /// </summary>
 public sealed class NormalizeStage(
     ILlmClientFactory llmFactory,
-    IBlobStorage blobStorage,
     ILogger<NormalizeStage> logger) : IPipelineStage<NormalizeInput, CanonicalModel>
 {
     private const int MaxAttempts = 3;

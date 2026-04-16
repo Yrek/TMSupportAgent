@@ -66,6 +66,7 @@ jobs:
 
   sast:
     name: SAST (CodeQL)
+    if: ${{ vars.ENABLE_CODEQL == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       security-events: write

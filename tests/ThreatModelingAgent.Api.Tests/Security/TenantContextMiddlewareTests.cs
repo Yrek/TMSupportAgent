@@ -67,6 +67,14 @@ public sealed class TenantContextMiddlewareTests
         return repo;
     }
 
+    private static IUserRepository UsersRepoReturning(User? user = null)
+    {
+        var repo = Substitute.For<IUserRepository>();
+        repo.GetByWorkOsUserIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(user);
+        return repo;
+    }
+
     private static Organization ActiveOrg(Guid orgId)
     {
         // Create via reflection to bypass constructor — test only needs a non-suspended org
@@ -93,7 +101,7 @@ public sealed class TenantContextMiddlewareTests
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false), UsersRepoReturning());
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         nextCalled.Should().BeFalse("admin tokens must be rejected on org-scoped routes");
@@ -112,7 +120,7 @@ public sealed class TenantContextMiddlewareTests
         var tenantContext = new TenantContext();
 
         var middleware = new TenantContextMiddleware(_ => Task.CompletedTask);
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false), UsersRepoReturning());
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
     }
@@ -126,7 +134,7 @@ public sealed class TenantContextMiddlewareTests
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false), UsersRepoReturning());
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         nextCalled.Should().BeTrue("admin tokens are allowed on /v1/admin/* routes");
@@ -142,7 +150,7 @@ public sealed class TenantContextMiddlewareTests
         var tenantContext = new TenantContext();
 
         var middleware = new TenantContextMiddleware(_ => Task.CompletedTask);
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false), UsersRepoReturning());
 
         tenantContext.CurrentOrgId.Should().BeNull("TenantContext must not be set for rejected requests");
     }
@@ -157,7 +165,7 @@ public sealed class TenantContextMiddlewareTests
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false), UsersRepoReturning());
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         nextCalled.Should().BeFalse();
@@ -173,7 +181,7 @@ public sealed class TenantContextMiddlewareTests
         var tenantContext = new TenantContext();
 
         var middleware = new TenantContextMiddleware(_ => Task.CompletedTask);
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false), UsersRepoReturning());
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
 
@@ -190,7 +198,7 @@ public sealed class TenantContextMiddlewareTests
         var tenantContext = new TenantContext();
 
         var middleware = new TenantContextMiddleware(_ => Task.CompletedTask);
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(true));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(true), UsersRepoReturning());
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         var body = await ReadResponseBodyAsync(context);
@@ -206,7 +214,7 @@ public sealed class TenantContextMiddlewareTests
         var tenantContext = new TenantContext();
 
         var middleware = new TenantContextMiddleware(_ => Task.CompletedTask);
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(false));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(false), UsersRepoReturning());
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         var body = await ReadResponseBodyAsync(context);
@@ -227,7 +235,7 @@ public sealed class TenantContextMiddlewareTests
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(true));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(true), UsersRepoReturning());
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         nextCalled.Should().BeFalse();
@@ -248,7 +256,7 @@ public sealed class TenantContextMiddlewareTests
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(true));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(true), UsersRepoReturning());
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         nextCalled.Should().BeTrue();
@@ -266,7 +274,7 @@ public sealed class TenantContextMiddlewareTests
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(true));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(org), MembershipRepoReturning(true), UsersRepoReturning());
 
         nextCalled.Should().BeTrue();
         tenantContext.CurrentOrgId.Should().NotBeNull();
@@ -282,7 +290,7 @@ public sealed class TenantContextMiddlewareTests
         var nextCalled = false;
 
         var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false));
+        await middleware.InvokeAsync(context, tenantContext, OrgRepoReturning(null), MembershipRepoReturning(false), UsersRepoReturning());
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         nextCalled.Should().BeTrue("unauthenticated requests pass through — auth is enforced at the endpoint");

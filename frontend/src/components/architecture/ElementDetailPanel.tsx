@@ -60,7 +60,7 @@ export function ElementDetailPanel({
   const [correctionsExpanded, setCorrectionsExpanded] = useState(false);
 
   const config = ELEMENT_TYPE_CONFIG[element.elementType];
-  const canDelete = element.source === "UserAdded";
+  const canDelete = true;
   const canSoftRemove = element.source === "Extracted";
 
   async function handleSave() {

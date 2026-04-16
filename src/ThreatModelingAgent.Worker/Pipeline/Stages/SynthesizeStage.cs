@@ -73,6 +73,12 @@ public sealed class SynthesizeStage(
         // Framework mapping sub-step: cheap model call after synthesis (spec §4 Stage 6, §7)
         output = await RunFrameworkMappingSubStepAsync(output, model, ct);
 
+        output = output with
+        {
+            ConfirmedThreats = output.ConfirmedThreats.Select(NormalizeThreat).ToArray(),
+            ConditionalThreats = output.ConditionalThreats.Select(NormalizeThreat).ToArray()
+        };
+
         // Ensure UserAddedThreats is always an empty array at synthesis time (spec §4 Stage 6)
         // Populated later via POST /threats API — never by the LLM.
         // Clear any LLM-produced value, whether null or non-empty.
@@ -85,6 +91,17 @@ public sealed class SynthesizeStage(
             output.AnalysisStatus, inputTokens, outputTokens);
 
         return output;
+    }
+
+    private static FinalThreat NormalizeThreat(FinalThreat threat)
+    {
+        var normalizedMethods = (threat.SourceMethods ?? [])
+            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Select(m => m.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return threat with { SourceMethods = normalizedMethods };
     }
 
     // ── Framework mapping sub-step ────────────────────────────────────────────

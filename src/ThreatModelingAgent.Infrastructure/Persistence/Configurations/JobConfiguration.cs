@@ -50,6 +50,14 @@ internal sealed class JobConfiguration : IEntityTypeConfiguration<Job>
             .HasColumnName("artifact_type")
             .HasMaxLength(50);
 
+        builder.Property(j => j.ApplicationDescription)
+            .HasColumnName("application_description")
+            .HasMaxLength(2000);
+
+        builder.Property(j => j.ArchitectureDescription)
+            .HasColumnName("architecture_description")
+            .HasMaxLength(4000);
+
         builder.Property(j => j.LlmTokenUsageJson)
             .HasColumnName("llm_token_usage")
             .HasColumnType("jsonb");

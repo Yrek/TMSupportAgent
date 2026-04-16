@@ -51,6 +51,13 @@ export function ThreatCard({ threat, selected, onClick, onShowInArchitecture }: 
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <Badge variant="outline" className="text-xs">{threat.methodCategory}</Badge>
+        {Array.isArray(threat.sourceMethods) && threat.sourceMethods.length > 0 && (
+          <Badge variant="secondary" className="text-xs">
+            {threat.sourceMethods.length > 1
+              ? `${threat.sourceMethods.length} methods`
+              : threat.sourceMethods[0]}
+          </Badge>
+        )}
         <Badge variant={CONFIDENCE_VARIANT[threat.confidence] ?? "secondary"} className="text-xs">
           {threat.confidence} confidence
         </Badge>

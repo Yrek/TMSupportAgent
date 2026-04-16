@@ -30,7 +30,7 @@ interface ArchCanvasProps {
   threatCountByEdge?: Map<string, number>;
   /** GAP-TH4: called when a DataFlow edge is clicked */
   onEdgeClick?: (edgeElementId: string) => void;
-  /** F-904: called when Delete key is pressed on a selected UserAdded element */
+  /** F-904: called when Delete key is pressed on a selected element */
   onDeleteElement?: (elementId: string) => void;
   /** Called in review mode when user draws a line between two nodes */
   onCreateDataFlow?: ((from: ArchitectureElement, to: ArchitectureElement) => void | Promise<void>) | undefined;
@@ -151,7 +151,7 @@ export function ArchCanvas({
         // If already selected, detail panel is already open — no-op
       } else if (e.key === "Delete" && !readOnly && currentIdx >= 0) {
         const el = navigableElements[currentIdx];
-        if (el?.source === "UserAdded" && onDeleteElement) {
+        if (el && onDeleteElement) {
           onDeleteElement(el.id);
         }
       }
@@ -166,7 +166,7 @@ export function ArchCanvas({
       tabIndex={0}
       onClick={() => {}}
       onKeyDown={handleKeyDown}
-      aria-label="Architecture diagram. Use Tab to cycle elements, Enter to select, Delete to remove a user-added element."
+      aria-label="Architecture diagram. Use Tab to cycle elements, Enter to select, Delete to remove the selected element."
     >
       <ReactFlow
         nodes={nodesWithSelection}

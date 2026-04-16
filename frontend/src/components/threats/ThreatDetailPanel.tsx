@@ -40,6 +40,7 @@ export function ThreatDetailPanel({
   const mitigations = Array.isArray(threat.mitigations) ? threat.mitigations : [];
   const frameworkMappings = Array.isArray(threat.frameworkMappings) ? threat.frameworkMappings : [];
   const notes = Array.isArray(threat.notes) ? threat.notes : [];
+  const sourceMethods = Array.isArray(threat.sourceMethods) ? threat.sourceMethods : [];
 
   const [newStatus, setNewStatus] = useState<ThreatStatus>(threat.status);
   const [noteBody, setNoteBody] = useState("");
@@ -96,6 +97,9 @@ export function ThreatDetailPanel({
         <div className="flex flex-wrap gap-2">
           <ThreatStatusBadge status={threat.status} />
           <Badge variant="outline">{threat.methodCategory}</Badge>
+          {sourceMethods.map((method) => (
+            <Badge key={method} variant="secondary">{method}</Badge>
+          ))}
           <Badge variant={threat.confidence === "High" ? "success" : threat.confidence === "Medium" ? "warning" : "destructive"}>
             {threat.confidence} confidence
           </Badge>

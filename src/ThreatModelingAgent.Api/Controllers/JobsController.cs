@@ -102,6 +102,7 @@ public sealed class JobsController(
 
         // Create job record
         var job = Job.Create(orgIdValue, userId, request.Title);
+        job.SetSubmissionContext(applicationDescription, architectureDescription);
         await jobs.AddAsync(job, ct);
         await jobs.SaveChangesAsync(ct);
 

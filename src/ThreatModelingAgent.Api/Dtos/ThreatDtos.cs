@@ -81,6 +81,23 @@ public record FrameworkMappingDto(
         MappingType: fm.MappingType);
 }
 
+public record RejectedCandidateDto(
+    Guid Id,
+    string Title,
+    string? MethodCategory,
+    string RejectionReason,
+    string? RejectionNote,
+    DateTimeOffset CreatedAt)
+{
+    public static RejectedCandidateDto From(RejectedCandidate rc) => new(
+        Id: rc.Id,
+        Title: rc.Title,
+        MethodCategory: rc.MethodCategory,
+        RejectionReason: rc.RejectionReason,
+        RejectionNote: rc.RejectionNote,
+        CreatedAt: rc.CreatedAt);
+}
+
 // ── Request DTOs ─────────────────────────────────────────────────────────────
 
 /// <summary>

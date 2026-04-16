@@ -25,12 +25,14 @@ public record JobDetailDto(
     string? ArtifactType,
     string? ErrorCode,
     bool IsManual,
+    string? ApplicationDescription,
+    string? ArchitectureDescription,
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt)
 {
     public static JobDetailDto From(Job job)
         => new(job.Id.Value, job.Title, job.Status.ToString(), job.ArtifactType,
-               job.ErrorCode, job.ArtifactType is null, job.CreatedAt, job.CompletedAt);
+               job.ErrorCode, job.ArtifactType is null, job.ApplicationDescription, job.ArchitectureDescription, job.CreatedAt, job.CompletedAt);
 }
 
 // ── Request DTOs ─────────────────────────────────────────────────────────────

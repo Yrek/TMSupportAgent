@@ -31,7 +31,7 @@ export function DashboardPage() {
 
   const { data: statsData } = useOrgStats(orgId);
 
-  const { data, isLoading } = useJobs(orgId, {
+  const { data, isLoading, isError } = useJobs(orgId, {
     status: statusFilter === "all" ? undefined : statusFilter,
     pageSize: 20,
   });
@@ -119,6 +119,13 @@ export function DashboardPage() {
             {[1, 2, 3].map((i) => (
               <Skeleton key={i} className="h-20 w-full" />
             ))}
+          </div>
+        ) : isError ? (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+            <h3 className="font-semibold text-destructive">Could not load jobs</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Jobs may be unavailable due to a backend/database mismatch. Check API logs and run pending migrations.
+            </p>
           </div>
         ) : !jobs.length ? (
           <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12 text-center">

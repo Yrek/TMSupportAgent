@@ -23,6 +23,7 @@ public interface IThreatRepository
     Task AddMitigationAsync(Mitigation mitigation, CancellationToken ct = default);
     Task AddFrameworkMappingAsync(FrameworkMapping mapping, CancellationToken ct = default);
     Task AddRejectedCandidateAsync(RejectedCandidate candidate, CancellationToken ct = default);
+    Task<IReadOnlyList<RejectedCandidate>> ListRejectedByJobAsync(JobId jobId, OrgId orgId, CancellationToken ct = default);
     Task AddNoteAsync(ThreatNote note, CancellationToken ct = default);
 
     /// <summary>Returns the next available T-NNN identifier for the given job.</summary>

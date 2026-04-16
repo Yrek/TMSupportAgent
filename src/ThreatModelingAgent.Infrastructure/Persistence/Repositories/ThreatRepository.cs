@@ -68,6 +68,15 @@ internal sealed class ThreatRepository(AppDbContext db) : IThreatRepository
     public async Task AddRejectedCandidateAsync(RejectedCandidate candidate, CancellationToken ct = default)
         => await db.RejectedCandidates.AddAsync(candidate, ct);
 
+    public async Task<IReadOnlyList<RejectedCandidate>> ListRejectedByJobAsync(
+        JobId jobId,
+        OrgId orgId,
+        CancellationToken ct = default)
+        => await db.RejectedCandidates
+            .Where(rc => rc.JobId == jobId && rc.OrgId == orgId)
+            .OrderBy(rc => rc.CreatedAt)
+            .ToListAsync(ct);
+
     public async Task AddNoteAsync(ThreatNote note, CancellationToken ct = default)
         => await db.ThreatNotes.AddAsync(note, ct);
 

@@ -39,6 +39,7 @@ interface AddThreatModalProps {
   elements?: ArchitectureElement[] | undefined;
   /** Pre-select a specific element (e.g. from canvas click) */
   preselectedElementId?: string | undefined;
+  initialValues?: Partial<Pick<FormValues, "title" | "methodCategory" | "description" | "attackScenario" | "preconditions" | "securityImpact" | "privacyImpact">> | undefined;
 }
 
 export function AddThreatModal({
@@ -47,6 +48,7 @@ export function AddThreatModal({
   onSubmit,
   elements = [],
   preselectedElementId,
+  initialValues,
 }: AddThreatModalProps) {
   // DataFlow elements are edges, not selectable threat targets
   const selectableElements = elements.filter((e) => e.elementType !== "DataFlow");
@@ -70,16 +72,16 @@ export function AddThreatModal({
   useEffect(() => {
     if (!open) return;
     reset({
-      title: "",
-      methodCategory: "",
-      description: "",
-      attackScenario: "",
+      title: initialValues?.title ?? "",
+      methodCategory: initialValues?.methodCategory ?? "",
+      description: initialValues?.description ?? "",
+      attackScenario: initialValues?.attackScenario ?? "",
       affectedElementIds: validPreselectedElementId ? [validPreselectedElementId] : [],
-      preconditions: "",
-      securityImpact: "",
-      privacyImpact: "",
+      preconditions: initialValues?.preconditions ?? "",
+      securityImpact: initialValues?.securityImpact ?? "",
+      privacyImpact: initialValues?.privacyImpact ?? "",
     });
-  }, [open, validPreselectedElementId, reset]);
+  }, [open, validPreselectedElementId, initialValues, reset]);
 
   async function onFormSubmit(values: FormValues) {
     await onSubmit({

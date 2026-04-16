@@ -197,7 +197,8 @@ public sealed record FinalThreat(
     string EvidenceStrength,
     string FindingType,
     Mitigation[] Mitigations,
-    FrameworkMapping[] FrameworkMappings);
+    FrameworkMapping[] FrameworkMappings,
+    string[]? SourceMethods = null);
 
 public sealed record Mitigation(
     string Title,

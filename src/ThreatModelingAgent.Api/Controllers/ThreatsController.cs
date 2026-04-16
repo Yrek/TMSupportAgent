@@ -112,6 +112,26 @@ public sealed class ThreatsController(
         return Ok(new { data = items.Select(ThreatDto.From) });
     }
 
+    // GET /v1/orgs/{orgId}/jobs/{jobId}/rejected-candidates
+    [HttpGet("rejected-candidates")]
+    public async Task<IActionResult> ListRejectedCandidates(
+        Guid orgId,
+        Guid jobId,
+        CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        var orgIdValue = OrgId.From(orgId);
+
+        if (!await memberships.HasOrgAccessAsync(orgIdValue, userId, ct: ct))
+            return Forbid();
+
+        var job = await jobs.GetByIdAsync(JobId.From(jobId), orgIdValue, ct);
+        if (job is null) return NotFound();
+
+        var items = await threats.ListRejectedByJobAsync(JobId.From(jobId), orgIdValue, ct);
+        return Ok(new { data = items.Select(RejectedCandidateDto.From) });
+    }
+
     private static string? NormalizeFramework(string? framework)
     {
         if (string.IsNullOrWhiteSpace(framework)) return null;

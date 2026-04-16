@@ -16,6 +16,8 @@ export interface JobDetail extends JobSummary {
   errorCode: string | null;
   threatCount: number | null;
   confirmedThreatCount: number | null;
+  applicationDescription?: string | null;
+  architectureDescription?: string | null;
 }
 
 export interface JobListFilters {

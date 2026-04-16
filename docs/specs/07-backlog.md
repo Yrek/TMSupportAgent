@@ -160,6 +160,12 @@ This document tracks all remaining implementation work across the API, Worker pi
 - **Mandatory baseline expert analysis** - ANALYZE stage now always runs `security_expert_baseline` for every architecture, regardless of selected methods. Selected methods remain additive targeted lenses.
 - **Prompt hardening (analyze v2.2.0)** - `BuildAnalyzeSystem` updated with explicit baseline expert-security expectations, stronger “methods are additive” language, and method-category guidance for baseline analysis output.
 - **Prompt governance tasking** - added explicit prompt approval gate requirements in `05-llm-workflow.md` to ensure prompt changes are treated as security-critical and reviewed with grounding/injection/contract rigor.
+### Implemented in session 14 (2026-04-17)
+
+- **Export format expansion** - Analysis Export panel now supports two additional portable JSON formats:
+  - TM-BOM export (`tm-bom-{jobId}.json`) containing system metadata, architecture elements/flows, methods, threats, framework mappings, recommendations, and remediation list.
+  - Threat Dragon v2-style export (`threat-dragon-v2-{jobId}.json`) containing architecture diagram cells and mapped threats as a best-effort compatibility projection.
+- **Frontend test coverage** - `ExportPanel` unit tests extended to assert the new download actions and filenames.
 ### What remains (future tasks)
 
 | # | Section | Theme |
@@ -371,4 +377,3 @@ The MVP is considered complete when all of the following are true:
 - [ ] All OPS items in §8 are complete or have signed-off deferrals with named owner and deadline.
 - [x] No `TODO` or `FIXME` placeholders exist in production code paths (CLAUDE.md §13).
 - [ ] Dependency vulnerability scan passes in CI with no critical or high findings.
-

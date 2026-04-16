@@ -135,15 +135,15 @@ describe("ElementDetailPanel", () => {
     });
   });
 
-  describe("delete (UserAdded elements only)", () => {
+  describe("delete", () => {
     it("shows delete button for UserAdded elements", () => {
       renderPanel(userAddedElement);
       expect(screen.getByRole("button", { name: /delete element/i })).toBeInTheDocument();
     });
 
-    it("does not show delete button for Extracted elements", () => {
+    it("shows delete button for Extracted elements", () => {
       renderPanel(extractedElement);
-      expect(screen.queryByRole("button", { name: /delete element/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /delete element/i })).toBeInTheDocument();
     });
 
     it("shows confirmation dialog when delete button is clicked", async () => {

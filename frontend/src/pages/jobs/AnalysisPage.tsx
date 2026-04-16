@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { toast } from "sonner";
 import { ArrowLeft, RefreshCw, AlertTriangle, HelpCircle } from "lucide-react";
 import { useJob } from "@/api/jobs";
-import { useThreats, useUpdateThreatStatus, useAddThreatNote, useAddThreat, useAnalysis } from "@/api/threats";
+import { useThreats, useUpdateThreatStatus, useAddThreatNote, useAddThreat, useAnalysis, useRejectedCandidates, type RejectedCandidate } from "@/api/threats";
 import { useArchitecture, useReanalyzeJob } from "@/api/architecture";
 import { AppShell } from "@/components/layout/AppShell";
 import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
@@ -35,6 +35,7 @@ export function AnalysisPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedThreat, setSelectedThreat] = useState<Threat | null>(null);
   const [showAddThreat, setShowAddThreat] = useState(false);
+  const [draftFromRejected, setDraftFromRejected] = useState<RejectedCandidate | null>(null);
   const [showReanalyzeDialog, setShowReanalyzeDialog] = useState(false);
   // GAP-TH3: selected element from canvas click
   const [selectedElement, setSelectedElement] = useState<ArchitectureElement | null>(null);
@@ -81,6 +82,7 @@ export function AnalysisPage() {
     elementId: elementIdFilter,
   };
   const { data: threats = [], isLoading: threatsLoading } = useThreats(orgId, jobId, filters);
+  const { data: rejectedCandidates = [], isLoading: rejectedLoading } = useRejectedCandidates(orgId, jobId);
 
   // Unfiltered threats needed for overlay counts on the diagram
   const { data: allThreats = [] } = useThreats(orgId, jobId);
@@ -93,9 +95,48 @@ export function AnalysisPage() {
   const canReanalyze = job?.status === "Complete" || job?.status === "Partial";
   const analysis = analysisData as Record<string, unknown> | undefined;
 
+  const sourceMethodsByIdentifier = useMemo(() => {
+    const map = new Map<string, string[]>();
+    if (!analysis) return map;
+
+    type AnalysisThreat = { identifier?: string; sourceMethods?: string[] };
+    const groups = [
+      ...(Array.isArray(analysis["confirmedThreats"]) ? (analysis["confirmedThreats"] as AnalysisThreat[]) : []),
+      ...(Array.isArray(analysis["conditionalThreats"]) ? (analysis["conditionalThreats"] as AnalysisThreat[]) : []),
+    ];
+
+    groups.forEach((threat) => {
+      if (!threat.identifier) return;
+      const methods = Array.isArray(threat.sourceMethods)
+        ? [...new Set(threat.sourceMethods.filter((m) => typeof m === "string" && m.trim().length > 0))]
+        : [];
+      map.set(threat.identifier, methods);
+    });
+
+    return map;
+  }, [analysis]);
+
+  const displayedThreats = useMemo(
+    () =>
+      threats.map((t) => ({
+        ...t,
+        sourceMethods: sourceMethodsByIdentifier.get(t.identifier) ?? t.sourceMethods ?? [],
+      })),
+    [sourceMethodsByIdentifier, threats],
+  );
+
+  const displayedAllThreats = useMemo(
+    () =>
+      allThreats.map((t) => ({
+        ...t,
+        sourceMethods: sourceMethodsByIdentifier.get(t.identifier) ?? t.sourceMethods ?? [],
+      })),
+    [allThreats, sourceMethodsByIdentifier],
+  );
+
   // Derive node threat counts for ArchCanvas from unfiltered threats
   const threatCountByElement = new Map<string, { count: number; maxSeverity: "critical" | "high" | "medium" | "low" | null }>();
-  allThreats.forEach((t) => {
+  displayedAllThreats.forEach((t) => {
     t.affectedElementIds.forEach((elId) => {
       const existing = threatCountByElement.get(elId);
       threatCountByElement.set(elId, {
@@ -109,7 +150,7 @@ export function AnalysisPage() {
   const dataFlowElements = architecture?.elements.filter((e) => e.elementType === "DataFlow") ?? [];
   const threatCountByEdge = new Map<string, number>();
   dataFlowElements.forEach((df) => {
-    const count = allThreats.filter((t) => t.affectedElementIds.includes(df.id)).length;
+    const count = displayedAllThreats.filter((t) => t.affectedElementIds.includes(df.id)).length;
     if (count > 0) threatCountByEdge.set(df.id, count);
   });
 
@@ -120,11 +161,11 @@ export function AnalysisPage() {
 
   // GAP-TH5: threats related to currently selected canvas element
   const threatsForSelectedElement = selectedElement
-    ? allThreats.filter((t) => t.affectedElementIds.includes(selectedElement.id))
+    ? displayedAllThreats.filter((t) => t.affectedElementIds.includes(selectedElement.id))
     : undefined;
   const architectureThreats = selectedElement
-    ? allThreats.filter((t) => t.affectedElementIds.includes(selectedElement.id))
-    : allThreats;
+    ? displayedAllThreats.filter((t) => t.affectedElementIds.includes(selectedElement.id))
+    : displayedAllThreats;
 
   function handleElementSelect(el: ArchitectureElement | null) {
     setSelectedElement(el);
@@ -181,9 +222,9 @@ export function AnalysisPage() {
     }
   }
 
-  const methodCategories = [...new Set(allThreats.map((t) => t.methodCategory))];
+  const methodCategories = [...new Set(displayedAllThreats.map((t) => t.methodCategory))];
   const frameworks = [
-    ...new Set(allThreats.flatMap((t) => (t.frameworkMappings ?? []).map((m) => m.framework))),
+    ...new Set(displayedAllThreats.flatMap((t) => (t.frameworkMappings ?? []).map((m) => m.framework))),
   ];
 
   if (jobLoading) {
@@ -248,9 +289,29 @@ export function AnalysisPage() {
                   <Badge key={c} variant="outline" className="text-xs">{c}</Badge>
                 ))}
               <Badge variant="secondary" className="text-xs">
-                {allThreats.length} threats
+                {displayedAllThreats.length} threats
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                {rejectedCandidates.length} discarded
               </Badge>
             </div>
+
+            {(job?.applicationDescription || job?.architectureDescription) && (
+              <div className="rounded-md border bg-muted/30 p-3">
+                {job.applicationDescription && (
+                  <div className="mb-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Application Description</p>
+                    <p className="text-sm">{job.applicationDescription}</p>
+                  </div>
+                )}
+                {job.architectureDescription && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Architecture Description</p>
+                    <p className="text-sm">{job.architectureDescription}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Review questions */}
             {Array.isArray(analysis["reviewQuestions"]) &&
@@ -275,8 +336,9 @@ export function AnalysisPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full min-h-0 flex-col">
             <TabsList className="mx-4 mt-2 w-auto max-w-[calc(100vw-2rem)] shrink-0 justify-start overflow-x-auto whitespace-nowrap">
               <TabsTrigger value="threats">
-                Threats ({elementIdFilter ? `${threats.length} / ${allThreats.length}` : allThreats.length})
+                Threats ({elementIdFilter ? `${displayedThreats.length} / ${displayedAllThreats.length}` : displayedAllThreats.length})
               </TabsTrigger>
+              <TabsTrigger value="discarded">Discarded threats ({rejectedCandidates.length})</TabsTrigger>
               <TabsTrigger value="architecture">Architecture</TabsTrigger>
               <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
               <TabsTrigger value="remediation">Remediation</TabsTrigger>
@@ -314,7 +376,7 @@ export function AnalysisPage() {
                     <p className="py-6 text-center text-sm text-muted-foreground">No threats match your filters.</p>
                   ) : (
                     <div className="space-y-2">
-                      {threats.map((t) => (
+                      {displayedThreats.map((t) => (
                         <ThreatCard
                           key={t.id}
                           threat={t}
@@ -351,6 +413,55 @@ export function AnalysisPage() {
             )}
 
             {/* Architecture tab — GAP-TH3/TH4/TH5 */}
+            {activeTab === "discarded" && (
+            <TabsContent value="discarded" className="mt-0 flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="border-b px-4 py-3 text-sm text-muted-foreground">
+                Threats rejected during analysis/synthesis. You can manually promote any discarded threat into your threat list.
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                {rejectedLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 w-full" />)}
+                  </div>
+                ) : rejectedCandidates.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">No discarded threats for this job.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {rejectedCandidates.map((candidate) => (
+                      <div key={candidate.id} className="rounded-lg border p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="font-medium">{candidate.title}</h3>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              {candidate.methodCategory && (
+                                <Badge variant="outline" className="text-xs">{candidate.methodCategory}</Badge>
+                              )}
+                              <Badge variant="secondary" className="text-xs">{candidate.rejectionReason}</Badge>
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setDraftFromRejected(candidate);
+                              setShowAddThreat(true);
+                            }}
+                          >
+                            Promote to threat
+                          </Button>
+                        </div>
+                        {candidate.rejectionNote && (
+                          <p className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap">{candidate.rejectionNote}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+            )}
+
+            {/* Architecture tab — GAP-TH3/TH4/TH5 */}
             {activeTab === "architecture" && (
             <TabsContent value="architecture" className="mt-0 flex h-full min-h-0 flex-1 items-stretch overflow-hidden xl:flex-row">
               {architecture ? (
@@ -358,7 +469,7 @@ export function AnalysisPage() {
                   <div className="min-h-0 w-full shrink-0 border-b p-3 xl:flex xl:h-full xl:w-[23rem] xl:flex-col xl:border-b-0 xl:border-r">
                     <div className="mb-3 flex items-center justify-between">
                       <h3 className="text-sm font-semibold">
-                        Threats ({architectureThreats.length}{selectedElement ? ` / ${allThreats.length}` : ""})
+                        Threats ({architectureThreats.length}{selectedElement ? ` / ${displayedAllThreats.length}` : ""})
                       </h3>
                       {selectedElement && (
                         <Button variant="ghost" size="sm" onClick={handleClearElementFilter}>
@@ -469,7 +580,7 @@ export function AnalysisPage() {
                     : []
                 }
                 onThreatClick={(identifier) => {
-                  const threat = allThreats.find((t) => t.identifier === identifier);
+                  const threat = displayedAllThreats.find((t) => t.identifier === identifier);
                   if (threat) {
                     setSelectedThreat(threat);
                     setActiveTab("threats");
@@ -482,7 +593,7 @@ export function AnalysisPage() {
             {/* Export tab */}
             {activeTab === "export" && (
             <TabsContent value="export" className="flex-1 overflow-y-auto mt-0">
-              <ExportPanel orgId={orgId} jobId={jobId} analysisData={analysisData} />
+              <ExportPanel orgId={orgId} jobId={jobId} analysisData={analysisData} architecture={architecture} />
             </TabsContent>
             )}
           </Tabs>
@@ -491,13 +602,25 @@ export function AnalysisPage() {
 
       <AddThreatModal
         open={showAddThreat}
-        onOpenChange={setShowAddThreat}
+        onOpenChange={(open) => {
+          setShowAddThreat(open);
+          if (!open) setDraftFromRejected(null);
+        }}
         onSubmit={async (req) => {
           await addThreat.mutateAsync(req);
           toast.success("Threat added");
+          setDraftFromRejected(null);
         }}
         elements={architecture?.elements}
         preselectedElementId={elementIdFilter}
+        initialValues={draftFromRejected
+          ? {
+              title: draftFromRejected.title,
+              methodCategory: draftFromRejected.methodCategory ?? "manual_review",
+              description: draftFromRejected.rejectionNote ?? "Candidate promoted by reviewer for manual inclusion.",
+              attackScenario: draftFromRejected.rejectionNote ?? "Reviewer promoted this discarded candidate; define concrete attacker path.",
+            }
+          : undefined}
       />
 
       <ConfirmDialog

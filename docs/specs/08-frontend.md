@@ -378,9 +378,12 @@ This is the most complex screen in the application.
 - Each item: threat identifier link, title, mitigation summary.
 
 **Export tab:**
-- Download JSON (full analysis blob from `GET /orgs/:orgId/jobs/:jobId/analysis`).
+- Download JSON (full analysis blob from GET /orgs/:orgId/jobs/:jobId/analysis).
 - Download Markdown report (client-side rendered from the analysis data).
-- Note: CSV export of threats is listed as a future enhancement (§9.3 Deferred).
+- Download Mermaid diagram (.mmd) rendered from the current architecture model.
+- Download TM-BOM (.json) including architecture, selected methods, and threat set.
+- Download Threat Dragon v2-style JSON (.json) as a portable projection of architecture + threats.
+- Note: CSV export of threats is listed as a future enhancement (Section 9.3 Deferred).
 
 **Review questions:**
 - If `reviewQuestions` array is non-empty, show a collapsible panel at the top of the Analysis page: "Questions requiring your review".
@@ -636,7 +639,8 @@ This is the largest and most complex group.
 - [x] **F-707** — Create `AnalysisCanvas`: React Flow canvas (read-only variant of ArchCanvas); threat count badges overlaid on nodes; click node → filter threat list to that element; color-code node border by highest-severity threat — *implemented in `ArchCanvas` via `threatCountByElement` prop and `readOnly` mode*
 - [x] **F-708** — Create `RecommendationsPanel`: list from analysis blob `secureDesignRecommendations`; title, description, principle chips, affected element list
 - [x] **F-709** — Create `RemediationPanel`: prioritized list from analysis blob `prioritizedRemediationList`; grouped by priority; threat identifier links back to threat in Threats tab
-- [x] **F-710** — Create `ExportPanel`: "Download JSON" button calls `GET /orgs/:orgId/jobs/:jobId/export` (streaming file download, `Content-Disposition: attachment`, returns `threat-model-{jobId}.json`) — see GAP-3; "Download Markdown" renders analysis data (from `useAnalysis()` cache) as Markdown client-side; the in-page analysis content is loaded separately via `GET .../analysis` (parsed JSON)
+- [x] **F-710** - Create ExportPanel: Download JSON calls GET /orgs/:orgId/jobs/:jobId/export (streaming attachment threat-model-{jobId}.json); Download Markdown renders analysis client-side from GET .../analysis; include Download Mermaid (architecture-{jobId}.mmd), Download TM-BOM (tm-bom-{jobId}.json), and Download Threat Dragon v2 (threat-dragon-v2-{jobId}.json) as client-generated exports.
+
 - [x] **F-711** — Create `AnalysisPage` (`/orgs/:orgId/jobs/:jobId/analysis`): summary header (system summary, classification chips, method cards, model routing info, threat counts); tabbed layout composing panels from F-707 to F-710; partial-analysis banner; review questions panel; "Re-analyze" button in top bar → calls `useReanalyzeJob()` with confirm dialog; on success navigate to `/jobs/:jobId/review`
 
 ---
@@ -864,4 +868,3 @@ The `POST /threats` endpoint requires job status `Complete or Partial`. During `
 | OD-F5 | **GAP-TH6** — Diagram state comparison (spec §19): deferred to post-MVP — shows original extracted vs corrected vs current overlay on the canvas | Architecture review UX |
 | OD-F6 | Mobile support for canvas: deferred; mobile shows list-only view; canvas is desktop-only | Mobile UX |
 | OD-F7 | ~~Re-analysis after completion: deferred to post-MVP~~ **RESOLVED** — backend endpoint `POST /architecture/reanalyze` implemented, state machine updated, "Re-analyze" button in F-711 | Analysis workflow |
-

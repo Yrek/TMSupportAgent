@@ -1,17 +1,11 @@
 /**
- * F-T10 — ExportPanel unit tests
- *
- * useExportAnalysis is mocked so no real HTTP call is made.
- * The component is wrapped in QueryClientProvider because it internally
- * calls useMutation via useExportAnalysis.
+ * ExportPanel unit tests
  */
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ExportPanel } from "@/components/analysis/ExportPanel";
-
-// ── Mock API layer ────────────────────────────────────────────────────────────
 
 const mockMutateAsync = vi.fn().mockResolvedValue(undefined);
 
@@ -21,8 +15,6 @@ vi.mock("@/api/threats", () => ({
     isPending: false,
   }),
 }));
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function renderPanel(analysisData: unknown = { systemSummary: "Test system" }) {
   const queryClient = new QueryClient({
@@ -37,20 +29,20 @@ function renderPanel(analysisData: unknown = { systemSummary: "Test system" }) {
 
 beforeEach(() => {
   mockMutateAsync.mockClear();
-  // Stub URL.createObjectURL / revokeObjectURL for Markdown download path
   vi.stubGlobal("URL", {
     createObjectURL: vi.fn(() => "blob:mock"),
     revokeObjectURL: vi.fn(),
   });
 });
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
 describe("ExportPanel", () => {
-  it("renders Download JSON and Download Markdown buttons", () => {
+  it("renders all export buttons", () => {
     renderPanel();
     expect(screen.getByRole("button", { name: /download json/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /download markdown/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /download mermaid/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /download tm-bom/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /download threat dragon v2/i })).toBeInTheDocument();
   });
 
   it("calls useExportAnalysis mutateAsync when Download JSON is clicked", async () => {
@@ -61,19 +53,16 @@ describe("ExportPanel", () => {
     });
   });
 
-  it("does not include auth token in the download filename (mutation handles naming)", async () => {
+  it("does not include auth token in download UI text", async () => {
     renderPanel();
     await userEvent.click(screen.getByRole("button", { name: /download json/i }));
     await waitFor(() => {
-      // mutateAsync was called — the blob download is inside the mutation, not here
-      // Verify the button label does not expose any token or credential
       const btn = screen.getByRole("button", { name: /download json/i });
       expect(btn.textContent).not.toMatch(/bearer|token|key/i);
     });
   });
 
   it("triggers a Blob download when Download Markdown is clicked", async () => {
-    // Spy on document.createElement to capture anchor href + download
     const anchors: HTMLAnchorElement[] = [];
     const origCreate = document.createElement.bind(document);
     vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
@@ -86,12 +75,76 @@ describe("ExportPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: /download markdown/i }));
 
     await waitFor(() => {
-      // An anchor was created for the Blob download
       expect(anchors.length).toBeGreaterThan(0);
       const a = anchors[anchors.length - 1];
-      expect(a).toBeDefined();
       if (!a) return;
       expect(a.download).toMatch(/threat-model-job-abc\.md/);
+    });
+
+    vi.restoreAllMocks();
+  });
+
+  it("triggers a Mermaid diagram download", async () => {
+    const anchors: HTMLAnchorElement[] = [];
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      const el = origCreate(tag);
+      if (tag === "a") anchors.push(el as HTMLAnchorElement);
+      return el;
+    });
+
+    renderPanel({ systemSummary: "System" });
+    await userEvent.click(screen.getByRole("button", { name: /download mermaid/i }));
+
+    await waitFor(() => {
+      expect(anchors.length).toBeGreaterThan(0);
+      const a = anchors[anchors.length - 1];
+      if (!a) return;
+      expect(a.download).toMatch(/architecture-job-abc\.mmd/);
+    });
+
+    vi.restoreAllMocks();
+  });
+
+  it("triggers a TM-BOM download", async () => {
+    const anchors: HTMLAnchorElement[] = [];
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      const el = origCreate(tag);
+      if (tag === "a") anchors.push(el as HTMLAnchorElement);
+      return el;
+    });
+
+    renderPanel({ systemSummary: "System" });
+    await userEvent.click(screen.getByRole("button", { name: /download tm-bom/i }));
+
+    await waitFor(() => {
+      expect(anchors.length).toBeGreaterThan(0);
+      const a = anchors[anchors.length - 1];
+      if (!a) return;
+      expect(a.download).toMatch(/tm-bom-job-abc\.json/);
+    });
+
+    vi.restoreAllMocks();
+  });
+
+  it("triggers a Threat Dragon v2 download", async () => {
+    const anchors: HTMLAnchorElement[] = [];
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      const el = origCreate(tag);
+      if (tag === "a") anchors.push(el as HTMLAnchorElement);
+      return el;
+    });
+
+    renderPanel({ systemSummary: "System" });
+    await userEvent.click(screen.getByRole("button", { name: /download threat dragon v2/i }));
+
+    await waitFor(() => {
+      expect(anchors.length).toBeGreaterThan(0);
+      const a = anchors[anchors.length - 1];
+      if (!a) return;
+      expect(a.download).toMatch(/threat-dragon-v2-job-abc\.json/);
     });
 
     vi.restoreAllMocks();

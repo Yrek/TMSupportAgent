@@ -41,7 +41,7 @@ const METHOD_OPTIONS = [
   { value: "linddun", label: "LINDDUN" },
   { value: "abuse_case", label: "Abuse Cases" },
   { value: "tenant_isolation", label: "Tenant Isolation" },
-  { value: "identity_session_delegation", label: "Identity/Session Delegation" },
+  { value: "identity_session_delegation", label: "Identity & Session Trust" },
   { value: "ai_llm_threat", label: "AI/LLM Threats" },
   { value: "maestro", label: "MAESTRO (AI)" },
   { value: "emlsg", label: "EMLSG (ML)" },
@@ -223,6 +223,24 @@ export function ReviewPage() {
 
         {/* Architecture metadata */}
         {architecture && <ArchitectureMetaPanel architecture={architecture} />}
+        {(job?.applicationDescription || job?.architectureDescription) && (
+          <div className="border-b px-4 py-3">
+            <div className="rounded-md border bg-muted/30 p-3">
+              {job.applicationDescription && (
+                <div className="mb-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Application Description</p>
+                  <p className="text-sm">{job.applicationDescription}</p>
+                </div>
+              )}
+              {job.architectureDescription && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Architecture Description</p>
+                  <p className="text-sm">{job.architectureDescription}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Three-panel layout */}
         <div className="flex flex-1 overflow-hidden">

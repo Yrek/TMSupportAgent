@@ -5,19 +5,19 @@ namespace ThreatModelingAgent.Domain.Entities;
 
 public class Job
 {
-    // Canonical state machine from spec §6 / data-model §6 — forward-only transitions
+    // Canonical state machine from spec �6 / data-model �6 - forward-only transitions
     private static readonly Dictionary<JobStatus, IReadOnlySet<JobStatus>> AllowedTransitions = new()
     {
-        [JobStatus.Pending]        = new HashSet<JobStatus> { JobStatus.Parsing, JobStatus.AwaitingReview, JobStatus.Failed },
-        [JobStatus.Parsing]        = new HashSet<JobStatus> { JobStatus.Normalizing, JobStatus.Failed },
-        [JobStatus.Normalizing]    = new HashSet<JobStatus> { JobStatus.AwaitingReview, JobStatus.Failed },
+        [JobStatus.Pending] = new HashSet<JobStatus> { JobStatus.Parsing, JobStatus.AwaitingReview, JobStatus.Failed },
+        [JobStatus.Parsing] = new HashSet<JobStatus> { JobStatus.Normalizing, JobStatus.Failed },
+        [JobStatus.Normalizing] = new HashSet<JobStatus> { JobStatus.AwaitingReview, JobStatus.Failed },
         [JobStatus.AwaitingReview] = new HashSet<JobStatus> { JobStatus.Classifying, JobStatus.Failed },
-        [JobStatus.Classifying]    = new HashSet<JobStatus> { JobStatus.Analyzing,   JobStatus.Failed },
-        [JobStatus.Analyzing]      = new HashSet<JobStatus> { JobStatus.Synthesizing, JobStatus.Failed },
-        [JobStatus.Synthesizing]   = new HashSet<JobStatus> { JobStatus.Complete, JobStatus.Partial, JobStatus.Failed },
-        [JobStatus.Complete]       = new HashSet<JobStatus> { JobStatus.AwaitingReview },  // re-analysis
-        [JobStatus.Failed]         = new HashSet<JobStatus>(),
-        [JobStatus.Partial]        = new HashSet<JobStatus> { JobStatus.AwaitingReview },  // re-analysis
+        [JobStatus.Classifying] = new HashSet<JobStatus> { JobStatus.Analyzing, JobStatus.Failed },
+        [JobStatus.Analyzing] = new HashSet<JobStatus> { JobStatus.Synthesizing, JobStatus.Failed },
+        [JobStatus.Synthesizing] = new HashSet<JobStatus> { JobStatus.Complete, JobStatus.Partial, JobStatus.Failed },
+        [JobStatus.Complete] = new HashSet<JobStatus> { JobStatus.AwaitingReview },
+        [JobStatus.Failed] = new HashSet<JobStatus>(),
+        [JobStatus.Partial] = new HashSet<JobStatus> { JobStatus.AwaitingReview },
     };
 
     public JobId Id { get; private set; }
@@ -25,10 +25,12 @@ public class Job
     public UserId CreatedBy { get; private set; }
     public string? Title { get; private set; }
     public JobStatus Status { get; private set; }
-    public string? ErrorCode { get; private set; }      // minimal code only — no stack traces (CLAUDE.md §7.6)
+    public string? ErrorCode { get; private set; }
     public string? ArtifactBlobPath { get; private set; }
     public string? ArtifactType { get; private set; }
-    public string? LlmTokenUsageJson { get; private set; }  // {input_tokens, output_tokens} — no content
+    public string? ApplicationDescription { get; private set; }
+    public string? ArchitectureDescription { get; private set; }
+    public string? LlmTokenUsageJson { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public DateTimeOffset? CompletedAt { get; private set; }
@@ -49,15 +51,14 @@ public class Job
             Title = title,
             Status = JobStatus.Pending,
             CreatedAt = now,
-            UpdatedAt = now
+            UpdatedAt = now,
         };
     }
 
     public void Transition(JobStatus newStatus, string? errorCode = null)
     {
         if (!AllowedTransitions[Status].Contains(newStatus))
-            throw new InvalidOperationException(
-                $"Cannot transition job from {Status} to {newStatus}.");
+            throw new InvalidOperationException($"Cannot transition job from {Status} to {newStatus}.");
 
         Status = newStatus;
         ErrorCode = errorCode;
@@ -66,7 +67,7 @@ public class Job
         if (newStatus is JobStatus.Complete or JobStatus.Failed or JobStatus.Partial)
             CompletedAt = DateTimeOffset.UtcNow;
         else if (newStatus is JobStatus.AwaitingReview)
-            CompletedAt = null;  // reset when re-queued for review
+            CompletedAt = null;
     }
 
     public void SetArtifact(string blobPath, string artifactType)
@@ -75,6 +76,13 @@ public class Job
         ArgumentException.ThrowIfNullOrWhiteSpace(artifactType);
         ArtifactBlobPath = blobPath;
         ArtifactType = artifactType;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void SetSubmissionContext(string? applicationDescription, string? architectureDescription)
+    {
+        ApplicationDescription = applicationDescription;
+        ArchitectureDescription = architectureDescription;
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 

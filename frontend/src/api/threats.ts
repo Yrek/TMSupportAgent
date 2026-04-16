@@ -23,6 +23,15 @@ export interface ThreatNote {
   createdAt: string;
 }
 
+export interface RejectedCandidate {
+  id: string;
+  title: string;
+  methodCategory: string | null;
+  rejectionReason: string;
+  rejectionNote: string | null;
+  createdAt: string;
+}
+
 export interface Threat {
   id: string;
   identifier: string;
@@ -44,6 +53,7 @@ export interface Threat {
   findingType: "Confirmed" | "Conditional" | "UserAdded";
   status: ThreatStatus;
   source: "System" | "User";
+  sourceMethods?: string[] | undefined;
   mitigations: Mitigation[];
   frameworkMappings: FrameworkMapping[];
   notes: ThreatNote[];
@@ -100,6 +110,19 @@ export function useThreat(orgId: string, jobId: string, threatId: string) {
       return res.data;
     },
     enabled: !!orgId && !!jobId && !!threatId,
+  });
+}
+
+export function useRejectedCandidates(orgId: string, jobId: string) {
+  return useQuery<RejectedCandidate[]>({
+    queryKey: ["rejected-candidates", orgId, jobId],
+    queryFn: async () => {
+      const res = await apiClient.get<{ data: RejectedCandidate[] }>(
+        `/orgs/${orgId}/jobs/${jobId}/rejected-candidates`,
+      );
+      return res.data.data;
+    },
+    enabled: !!orgId && !!jobId,
   });
 }
 

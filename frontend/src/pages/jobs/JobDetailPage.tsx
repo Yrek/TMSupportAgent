@@ -130,6 +130,23 @@ export function JobDetailPage() {
           ) : null}
         </div>
 
+        {(job.applicationDescription || job.architectureDescription) && (
+          <div className="rounded-md border bg-muted/30 p-3">
+            {job.applicationDescription && (
+              <div className="mb-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Application Description</p>
+                <p className="text-sm">{job.applicationDescription}</p>
+              </div>
+            )}
+            {job.architectureDescription && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Architecture Description</p>
+                <p className="text-sm">{job.architectureDescription}</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Pipeline stepper */}
         <div className="space-y-0">
           {PIPELINE_STAGES.map((stage, idx) => {

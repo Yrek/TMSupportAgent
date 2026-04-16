@@ -1,12 +1,16 @@
 import axios, { type AxiosError } from "axios";
 import { env } from "@/lib/env";
 
-// In-memory token store — never localStorage/sessionStorage
+// In-memory token store - never localStorage/sessionStorage
 let accessToken: string | null = null;
 let silentRefreshFn: (() => Promise<string | null>) | null = null;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
+}
+
+export function hasAccessToken() {
+  return !!accessToken;
 }
 
 export function registerSilentRefresh(fn: () => Promise<string | null>) {
@@ -20,6 +24,14 @@ export const apiClient = axios.create({
 
 // Attach Bearer token on every request
 apiClient.interceptors.request.use((config) => {
+  // Let the browser set multipart boundaries for FormData uploads.
+  // If JSON content-type is forced here, ASP.NET model binding for IFormFile fails.
+  if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+    if (config.headers) {
+      delete config.headers["Content-Type"];
+    }
+  }
+
   if (accessToken) {
     config.headers["Authorization"] = `Bearer ${accessToken}`;
   }
@@ -28,6 +40,15 @@ apiClient.interceptors.request.use((config) => {
 
 let isRefreshing = false;
 
+function isAuthSessionRequest(url?: string) {
+  return !!url && url.includes("/auth/session");
+}
+
+function isAuthRoute(pathname?: string) {
+  const path = pathname ?? "";
+  return path === "/login" || path.startsWith("/auth/callback");
+}
+
 // On 401: attempt one silent refresh, then redirect to login
 apiClient.interceptors.response.use(
   (res) => res,
@@ -35,10 +56,18 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config as typeof error.config & { _retry?: boolean };
 
     if (error.response?.status === 401) {
+      // /auth/session often returns 401 when user has no API token yet.
+      // Do not redirect here to avoid auth redirect loops.
+      if (isAuthSessionRequest(originalRequest?.url)) {
+        accessToken = null;
+        return Promise.reject(error);
+      }
+
       if (!originalRequest._retry) {
         if (isRefreshing) {
-          // Already refreshing — redirect to avoid loop
-          window.location.href = "/login";
+          if (!isAuthRoute(window.location.pathname)) {
+            window.location.href = "/login";
+          }
           return Promise.reject(error);
         }
 
@@ -65,8 +94,9 @@ apiClient.interceptors.response.use(
         accessToken = null;
       }
 
-      // Retry also failed (or _retry was already set) — redirect to login
-      window.location.href = "/login";
+      if (!isAuthRoute(window.location.pathname)) {
+        window.location.href = "/login";
+      }
     }
 
     return Promise.reject(error);

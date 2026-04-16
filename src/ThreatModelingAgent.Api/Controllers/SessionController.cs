@@ -1,9 +1,7 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using ThreatModelingAgent.Api.Security;
-using ThreatModelingAgent.Domain.Enums;
 using ThreatModelingAgent.Domain.Interfaces;
 
 namespace ThreatModelingAgent.Api.Controllers;
@@ -22,6 +20,7 @@ namespace ThreatModelingAgent.Api.Controllers;
 [Route("v1/auth/session")]
 [EnableRateLimiting("api")]
 public sealed class SessionController(
+    IUserRepository users,
     IOrganizationRepository orgs,
     IMembershipRepository memberships) : ControllerBase
 {
@@ -29,29 +28,25 @@ public sealed class SessionController(
     [HttpGet]
     public async Task<IActionResult> GetSession(CancellationToken ct)
     {
-        var role = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role");
-        var isPlatformAdmin = string.Equals(role, "platform:admin", StringComparison.OrdinalIgnoreCase);
-
-        // Platform admin tokens have no org_id — return minimal session with admin flag
-        if (isPlatformAdmin)
+        var isPlatformAdmin = User.IsPlatformAdmin();
+        var userId = await User.ResolveUserIdAsync(users, ct);
+        if (userId is null)
         {
             return Ok(new
             {
                 userId = (Guid?)null,
                 orgs = Array.Empty<object>(),
-                isPlatformAdmin = true
+                isPlatformAdmin
             });
         }
 
-        var userId = User.GetUserId();
-
         // Load orgs the user belongs to — includes role per org
-        var userOrgs = await orgs.ListByUserAsync(userId, ct);
+        var userOrgs = await orgs.ListByUserAsync(userId.Value, ct);
 
         var orgList = new List<object>();
         foreach (var org in userOrgs)
         {
-            var membership = await memberships.GetAsync(org.Id, userId, ct);
+            var membership = await memberships.GetAsync(org.Id, userId.Value, ct);
             if (membership is null) continue;
 
             orgList.Add(new
@@ -67,9 +62,9 @@ public sealed class SessionController(
         // sub claim is the authoritative user identifier (CLAUDE.md §8.1)
         return Ok(new
         {
-            userId = userId.Value,
+            userId = userId.Value.Value,
             orgs = orgList,
-            isPlatformAdmin = false
+            isPlatformAdmin
         });
     }
 

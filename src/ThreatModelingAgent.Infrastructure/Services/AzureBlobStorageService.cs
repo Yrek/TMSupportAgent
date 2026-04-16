@@ -23,6 +23,9 @@ namespace ThreatModelingAgent.Infrastructure.Services;
 /// </summary>
 public sealed class AzureBlobStorageService : IBlobStorage
 {
+    private const string AzuriteWellKnownConnectionString =
+        "UseDevelopmentStorage=true";
+
     private readonly BlobServiceClient _serviceClient;
     private readonly BlobContainerClient _container;
     private readonly ILogger<AzureBlobStorageService> _logger;
@@ -40,8 +43,26 @@ public sealed class AzureBlobStorageService : IBlobStorage
 
         if (!string.IsNullOrEmpty(connectionString))
         {
+            var isAzuriteConnection =
+                connectionString.Contains("UseDevelopmentStorage=true", StringComparison.OrdinalIgnoreCase) ||
+                connectionString.Contains("127.0.0.1:10000", StringComparison.OrdinalIgnoreCase) ||
+                connectionString.Contains("localhost:10000", StringComparison.OrdinalIgnoreCase);
+
+            if (isAzuriteConnection)
+            {
+                // Azurite may lag the latest Blob service API versions used by new SDK releases.
+                // Pin a broadly supported service version for local emulator compatibility.
+                // Also prefer the canonical emulator connection string to avoid signature mismatches
+                // caused by malformed custom endpoint/key combinations.
+                var options = new BlobClientOptions(BlobClientOptions.ServiceVersion.V2019_12_12);
+                _serviceClient = new BlobServiceClient(AzuriteWellKnownConnectionString, options);
+            }
+            else
+            {
+                _serviceClient = new BlobServiceClient(connectionString);
+            }
+
             // Local dev — connection string (never committed; gitignored dev settings)
-            _serviceClient = new BlobServiceClient(connectionString);
         }
         else if (!string.IsNullOrEmpty(accountName))
         {
@@ -61,6 +82,9 @@ public sealed class AzureBlobStorageService : IBlobStorage
 
     public async Task<string> UploadAsync(string path, Stream content, string contentType, CancellationToken ct = default)
     {
+        // Ensure container exists on first write (important for fresh local emulator volumes).
+        await _container.CreateIfNotExistsAsync(cancellationToken: ct);
+
         var blobClient = _container.GetBlobClient(path);
 
         await blobClient.UploadAsync(content, new BlobUploadOptions

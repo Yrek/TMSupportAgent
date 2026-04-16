@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
 using NSubstitute;
 using Testcontainers.PostgreSql;
 using ThreatModelingAgent.Domain.Entities;
@@ -26,10 +28,17 @@ public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>, I
 {
     private static readonly TimeSpan ContainerStartupTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan MigrationTimeout = TimeSpan.FromSeconds(60);
+    private readonly string _dbName = $"tma_it_{Guid.NewGuid():N}";
 
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder()
-        .WithImage("postgres:16-alpine")
-        .Build();
+    private readonly PostgreSqlContainer _postgres;
+
+    public ApiWebApplicationFactory()
+    {
+        _postgres = new PostgreSqlBuilder()
+            .WithImage("postgres:16-alpine")
+            .WithDatabase(_dbName)
+            .Build();
+    }
 
     // Exposed mocks — tests configure return values as needed.
     public IBlobStorage BlobStorage { get; } = Substitute.For<IBlobStorage>();
@@ -54,6 +63,16 @@ public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>, I
 
         builder.ConfigureServices(services =>
         {
+            // Force AppDbContext to the Testcontainers connection string.
+            // This prevents any fallback to local appsettings.Development.json (threatmodeling_dev).
+            services.RemoveAll<DbContextOptions<AppDbContext>>();
+            services.AddDbContext<AppDbContext>((sp, options) =>
+            {
+                options
+                    .UseNpgsql(_postgres.GetConnectionString())
+                    .AddInterceptors(sp.GetRequiredService<RlsSessionInterceptor>());
+            });
+
             // Replace external singletons with mocks.
             RemoveSingleton<IBlobStorage>(services);
             services.AddSingleton(BlobStorage);
@@ -98,6 +117,20 @@ public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>, I
         // Apply all EF migrations to the fresh database.
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var csb = new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString());
+        if (string.Equals(csb.Database, "threatmodeling_dev", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "Integration tests are pointing at threatmodeling_dev. " +
+                "Aborting to avoid contaminating local developer data.");
+        }
+
+        if (!string.Equals(csb.Database, _dbName, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Integration tests expected database '{_dbName}' but got '{csb.Database}'.");
+        }
+
         try
         {
             using var migrateCts = new CancellationTokenSource(MigrationTimeout);

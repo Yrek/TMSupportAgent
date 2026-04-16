@@ -13,9 +13,10 @@ export function LoginPage() {
   const { user, isLoading, signIn } = useAuth();
   const [searchParams] = useSearchParams();
   const returnTo = searchParams.get("return_to");
+  const error = searchParams.get("error");
 
-  if (!isLoading && user) {
-    const dest = isInternalPath(returnTo) ? returnTo! : "/";
+  if (!isLoading && user && !error) {
+    const dest = isInternalPath(returnTo) && returnTo ? returnTo : "/";
     return <Navigate to={dest} replace />;
   }
 
@@ -31,9 +32,19 @@ export function LoginPage() {
         <p className="max-w-sm text-center text-muted-foreground">
           AI-powered threat modeling for your architecture. Sign in to get started.
         </p>
+        {error === "missing_api_token" ? (
+          <p className="max-w-md text-center text-sm text-destructive">
+            Signed in to WorkOS, but no API token was issued. Check WorkOS app scopes/audience and try sign in again.
+          </p>
+        ) : null}
+        {error === "auth_callback_failed" ? (
+          <p className="max-w-md text-center text-sm text-destructive">
+            Sign-in callback failed. Please try signing in again.
+          </p>
+        ) : null}
       </div>
       <Button size="lg" onClick={handleSignIn} disabled={isLoading}>
-        {isLoading ? "Loading…" : "Sign in"}
+        {isLoading ? "Loading..." : "Sign in"}
       </Button>
     </main>
   );

@@ -40,7 +40,7 @@ services:
     image: mcr.microsoft.com/azure-storage/azurite:latest
     container_name: tma-azurite
     restart: unless-stopped
-    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --loose
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --loose --skipApiVersionCheck
     ports:
       - "10000:10000"
       - "10001:10001"

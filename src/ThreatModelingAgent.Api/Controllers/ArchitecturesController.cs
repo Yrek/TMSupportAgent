@@ -37,7 +37,6 @@ public sealed class ArchitecturesController(
     IMembershipRepository memberships,
     IArchitectureRepository architectures,
     IThreatRepository threats,
-    IJobQueue jobQueue,
     IAuditLogger audit,
     ILogger<ArchitecturesController> logger) : ControllerBase
 {
@@ -69,6 +68,7 @@ public sealed class ArchitecturesController(
         Guid orgId,
         Guid jobId,
         [FromBody] ConfirmArchitectureRequest? request,
+        [FromServices] IJobQueue jobQueue,
         CancellationToken ct)
     {
         var userId = User.GetUserId();

@@ -319,7 +319,52 @@ Expected:
 
 Notes:
 - Platform admins are intentionally rejected on org-scoped routes.
-- If this user should also work inside a specific org, add an `org_memberships` row separately (`owner` or `member`).
+- If this user should also work inside a specific org, add an `org_memberships` row separately (`owner` or `member`):
+
+```sql
+-- 0) (Optional) Create an organization manually
+--    Use the WorkOS organization id if you already created it in WorkOS (recommended).
+INSERT INTO organizations (
+  id, name, slug, workos_org_id, is_suspended, suspended_at, created_at, updated_at, deleted_at
+)
+VALUES (
+  '33333333-3333-3333-3333-333333333333',
+  'Acme Corp',
+  'acme-corp',
+  'org_01YOUR_WORKOS_ORG_ID', -- or NULL if not yet created in WorkOS
+  false,
+  NULL,
+  NOW(),
+  NOW(),
+  NULL
+)
+ON CONFLICT (slug) WHERE deleted_at IS NULL DO UPDATE SET
+  name = EXCLUDED.name,
+  workos_org_id = COALESCE(EXCLUDED.workos_org_id, organizations.workos_org_id),
+  updated_at = NOW();
+
+-- 1) Find org and user IDs
+SELECT id, name, slug FROM organizations WHERE deleted_at IS NULL ORDER BY created_at DESC;
+SELECT id, workos_user_id, email FROM users WHERE workos_user_id = 'user_01YOUR_WORKOS_USER_ID';
+
+-- 2) Add membership (or update existing role)
+INSERT INTO org_memberships (
+  id, org_id, user_id, role, created_at, updated_at
+)
+VALUES (
+  '22222222-2222-2222-2222-222222222222',
+  'ORG_UUID_HERE',
+  'USER_UUID_HERE',
+  'owner',   -- or 'member'
+  NOW(),
+  NOW()
+)
+ON CONFLICT (org_id, user_id) DO UPDATE SET
+  role = EXCLUDED.role,
+  updated_at = NOW();
+```
+
+Use any valid UUID for `id` (the value above is only a placeholder).
 
 ---
 

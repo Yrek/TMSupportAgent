@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Serilog;
 using Serilog.Events;
 using ThreatModelingAgent.Api.Errors;
@@ -49,10 +50,22 @@ try
     // ── Validate required config at startup — fail closed (CLAUDE.md §4.3) ──
     var workosClientId = builder.Configuration["WorkOS:ClientId"]
         ?? throw new InvalidOperationException("WorkOS:ClientId is required.");
-    var workosJwksUri = builder.Configuration["WorkOS:JwksUri"]
-        ?? throw new InvalidOperationException("WorkOS:JwksUri is required.");
     var workosIssuer = builder.Configuration["WorkOS:Issuer"]
         ?? throw new InvalidOperationException("WorkOS:Issuer is required.");
+
+    static string NormalizeNoTrailingSlash(string value) => value.Trim().TrimEnd('/');
+    var configuredIssuer = NormalizeNoTrailingSlash(workosIssuer);
+    var configuredClientIssuerPrefix = "/user_management/client_";
+
+    var clientIssuer = configuredIssuer.Contains(configuredClientIssuerPrefix, StringComparison.OrdinalIgnoreCase)
+        ? configuredIssuer
+        : $"{configuredIssuer}/user_management/{workosClientId}";
+
+    var platformIssuer = configuredIssuer.Contains(configuredClientIssuerPrefix, StringComparison.OrdinalIgnoreCase)
+        ? configuredIssuer[..configuredIssuer.IndexOf(configuredClientIssuerPrefix, StringComparison.OrdinalIgnoreCase)]
+        : configuredIssuer;
+
+    var validIssuers = new[] { platformIssuer, clientIssuer };
 
     // ── Infrastructure (DB, repos, audit logger) ────────────────────────────
     builder.Services.AddInfrastructure(builder.Configuration);
@@ -73,16 +86,30 @@ try
         .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         .AddJwtBearer(options =>
         {
-            options.Authority = workosIssuer;
+            options.Authority = clientIssuer;
             options.Audience = workosClientId;
-            options.MetadataAddress = workosJwksUri;
+            options.MetadataAddress = $"{clientIssuer}/.well-known/openid-configuration";
             options.RequireHttpsMetadata = true; // MUST NOT disable (CLAUDE.md §11.4)
             options.TokenValidationParameters = new()
             {
                 ValidateIssuer = true,
-                ValidIssuer = workosIssuer,
+                ValidIssuers = validIssuers,
                 ValidateAudience = true,
                 ValidAudience = workosClientId,
+                // WorkOS tokens may carry client_id while aud can be omitted depending on flow.
+                AudienceValidator = (audiences, securityToken, _) =>
+                {
+                    if (audiences?.Any(a => string.Equals(a, workosClientId, StringComparison.Ordinal)) == true)
+                        return true;
+
+                    var clientIdClaim = securityToken switch
+                    {
+                        JsonWebToken jwt => jwt.Claims.FirstOrDefault(c => c.Type == "client_id")?.Value,
+                        _ => null
+                    };
+
+                    return string.Equals(clientIdClaim, workosClientId, StringComparison.Ordinal);
+                },
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true
             };
@@ -102,14 +129,11 @@ try
 
     builder.Services.AddAuthorization(options =>
     {
-        // PlatformAdmin policy: JWT must carry role = "platform:admin"
-        // WorkOS may map this to ClaimTypes.Role or the raw "role" claim depending on version.
+        // PlatformAdmin policy: accept both role naming variants and permission claim.
         // Used exclusively by AdminController. TenantContextMiddleware is defence-in-depth:
         // it also rejects admin tokens on org-scoped routes before the controller even runs.
         options.AddPolicy("PlatformAdmin", policy =>
-            policy.RequireAssertion(ctx =>
-                ctx.User.HasClaim(System.Security.Claims.ClaimTypes.Role, "platform:admin") ||
-                ctx.User.HasClaim("role", "platform:admin")));
+            policy.RequireAssertion(ctx => ctx.User.IsPlatformAdmin()));
     });
 
     // ── FluentValidation ────────────────────────────────────────────────────

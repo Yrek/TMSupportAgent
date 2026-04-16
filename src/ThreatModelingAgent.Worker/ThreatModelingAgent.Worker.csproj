@@ -7,6 +7,10 @@
     <UserSecretsId>dotnet-ThreatModelingAgent.Worker-2863a48c-1711-4647-afb2-67a3ff14f9eb</UserSecretsId>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <UseAppHost>false</UseAppHost>
+  </PropertyGroup>
+
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>ThreatModelingAgent.Worker.Tests</_Parameter1>

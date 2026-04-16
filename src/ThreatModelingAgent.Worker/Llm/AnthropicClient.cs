@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Net.Http;
 
 namespace ThreatModelingAgent.Worker.Llm;
 
@@ -25,7 +26,7 @@ public sealed class AnthropicClient(
         // Build user message content — text-only or multimodal (vision)
         object userContent = request.ImageBase64 is not null
             ? BuildVisionUserContent(request.UserPrompt, request.ImageBase64, request.ImageMediaType ?? "image/png")
-            : (object)request.UserPrompt;
+            : BuildTextUserContent(request.UserPrompt);
 
         var payload = new
         {
@@ -44,9 +45,19 @@ public sealed class AnthropicClient(
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         using var response = await client.PostAsync(ApiUrl, content, ct);
-        response.EnsureSuccessStatusCode();
-
         var responseJson = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorSummary = TryExtractErrorSummary(responseJson);
+            logger.LogWarning(
+                "Anthropic request failed. Status={Status} Model={Model} Error={Error}",
+                (int)response.StatusCode, request.Model, errorSummary);
+            throw new HttpRequestException(
+                $"Anthropic API {(int)response.StatusCode} for model '{request.Model}': {errorSummary}",
+                null,
+                response.StatusCode);
+        }
+
         using var doc = JsonDocument.Parse(responseJson);
         var root = doc.RootElement;
 
@@ -86,4 +97,32 @@ public sealed class AnthropicClient(
             },
             new { type = "text", text }
         ];
+
+    private static object[] BuildTextUserContent(string text)
+        =>
+        [
+            new { type = "text", text }
+        ];
+
+    private static string TryExtractErrorSummary(string responseJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(responseJson);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("error", out var err))
+            {
+                var type = err.TryGetProperty("type", out var t) ? t.GetString() : null;
+                var message = err.TryGetProperty("message", out var m) ? m.GetString() : null;
+                return $"{type ?? "unknown"}: {message ?? "no message"}";
+            }
+        }
+        catch
+        {
+            // ignore parse failure and fall back to raw truncated payload
+        }
+
+        var compact = responseJson.Replace('\n', ' ').Replace('\r', ' ').Trim();
+        return compact.Length > 300 ? $"{compact[..300]}..." : compact;
+    }
 }

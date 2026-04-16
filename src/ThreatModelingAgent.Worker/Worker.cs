@@ -19,6 +19,11 @@ public sealed class ServiceBusWorker(
     IConfiguration configuration,
     ILogger<ServiceBusWorker> logger) : BackgroundService
 {
+    private static readonly JsonSerializerOptions MessageJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var queueName = configuration["AzureServiceBus:QueueName"]!;
@@ -51,7 +56,8 @@ public sealed class ServiceBusWorker(
         try
         {
             message = JsonSerializer.Deserialize<AnalysisJobMessage>(
-                args.Message.Body.ToString());
+                args.Message.Body.ToString(),
+                MessageJsonOptions);
 
             if (message is null)
             {

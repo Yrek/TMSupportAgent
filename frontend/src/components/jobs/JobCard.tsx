@@ -25,7 +25,6 @@ function getJobCta(job: JobSummary, orgId: string): { label: string; to: string 
 
 export function JobCard({ job, orgId, onDelete }: JobCardProps) {
   const cta = getJobCta(job, orgId);
-  const isInProgress = ["Pending", "Parsing", "Normalizing", "Classifying", "Analyzing", "Synthesizing"].includes(job.status);
 
   return (
     <div className="flex items-center gap-4 rounded-lg border bg-card p-4 transition-colors hover:bg-muted/30">
@@ -63,9 +62,8 @@ export function JobCard({ job, orgId, onDelete }: JobCardProps) {
           <Button
             size="icon"
             variant="ghost"
-            className={cn("h-8 w-8", isInProgress && "opacity-30 cursor-not-allowed")}
-            disabled={isInProgress}
-            onClick={() => !isInProgress && onDelete(job)}
+            className={cn("h-8 w-8")}
+            onClick={() => onDelete(job)}
             aria-label="Delete job"
           >
             <Trash2 className="h-4 w-4 text-muted-foreground" />

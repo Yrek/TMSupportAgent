@@ -19,7 +19,6 @@ public sealed class JobsController(
     IMembershipRepository memberships,
     IArchitectureRepository architectures,
     IBlobStorage blob,
-    IJobQueue jobQueue,
     IAuditLogger audit,
     ILogger<JobsController> logger) : ControllerBase
 {
@@ -61,6 +60,7 @@ public sealed class JobsController(
     public async Task<IActionResult> SubmitJob(
         Guid orgId,
         [FromForm] SubmitJobRequest request,
+        [FromServices] IJobQueue jobQueue,
         CancellationToken ct)
     {
         var userId = User.GetUserId();
@@ -199,9 +199,6 @@ public sealed class JobsController(
 
         var job = await jobs.GetByIdAsync(JobId.From(jobId), orgIdValue, ct);
         if (job is null) return NotFound();
-
-        if (job.IsInProgress)
-            return Conflict(new { code = "JOB_IN_PROGRESS", message = "Cannot delete a job that is in progress." });
 
         // Delete blob artifacts before removing the DB record
         if (job.ArtifactBlobPath is not null)

@@ -3,6 +3,7 @@ import { Building2, ArrowRight } from "lucide-react";
 import { useSession } from "@/api/auth";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 
 export function OrgPickerPage() {
   const { data: session, isLoading } = useSession();
@@ -37,6 +38,13 @@ export function OrgPickerPage() {
               Your account is signed in, but not mapped to an organization yet. Contact a platform
               admin or your org admin to be added.
             </p>
+            {session?.isPlatformAdmin ? (
+              <div className="mt-4">
+                <Button asChild variant="default">
+                  <Link to="/admin">Go to platform admin</Link>
+                </Button>
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="space-y-2">

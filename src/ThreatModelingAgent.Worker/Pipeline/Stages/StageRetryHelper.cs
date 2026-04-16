@@ -78,6 +78,26 @@ public static class StageRetryHelper
                 lastException = ex;
                 await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)), ct);
             }
+            catch (HttpRequestException ex)
+            {
+                logger.LogWarning(
+                    "LLM request failed on attempt {Attempt}/{Max}. Stage={StageErrorCode} Status={StatusCode}",
+                    attempt, maxAttempts, stageErrorCode, (int?)ex.StatusCode);
+
+                // Non-retryable client errors (e.g., invalid API key, insufficient credits)
+                // should fail immediately to avoid useless retries and queue churn.
+                if (!IsRetryable(ex))
+                {
+                    throw new PipelineStageException(
+                        stageErrorCode,
+                        $"LLM HTTP failure: {(int?)ex.StatusCode} {ex.Message}");
+                }
+
+                // Retryable error that has exhausted attempts.
+                lastException = new PipelineStageException(
+                    stageErrorCode,
+                    $"LLM transient failure after retries: {(int?)ex.StatusCode} {ex.Message}");
+            }
         }
 
         throw lastException ?? new PipelineStageException(stageErrorCode, "All retry attempts exhausted.");

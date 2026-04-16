@@ -252,6 +252,14 @@ internal sealed class JobOrchestrator(
 
     private async Task TransitionAsync(Domain.Entities.Job job, JobStatus newStatus, CancellationToken ct)
     {
+        if (job.Status == newStatus)
+        {
+            logger.LogDebug(
+                "Skipping no-op transition. JobId={JobId} Status={Status}",
+                job.Id, newStatus);
+            return;
+        }
+
         job.Transition(newStatus);
         await jobs.SaveChangesAsync(ct);
         logger.LogInformation("Job transitioned. JobId={JobId} Status={Status}", job.Id, newStatus);

@@ -27,32 +27,21 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
 {
     public async Task InvokeAsync(HttpContext context, TenantContext tenantContext,
         IOrganizationRepository orgs,
-        IMembershipRepository memberships)
+        IMembershipRepository memberships,
+        IUserRepository users)
     {
         if (context.User.Identity?.IsAuthenticated == true)
         {
-            var role = context.User.FindFirstValue(ClaimTypes.Role)
-                       ?? context.User.FindFirstValue("role");
-            var isPlatformAdmin = string.Equals(role, "platform:admin", StringComparison.OrdinalIgnoreCase);
+            var isPlatformAdmin = context.User.IsPlatformAdmin();
+            var isAdminRoute = context.Request.Path.StartsWithSegments("/v1/admin", StringComparison.OrdinalIgnoreCase);
+            var isSessionRoute = context.Request.Path.StartsWithSegments("/v1/auth/session", StringComparison.OrdinalIgnoreCase);
 
-            if (isPlatformAdmin)
+            if (isPlatformAdmin && (isAdminRoute || isSessionRoute))
             {
                 // Platform admin tokens are accepted on:
                 //   - /v1/admin/* (platform admin API)
                 //   - /v1/auth/session (session introspection/sign-out)
-                // All other routes reject them — service identity separation (CLAUDE.md §8.2).
-                var isAdminRoute = context.Request.Path.StartsWithSegments("/v1/admin", StringComparison.OrdinalIgnoreCase);
-                var isSessionRoute = context.Request.Path.StartsWithSegments("/v1/auth/session", StringComparison.OrdinalIgnoreCase);
-                if (!isAdminRoute && !isSessionRoute)
-                {
-                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                    await context.Response.WriteAsJsonAsync(new
-                    {
-                        code = "ADMIN_TOKEN_NOT_ACCEPTED",
-                        message = "Platform admin tokens are not accepted on org-scoped routes."
-                    });
-                    return;
-                }
+                // For org-scoped routes, platform admins are allowed only when mapped as org members.
 
                 // Allowed admin/session route — no org_id claim required; skip tenant context setup
                 await next(context);
@@ -102,9 +91,8 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                 return;
             }
 
-            var sub = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
-                      ?? context.User.FindFirstValue("sub");
-            if (!Guid.TryParse(sub, out var userGuid))
+            var internalUserId = await context.User.ResolveUserIdAsync(users, context.RequestAborted);
+            if (internalUserId is null)
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(new
@@ -115,7 +103,15 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                 return;
             }
 
-            var isMappedMember = await memberships.GetAsync(org.Id, UserId.From(userGuid), context.RequestAborted);
+            // Stamp internal user id claim so controllers can safely resolve UserId.
+            if (context.User.Identity is ClaimsIdentity identity &&
+                !context.User.HasClaim(OrgAccessExtensions.AppUserIdClaim, internalUserId.Value.Value.ToString()))
+            {
+                identity.AddClaim(new Claim(OrgAccessExtensions.AppUserIdClaim, internalUserId.Value.Value.ToString()));
+            }
+
+            var isMappedMember = await memberships.GetAsync(
+                org.Id, internalUserId.Value, context.RequestAborted);
             if (isMappedMember is null)
             {
                 // Non-admin users must exist in org_memberships for the resolved org.

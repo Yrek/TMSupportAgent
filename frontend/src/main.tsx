@@ -1,4 +1,3 @@
-import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { AuthKitProvider } from "@workos-inc/authkit-react";
 import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
@@ -66,14 +65,12 @@ const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("Root element not found");
 
 createRoot(rootEl).render(
-  <StrictMode>
-    <ErrorBoundary>
-      <AuthKitProvider clientId={env.VITE_WORKOS_CLIENT_ID} redirectUri={env.VITE_WORKOS_REDIRECT_URI}>
-        <QueryClientProvider client={queryClient}>
-          <RouterProvider router={router} />
-          <Toaster richColors closeButton position="bottom-right" />
-        </QueryClientProvider>
-      </AuthKitProvider>
-    </ErrorBoundary>
-  </StrictMode>,
+  <ErrorBoundary>
+    <AuthKitProvider clientId={env.VITE_WORKOS_CLIENT_ID} redirectUri={env.VITE_WORKOS_REDIRECT_URI}>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+        <Toaster richColors closeButton position="bottom-right" />
+      </QueryClientProvider>
+    </AuthKitProvider>
+  </ErrorBoundary>,
 );

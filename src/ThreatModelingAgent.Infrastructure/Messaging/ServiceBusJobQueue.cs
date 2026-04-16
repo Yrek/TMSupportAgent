@@ -31,12 +31,28 @@ internal sealed class ServiceBusJobQueue : IJobQueue, IAsyncDisposable
     {
         _logger = logger;
 
-        var queueName = configuration["AzureServiceBus:QueueName"]
-            ?? throw new InvalidOperationException("AzureServiceBus:QueueName is required.");
-
         // Connection string for local dev; managed identity (FQDN) for production
         var connectionString = configuration["AzureServiceBus:ConnectionString"];
         var namespaceFqdn = configuration["AzureServiceBus:NamespaceFQDN"];
+        var queueName = configuration["AzureServiceBus:QueueName"];
+
+        if (string.IsNullOrWhiteSpace(queueName))
+        {
+            var useDevEmulator = !string.IsNullOrWhiteSpace(connectionString)
+                && connectionString.Contains("UseDevelopmentEmulator=true", StringComparison.OrdinalIgnoreCase);
+
+            if (useDevEmulator)
+            {
+                queueName = "analysis-jobs";
+                _logger.LogWarning(
+                    "AzureServiceBus:QueueName was not set. Defaulting to '{QueueName}' for local emulator.",
+                    queueName);
+            }
+            else
+            {
+                throw new InvalidOperationException("AzureServiceBus:QueueName is required.");
+            }
+        }
 
         if (!string.IsNullOrEmpty(connectionString))
         {

@@ -63,9 +63,7 @@ export function useSubmitJob(orgId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (formData: FormData) => {
-      const res = await apiClient.post<JobDetail>(`/orgs/${orgId}/jobs`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const res = await apiClient.post<JobDetail>(`/orgs/${orgId}/jobs`, formData);
       return res.data;
     },
     onSuccess: () => {

@@ -33,8 +33,8 @@ export function UploadJobPage() {
 
     setFileError(undefined);
     const formData = new FormData();
-    formData.append("file", selectedFile);
-    if (values.title.trim()) formData.append("title", values.title.trim());
+    formData.append("Artifact", selectedFile, selectedFile.name);
+    if (values.title.trim()) formData.append("Title", values.title.trim());
 
     setUploadProgress(0);
 

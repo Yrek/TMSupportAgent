@@ -11,20 +11,54 @@ namespace ThreatModelingAgent.Api.Security;
 /// </summary>
 public static class OrgAccessExtensions
 {
+    public const string AppUserIdClaim = "app_user_id";
+
+    public static string? GetSubject(this ClaimsPrincipal user) =>
+        user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub");
+
     /// <summary>
-    /// Returns the UserId from the validated JWT sub claim.
-    /// Throws if the claim is missing or malformed — fail secure (CLAUDE.md §4.3).
+    /// Returns the internal UserId from the claim injected by TenantContextMiddleware.
+    /// Falls back to sub only for test tokens where sub is already an internal GUID.
+    /// Throws if no valid internal user id can be resolved — fail secure (CLAUDE.md §4.3).
     /// </summary>
     public static UserId GetUserId(this ClaimsPrincipal user)
     {
+        var internalUserId = user.FindFirstValue(AppUserIdClaim);
+        if (Guid.TryParse(internalUserId, out var appUserId))
+            return UserId.From(appUserId);
+
         var sub = user.FindFirstValue(ClaimTypes.NameIdentifier)
-                  ?? user.FindFirstValue("sub")
-                  ?? throw new InvalidOperationException("JWT is missing 'sub' claim.");
+                  ?? user.FindFirstValue("sub");
 
         if (!Guid.TryParse(sub, out var userId))
-            throw new InvalidOperationException("JWT 'sub' claim is not a valid GUID.");
+            throw new InvalidOperationException("No valid internal user id is present in claims.");
 
         return UserId.From(userId);
+    }
+
+    /// <summary>
+    /// Resolves the internal user id from claims.
+    /// Supports both internal GUID test tokens and WorkOS user ids (user_...) by repository lookup.
+    /// Returns null when no internal user mapping exists.
+    /// </summary>
+    public static async Task<UserId?> ResolveUserIdAsync(
+        this ClaimsPrincipal user,
+        IUserRepository users,
+        CancellationToken ct = default)
+    {
+        var internalUserId = user.FindFirstValue(AppUserIdClaim);
+        if (Guid.TryParse(internalUserId, out var appUserId))
+            return UserId.From(appUserId);
+
+        var sub = user.GetSubject();
+        if (string.IsNullOrWhiteSpace(sub))
+            return null;
+
+        if (Guid.TryParse(sub, out var guidSub))
+            return UserId.From(guidSub);
+
+        var mapped = await users.GetByWorkOsUserIdAsync(sub, ct);
+        return mapped?.Id;
     }
 
     /// <summary>

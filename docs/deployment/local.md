@@ -40,9 +40,12 @@ Edit each file. Minimum required values:
 **API** (`src/ThreatModelingAgent.Api/appsettings.Development.json`):
 - `WorkOS:ClientId` — from WorkOS dashboard → API Keys
 - `WorkOS:ApiKey` — from WorkOS dashboard → API Keys (required for user invitations and erasure)
+- `AzureServiceBus:ConnectionString` — required because API enqueues jobs on submit
+- `AzureServiceBus:QueueName` — queue to enqueue (`analysis-jobs` for local)
 
 **Worker** (`src/ThreatModelingAgent.Worker/appsettings.Development.json`):
 - `AzureServiceBus:ConnectionString` — from the Service Bus emulator (see step 3)
+- `AzureServiceBus:QueueName` — optional in local emulator mode; defaults to `analysis-jobs` if omitted
 - `Anthropic:ApiKey` or `AzureOpenAI:Endpoint` + `AzureOpenAI:ApiKey` — at least one LLM provider
 
 **Anthropic-only setup** (no Azure OpenAI):
@@ -118,7 +121,19 @@ No further configuration is needed for the Service Bus connection string.
 
 ### Azurite connection string
 
-Azurite uses a fixed well-known development connection string. The API's example config already sets `AzureStorage:AccountName=devstoreaccount1` and `UseDevelopmentStorage=true`. No further configuration is needed for blob storage.
+Azurite uses a fixed well-known development connection string. Prefer:
+
+```text
+UseDevelopmentStorage=true
+```
+
+The API/Worker now normalize localhost Azurite configs to this canonical value to avoid emulator signature mismatches.
+
+If you see an error like `The API version ... is not supported by Azurite`, recreate the Azurite container so it starts with `--skipApiVersionCheck`:
+
+```bash
+docker compose up -d --force-recreate azurite
+```
 
 ---
 
@@ -264,7 +279,52 @@ Expected:
 
 Notes:
 - Platform admins are intentionally rejected on org-scoped routes.
-- If you also want this person to operate inside a specific org, add an `org_memberships` row separately with role `owner` or `member`.
+- If you also want this person to operate inside a specific org, add an `org_memberships` row separately (`owner` or `member`):
+
+```sql
+-- 0) (Optional) Create an organization manually
+--    Use the WorkOS organization id if you already created it in WorkOS (recommended).
+INSERT INTO organizations (
+  id, name, slug, workos_org_id, is_suspended, suspended_at, created_at, updated_at, deleted_at
+)
+VALUES (
+  '33333333-3333-3333-3333-333333333333',
+  'Acme Corp',
+  'acme-corp',
+  'org_01YOUR_WORKOS_ORG_ID', -- or NULL if not yet created in WorkOS
+  false,
+  NULL,
+  NOW(),
+  NOW(),
+  NULL
+)
+ON CONFLICT (slug) WHERE deleted_at IS NULL DO UPDATE SET
+  name = EXCLUDED.name,
+  workos_org_id = COALESCE(EXCLUDED.workos_org_id, organizations.workos_org_id),
+  updated_at = NOW();
+
+-- 1) Find org and user IDs
+SELECT id, name, slug FROM organizations WHERE deleted_at IS NULL ORDER BY created_at DESC;
+SELECT id, workos_user_id, email FROM users WHERE workos_user_id = 'user_01YOUR_WORKOS_USER_ID';
+
+-- 2) Add membership (or update existing role)
+INSERT INTO org_memberships (
+  id, org_id, user_id, role, created_at, updated_at
+)
+VALUES (
+  '22222222-2222-2222-2222-222222222222',
+  'ORG_UUID_HERE',
+  'USER_UUID_HERE',
+  'owner',   -- or 'member'
+  NOW(),
+  NOW()
+)
+ON CONFLICT (org_id, user_id) DO UPDATE SET
+  role = EXCLUDED.role,
+  updated_at = NOW();
+```
+
+Use any valid UUID for `id` (the value above is only a placeholder).
 
 ---
 

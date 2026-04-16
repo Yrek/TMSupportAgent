@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -26,10 +27,25 @@ namespace ThreatModelingAgent.Api.Controllers;
 public sealed class AdminController(
     IAdminRepository admin,
     IOrganizationRepository orgs,
+    IUserRepository users,
     IWorkOsClient workOs,
     IAuditLogger audit,
     ILogger<AdminController> logger) : ControllerBase
 {
+    private async Task<UserId?> ResolveAuditUserIdAsync(CancellationToken ct)
+    {
+        var sub = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                  ?? User.FindFirstValue("sub");
+        if (string.IsNullOrWhiteSpace(sub))
+            return null;
+
+        if (Guid.TryParse(sub, out var guidSub))
+            return UserId.From(guidSub);
+
+        var internalUser = await users.GetByWorkOsUserIdAsync(sub, ct);
+        return internalUser?.Id;
+    }
+
     // GET /v1/admin/stats
     [HttpGet("stats")]
     public async Task<IActionResult> GetStats(CancellationToken ct)
@@ -104,10 +120,11 @@ public sealed class AdminController(
 
         await orgs.AddAsync(org, ct);
         await orgs.SaveChangesAsync(ct);
+        var auditUserId = await ResolveAuditUserIdAsync(ct);
 
         await audit.LogAsync("admin.org.created",
             orgId: org.Id,
-            userId: User.GetUserId(),
+            userId: auditUserId,
             resourceType: "organization",
             resourceId: org.Id.Value,
             ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
@@ -129,10 +146,11 @@ public sealed class AdminController(
 
         org.Suspend();
         await admin.SaveChangesAsync(ct);
+        var auditUserId = await ResolveAuditUserIdAsync(ct);
 
         await audit.LogAsync("admin.org.suspended",
             orgId: org.Id,
-            userId: User.GetUserId(),
+            userId: auditUserId,
             resourceType: "organization",
             resourceId: orgId,
             ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
@@ -155,10 +173,11 @@ public sealed class AdminController(
 
         org.Unsuspend();
         await admin.SaveChangesAsync(ct);
+        var auditUserId = await ResolveAuditUserIdAsync(ct);
 
         await audit.LogAsync("admin.org.unsuspended",
             orgId: org.Id,
-            userId: User.GetUserId(),
+            userId: auditUserId,
             resourceType: "organization",
             resourceId: orgId,
             ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
@@ -180,10 +199,11 @@ public sealed class AdminController(
 
         org.SoftDelete();
         await admin.SaveChangesAsync(ct);
+        var auditUserId = await ResolveAuditUserIdAsync(ct);
 
         await audit.LogAsync("admin.org.deleted",
             orgId: org.Id,
-            userId: User.GetUserId(),
+            userId: auditUserId,
             resourceType: "organization",
             resourceId: orgId,
             ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),

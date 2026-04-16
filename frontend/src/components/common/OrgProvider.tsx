@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSession } from "@/api/auth";
 import { OrgContext } from "@/hooks/useOrgContext";
 import { useAuth } from "@workos-inc/authkit-react";
@@ -13,6 +13,8 @@ export function OrgProvider({ children }: OrgProviderProps) {
   const { orgId } = useParams<{ orgId: string }>();
   const { data: session } = useSession();
   const { user, getAccessToken, switchToOrganization } = useAuth();
+  const lastSwitchedOrgRef = useRef<string | null>(null);
+  const refreshRegisteredRef = useRef(false);
 
   const allOrgs = session?.orgs ?? [];
   const currentOrg = orgId ? (allOrgs.find((o) => o.id === orgId) ?? null) : null;
@@ -22,26 +24,41 @@ export function OrgProvider({ children }: OrgProviderProps) {
   // userId comes from session; display info from WorkOS AuthKit
   const currentUserId = session?.userId ?? null;
   const isPlatformAdmin = session?.isPlatformAdmin ?? false;
-  void user; // WorkOS user object available for displayName/email in AppShell
 
   // When the current org is known, refresh the in-memory token to an org-scoped one.
-  // This puts WorkOS org_id into the JWT so TenantContextMiddleware can resolve the
-  // internal org — the backend never trusts the URL param for tenant scoping (CLAUDE.md §8.2).
+  // This puts WorkOS org_id into the JWT so TenantContextMiddleware can resolve the internal org.
   const workosOrgId = currentOrg?.workosOrgId ?? null;
-  useEffect(() => {
-    if (!workosOrgId) return;
 
-    void switchToOrganization({ organizationId: workosOrgId })
-      .then(() => getAccessToken({ forceRefresh: true }))
-      .then((token) => {
-        setAccessToken(token ?? null);
-      });
+  // Register exactly one silent-refresh callback; it always uses the most recently selected org.
+  useEffect(() => {
+    if (refreshRegisteredRef.current) return;
+
     registerSilentRefresh(async () => {
-      await switchToOrganization({ organizationId: workosOrgId });
-      const t = await getAccessToken({ forceRefresh: true });
+      if (lastSwitchedOrgRef.current) {
+        await switchToOrganization({ organizationId: lastSwitchedOrgRef.current });
+      }
+      const t = await getAccessToken();
       return t ?? null;
     });
-  }, [workosOrgId, getAccessToken, switchToOrganization]);
+
+    refreshRegisteredRef.current = true;
+  }, [getAccessToken, switchToOrganization]);
+
+  useEffect(() => {
+    if (!user || !workosOrgId) return;
+    if (lastSwitchedOrgRef.current === workosOrgId) return;
+
+    lastSwitchedOrgRef.current = workosOrgId;
+    void switchToOrganization({ organizationId: workosOrgId })
+      .then(() => getAccessToken())
+      .then((token) => {
+        setAccessToken(token ?? null);
+      })
+      .catch(() => {
+        // Avoid retry storms here; route guards handle re-auth if needed.
+        setAccessToken(null);
+      });
+  }, [workosOrgId, user, getAccessToken, switchToOrganization]);
 
   return (
     <OrgContext.Provider value={{ currentOrg, allOrgs, currentRole, isOwner, currentUserId, isPlatformAdmin }}>

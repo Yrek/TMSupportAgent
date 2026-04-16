@@ -26,6 +26,13 @@ interface UploadDropzoneProps {
 export function UploadDropzone({ onFileSelected, selectedFile, onFileClear, error }: UploadDropzoneProps) {
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  function formatFileSize(sizeBytes: number): string {
+    if (sizeBytes < 1024 * 1024) {
+      return `${(sizeBytes / 1024).toFixed(1)} KB`;
+    }
+    return `${(sizeBytes / 1024 / 1024).toFixed(2)} MB`;
+  }
+
   const onDrop = useCallback(
     (accepted: File[], rejected: FileRejection[]) => {
       setValidationError(null);
@@ -75,7 +82,7 @@ export function UploadDropzone({ onFileSelected, selectedFile, onFileClear, erro
         <div className="flex-1 min-w-0">
           <p className="font-medium truncate">{selectedFile.name}</p>
           <p className="text-xs text-muted-foreground">
-            {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+            {formatFileSize(selectedFile.size)}
           </p>
         </div>
         <button

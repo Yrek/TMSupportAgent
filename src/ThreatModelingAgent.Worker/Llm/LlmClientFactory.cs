@@ -10,12 +10,12 @@ public sealed class LlmClientFactory(
 {
     // Strong models for security-critical reasoning (architecture §8.2)
     public static readonly HashSet<string> StrongModels =
-        ["gpt-4o", "gpt-4.1", "claude-sonnet-4-6", "gemini-2.5-pro"];
+        ["gpt-4o", "gpt-4.1", "gpt-5", "claude-sonnet-4-6", "gemini-2.5-pro"];
 
     // Low-cost models for classification, formatting, deduplication
     // o4-mini is an OpenAI reasoning model — uses max_completion_tokens (no temperature)
     public static readonly HashSet<string> LowCostModels =
-        ["gpt-4o-mini", "claude-haiku-4-5", "o4-mini", "gemini-2.0-flash"];
+        ["gpt-4o-mini", "gpt-5-mini", "claude-haiku-4-5", "o4-mini", "gemini-2.0-flash"];
 
     public ILlmClient GetForModel(string model)
     {

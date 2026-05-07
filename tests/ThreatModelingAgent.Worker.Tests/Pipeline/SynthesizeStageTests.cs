@@ -49,7 +49,8 @@ public sealed class SynthesizeStageTests
         factory.GetForModel(lowCostModel).Returns(cheapClient);
         factory.GetForModel(Arg.Is<string>(m => m != strongModel && m != lowCostModel)).Returns(strongClient);
 
-        var stage = new SynthesizeStage(factory, NullLogger<SynthesizeStage>.Instance);
+        var stage = new SynthesizeStage(factory, NullLogger<SynthesizeStage>.Instance,
+            Microsoft.Extensions.Options.Options.Create(new SynthesisOptions()));
         return (stage, factory, strongClient, cheapClient, blob);
     }
 
@@ -295,7 +296,7 @@ public sealed class SynthesizeStageTests
         await act.Should().ThrowAsync<PipelineStageException>()
             .Where(ex => ex.ErrorCode == "SYNTHESIZE_FAILED",
                 because: "remediation items must only reference confirmed threats");
-        await strongClient.Received(3).CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>());
+        await strongClient.Received(5).CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

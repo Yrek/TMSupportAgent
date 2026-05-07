@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using ThreatModelingAgent.Domain.Entities;
 using ThreatModelingAgent.Domain.Enums;
 using ThreatModelingAgent.Domain.Interfaces;
@@ -32,6 +33,7 @@ internal sealed class JobOrchestrator(
     ClassifyStage classifyStage,
     AnalyzeStage analyzeStage,
     SynthesizeStage synthesizeStage,
+    IOptions<AnalyzeThrottlingOptions> throttlingOptions,
     ILogger<JobOrchestrator> logger)
 {
     private static readonly JsonSerializerOptions TokenJsonOptions = new()
@@ -265,6 +267,15 @@ internal sealed class JobOrchestrator(
         // ANALYZE — all methods in parallel
         await TransitionAsync(job, JobStatus.Analyzing, ct);
         var allCandidateSets = await analyzeStage.RunAllMethodsAsync(canonicalModel, classification, ct);
+
+        // Brief pause before synthesis so the sliding TPM window can partially clear.
+        // Analyze consumes the last batch's tokens right before synthesis fires its large prompt.
+        var preSynthesisDelay = throttlingOptions.Value.PreSynthesisDelayMs;
+        if (preSynthesisDelay > 0)
+        {
+            logger.LogInformation("Pre-synthesis delay. DelayMs={DelayMs}", preSynthesisDelay);
+            await Task.Delay(preSynthesisDelay, ct);
+        }
 
         // SYNTHESIZE
         await TransitionAsync(job, JobStatus.Synthesizing, ct);

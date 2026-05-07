@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Options;
 using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Worker.Llm;
 using ThreatModelingAgent.Worker.Pipeline.Contracts;
@@ -25,9 +26,10 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 /// </summary>
 public sealed class SynthesizeStage(
     ILlmClientFactory llmFactory,
-    ILogger<SynthesizeStage> logger) : IPipelineStage<SynthesizeInput, FinalOutput>
+    ILogger<SynthesizeStage> logger,
+    IOptions<SynthesisOptions> synthesisOptions) : IPipelineStage<SynthesizeInput, FinalOutput>
 {
-    private const int MaxAttempts = 3;
+    private const int MaxAttempts = 5;
 
     private static readonly JsonSerializerOptions SerializeOptions = new()
     {
@@ -48,7 +50,9 @@ public sealed class SynthesizeStage(
         "api_bypass_edge",
         "sensitive_data_in_logs",
         "cross_tenant_isolation_flaw",
-        "supply_chain_ci_cd"
+        "supply_chain_ci_cd",
+        "storage_prefix_isolation",
+        "no_bulk_export_approval"
     };
 
     public async Task<FinalOutput> ExecuteAsync(SynthesizeInput input, CancellationToken ct)
@@ -67,39 +71,73 @@ public sealed class SynthesizeStage(
         // Arch desc sent once via [SYSTEM_CONTEXT]; null in JSON copy to avoid duplication.
         const int MaxArchDescChars = 12_000;
         var modelForPrompt = TruncateArchDesc(input.CanonicalModel, MaxArchDescChars);
-        var modelForJson = modelForPrompt with { ArchitectureDescription = null };
 
-        // Strip only RejectedCandidates (already discarded) and EvidenceBasis/Assumptions
-        // (raw analysis notes not useful for synthesis). All other candidate fields are preserved
-        // so synthesis has full evidence for deduplication, merging, and mitigation generation.
-        var slimCandidateSets = input.AllCandidateSets.Select(set => new
+        // Strip fields from the canonical JSON that synthesis does not need:
+        // - ArchitectureDescription / ApplicationDescription / CorrectionsContext: in [SYSTEM_CONTEXT]
+        // - Gaps: EnforcePartialStatus reads these from the C# object, not the LLM prompt
+        // - ClarificationQuestions / Assumptions: not synthesis-relevant
+        // - PrivilegedPaths: already encoded in candidate groupKeys and [MERGE_GROUPS]
+        // - BackgroundJobs: low synthesis relevance
+        // Stripping these reduces canonical JSON by ~1,000–2,000 tokens, making room to keep
+        // full candidate payload without hitting the 30K TPM ceiling.
+        var modelForJson = modelForPrompt with
         {
-            method = set.Method,
-            candidates = set.Candidates.Select(c => new
+            ArchitectureDescription   = null,
+            ApplicationDescription    = null,
+            CorrectionsContext        = null,
+            Gaps                      = [],
+            ClarificationQuestions    = [],
+            Assumptions               = [],
+            PrivilegedPaths           = [],
+            BackgroundJobs            = [],
+        };
+
+        // Flatten all candidates, sort by importance, serialize for synthesis.
+        // statedFact (explicit_user_provided_fact) candidates are always prioritized.
+        // RiskRating justification text is dropped — synthesis only needs severity/likelihood/impact
+        // for prioritization decisions; justifications are regenerated in the final output.
+        // All other fields are sent in full so synthesis can produce high-fidelity output.
+        var allCandidates = input.AllCandidateSets
+            .SelectMany(set => set.Candidates.Select(c => new
             {
+                sourceMethod = set.Method,
                 c.Title,
-                c.MethodCategory,
+                c.GroupKey,
                 c.AffectedElementLabels,
                 c.Description,
                 c.AttackScenario,
-                c.Preconditions,
-                c.ImpactedAssets,
                 c.SecurityImpact,
-                c.PrivacyImpact,
                 c.ExistingControls,
                 c.ControlGaps,
+                c.Preconditions,
+                c.ImpactedAssets,
+                c.PrivacyImpact,
+                riskRating = c.RiskRating is null ? null : new
+                {
+                    c.RiskRating.Severity,
+                    c.RiskRating.Likelihood,
+                    c.RiskRating.Impact
+                },
                 c.Confidence,
                 c.EvidenceStrength,
                 c.FindingType,
-                c.GroupKey,
-                c.RiskRating
-            })
-        });
-        var allCandidatesJson = JsonSerializer.Serialize(slimCandidateSets, SerializeOptions);
+                statedFact = c.EvidenceBasis.Any(e =>
+                    string.Equals(e, "explicit_user_provided_fact", StringComparison.OrdinalIgnoreCase))
+            }))
+            .OrderByDescending(c => c.statedFact)
+            .ThenByDescending(c => SeverityOrder(c.riskRating?.Severity))
+            .ThenByDescending(c => ConfidenceOrder(c.Confidence))
+            .ToList();
+
+        var allCandidatesJson = JsonSerializer.Serialize(allCandidates, SerializeOptions);
         var canonicalJson = JsonSerializer.Serialize(modelForJson, SerializeOptions);
         var classificationJson = JsonSerializer.Serialize(input.ClassificationResult, SerializeOptions);
         var hotspotSummary = ComputeHotspots(input.AllCandidateSets);
         var mergeGroupsSummary = ComputeMergeGroups(input.AllCandidateSets);
+
+        logger.LogInformation(
+            "SYNTHESIZE payload. TotalCandidates={TotalCandidates} CandidateChars={CandidateChars} CanonicalChars={CanonicalChars}",
+            allCandidates.Count, allCandidatesJson.Length, canonicalJson.Length);
 
         var userPrompt = PromptTemplates.BuildSynthesizeUser(
             allCandidatesJson, canonicalJson, classificationJson, modelRoutingSummary,
@@ -109,21 +147,29 @@ public sealed class SynthesizeStage(
             hotspotSummary,
             mergeGroupsSummary);
 
-        // Token budget: 65,536 — synthesis receives all candidate sets; model context supports it.
-        TokenEstimator.AssertWithinBudget(PromptTemplates.SynthesizeSystem, userPrompt, 65_536, "SYNTHESIZE");
+        // Token budget: driven by config so the ceiling can be raised when using models with larger
+        // context windows (e.g. claude-sonnet-4-6 at 200K or gpt-4.1 at 1M).
+        // Default matches OpenAI gpt-4o tier-1 TPM ceiling (30K). Set Synthesis:TokenCeiling in
+        // appsettings to a higher value when switching to a large-context model.
+        var opts = synthesisOptions.Value;
+        var synthesisInputBudget = opts.TokenCeiling - opts.MaxOutputTokens;
+        TokenEstimator.AssertWithinBudget(PromptTemplates.SynthesizeSystem, userPrompt, synthesisInputBudget, "SYNTHESIZE");
 
         var request = new LlmRequest(
             SystemPrompt: PromptTemplates.SynthesizeSystem,
             UserPrompt: userPrompt,
             Model: model,
-            Temperature: 0.2f,
-            MaxTokens: 16384);
+            Temperature: 0.0f,
+            MaxTokens: opts.MaxOutputTokens);
 
         var (output, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<FinalOutput>(
             llmClient, request, Validate, "SYNTHESIZE_FAILED", MaxAttempts, logger, ct);
 
         // Enforce: analysisStatus=partial if any critical gap was unresolved (spec §6 Stage 6 Rule 5)
         output = EnforcePartialStatus(output, input.CanonicalModel);
+
+        // Deterministically fix any findingType mismatches the LLM may have introduced.
+        output = EnforceFindingTypeConsistency(output);
 
         // Soft check: warn if confirmed group keys outnumber confirmed threats (possible over-merge signal)
         WarnIfOverMerged(input.AllCandidateSets, output);
@@ -161,7 +207,60 @@ public sealed class SynthesizeStage(
 
         var normalizedRiskRating = NormalizeRiskRating(threat.RiskRating);
 
-        return threat with { SourceMethods = normalizedMethods, RiskRating = normalizedRiskRating };
+        // Normalize framework mappings produced inline by the synthesis model.
+        // The framework mapping sub-step handles its own output; this fixes synthesis-inline ones
+        // (e.g. "ATT&CK" → "mitre_attack") before they reach the sub-step merge.
+        var normalizedMappings = (threat.FrameworkMappings ?? [])
+            .Select(fm => new { fm, normalized = FrameworkNormalizer.Normalize(fm.Framework) })
+            .Where(x => x.normalized is not null)
+            .Select(x => x.fm with { Framework = x.normalized! })
+            .GroupBy(fm => $"{fm.Framework}:{fm.Reference}", StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToArray();
+
+        return threat with
+        {
+            SourceMethods = normalizedMethods,
+            RiskRating = normalizedRiskRating,
+            FrameworkMappings = normalizedMappings
+        };
+    }
+
+    // Moves threats that landed in the wrong array due to LLM error.
+    // Confirmed threats with findingType != "confirmed" are demoted to conditional; conditional
+    // threats with findingType == "confirmed" are promoted. Logs each correction as a warning.
+    private FinalOutput EnforceFindingTypeConsistency(FinalOutput output)
+    {
+        var demoted = output.ConfirmedThreats
+            .Where(t => !string.Equals(t.FindingType, "confirmed", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var promoted = output.ConditionalThreats
+            .Where(t => string.Equals(t.FindingType, "confirmed", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (demoted.Length == 0 && promoted.Length == 0) return output;
+
+        foreach (var t in demoted)
+            logger.LogWarning("SYNTHESIZE: demoting {Id} ({Title}) from confirmed — findingType={FindingType}",
+                t.Identifier, t.Title, t.FindingType);
+        foreach (var t in promoted)
+            logger.LogWarning("SYNTHESIZE: promoting {Id} ({Title}) to confirmed — findingType={FindingType}",
+                t.Identifier, t.Title, t.FindingType);
+
+        var confirmedIds  = demoted.Select(t => t.Identifier).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var conditionalIds = promoted.Select(t => t.Identifier).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return output with
+        {
+            ConfirmedThreats = output.ConfirmedThreats
+                .Where(t => !confirmedIds.Contains(t.Identifier))
+                .Concat(promoted)
+                .ToArray(),
+            ConditionalThreats = output.ConditionalThreats
+                .Where(t => !conditionalIds.Contains(t.Identifier))
+                .Concat(demoted)
+                .ToArray()
+        };
     }
 
     private static OwaspRiskRating? NormalizeRiskRating(OwaspRiskRating? rating)
@@ -236,13 +335,14 @@ public sealed class SynthesizeStage(
         var threatsJson = JsonSerializer.Serialize(threatSummaries, SerializeOptions);
         var userPrompt = PromptTemplates.BuildFrameworkMappingUser(threatsJson);
 
-        // Token budget: 8,192 input (spec §7) — skip sub-step rather than fail the job
+        // Token budget: skip sub-step rather than fail the job
         var estimated = TokenEstimator.EstimatePrompt(PromptTemplates.FrameworkMappingSystem, userPrompt);
-        if (estimated > (int)(8_192 * 0.9))
+        var fwInputBudget = synthesisOptions.Value.FrameworkMappingInputBudget;
+        if (estimated > (int)(fwInputBudget * 0.9))
         {
             logger.LogWarning(
-                "Framework mapping sub-step skipped — estimated tokens ({Estimated}) exceed budget. " +
-                "Threats will have empty frameworkMappings.", estimated);
+                "Framework mapping sub-step skipped — estimated tokens ({Estimated}) exceed budget ({Budget}). " +
+                "Threats will have empty frameworkMappings.", estimated, fwInputBudget);
             return output;
         }
 
@@ -251,7 +351,7 @@ public sealed class SynthesizeStage(
             UserPrompt: userPrompt,
             Model: cheapModel,
             Temperature: 0f,
-            MaxTokens: 4096);
+            MaxTokens: synthesisOptions.Value.FrameworkMappingMaxOutputTokens);
 
         List<FrameworkMappingItem>? mappings = null;
         try
@@ -387,37 +487,47 @@ public sealed class SynthesizeStage(
                 confirmedGroupKeyCount, output.ConfirmedThreats.Length);
     }
 
-    // Counts how many distinct analysis methods independently flagged each element label.
-    // Elements flagged by ≥2 methods are surfaced as hotspots for the synthesis model.
+    // Computes severity-weighted hotspots: elements flagged by ≥2 methods, ordered by weighted score.
+    // Weight: critical=3, high=2, medium=1, low/unknown=0. Score reflects true risk concentration,
+    // not just method count, so synthesis prioritizes genuinely dangerous elements.
     private static string? ComputeHotspots(ThreatCandidateSet[] sets)
     {
-        var methodsByElement = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var byElement = new Dictionary<string, (HashSet<string> Methods, int Score)>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var set in sets)
         {
             foreach (var candidate in set.Candidates)
             {
+                var weight = candidate.RiskRating?.Severity?.ToLowerInvariant() switch
+                {
+                    "critical" => 3,
+                    "high"     => 2,
+                    "medium"   => 1,
+                    _          => 0
+                };
+
                 foreach (var label in candidate.AffectedElementLabels)
                 {
-                    if (!methodsByElement.TryGetValue(label, out var methods))
-                    {
-                        methods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                        methodsByElement[label] = methods;
-                    }
-                    methods.Add(set.Method);
+                    if (!byElement.TryGetValue(label, out var entry))
+                        entry = (new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0);
+
+                    entry.Methods.Add(set.Method);
+                    byElement[label] = (entry.Methods, entry.Score + weight);
                 }
             }
         }
 
-        var hotspots = methodsByElement
-            .Where(kv => kv.Value.Count >= 2)
-            .OrderByDescending(kv => kv.Value.Count)
+        var hotspots = byElement
+            .Where(kv => kv.Value.Methods.Count >= 2)
+            .OrderByDescending(kv => kv.Value.Score)
+            .ThenByDescending(kv => kv.Value.Methods.Count)
             .ToArray();
 
         if (hotspots.Length == 0) return null;
 
         return string.Join("\n", hotspots.Select(kv =>
-            $"- {kv.Key}: flagged by {kv.Value.Count} methods ({string.Join(", ", kv.Value.OrderBy(m => m))})"));
+            $"- {kv.Key}: flagged by {kv.Value.Methods.Count} methods, " +
+            $"severity score {kv.Value.Score} ({string.Join(", ", kv.Value.Methods.OrderBy(m => m))})"));
     }
 
     private static CanonicalModel TruncateArchDesc(CanonicalModel model, int maxChars)
@@ -446,6 +556,22 @@ public sealed class SynthesizeStage(
         return output;
     }
 
+    private static int SeverityOrder(string? severity) => severity?.ToLowerInvariant() switch
+    {
+        "critical" => 4,
+        "high"     => 3,
+        "medium"   => 2,
+        "low"      => 1,
+        _          => 0
+    };
+
+    private static int ConfidenceOrder(string? confidence) => confidence?.ToLowerInvariant() switch
+    {
+        "high"   => 2,
+        "medium" => 1,
+        _        => 0
+    };
+
     private static string? Validate(FinalOutput o)
     {
         if (string.IsNullOrWhiteSpace(o.SystemSummary))      return "systemSummary is missing";
@@ -468,4 +594,43 @@ public sealed class SynthesizeStage(
 
         return null;
     }
+}
+
+/// <summary>
+/// Controls token budget for the SYNTHESIZE stage.
+/// Registered via Configure&lt;SynthesisOptions&gt; and bound to "Synthesis" config section.
+///
+/// When switching to a large-context model (claude-sonnet-4-6, gpt-4.1, gemini-2.5-pro),
+/// increase TokenCeiling to match the model's practical per-request limit and increase
+/// MaxOutputTokens for richer synthesis output. The input budget is TokenCeiling − MaxOutputTokens.
+/// </summary>
+public sealed class SynthesisOptions
+{
+    /// <summary>
+    /// Total tokens (input + output) allowed per synthesis request.
+    /// Default: 30,000 — matches OpenAI gpt-4o tier-1 TPM ceiling.
+    /// For claude-sonnet-4-6 or high-tier models, set to 100,000–200,000.
+    /// </summary>
+    public int TokenCeiling { get; init; } = 30_000;
+
+    /// <summary>
+    /// Maximum tokens reserved for synthesis output (max_tokens on the LLM request).
+    /// Default: 12,000 — sufficient for 15–20 threats with full mitigations.
+    /// With a large-context model, 24,000–30,000 produces more detailed output.
+    /// </summary>
+    public int MaxOutputTokens { get; init; } = 12_000;
+
+    /// <summary>
+    /// Maximum estimated input tokens for the framework-mapping sub-step.
+    /// Sub-step is skipped (non-fatal) when the prompt exceeds this. Raise for models
+    /// with larger context windows (GPT-5+).
+    /// </summary>
+    public int FrameworkMappingInputBudget { get; init; } = 8_192;
+
+    /// <summary>
+    /// max_completion_tokens for the framework-mapping sub-step.
+    /// Reasoning models consume tokens internally before output; set higher than the
+    /// expected output size to leave headroom for the reasoning phase.
+    /// </summary>
+    public int FrameworkMappingMaxOutputTokens { get; init; } = 8_192;
 }

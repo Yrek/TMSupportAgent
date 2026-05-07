@@ -38,21 +38,24 @@ try
     builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<WorkerTenantContext>());
 
     // ── HTTP clients with explicit timeouts (CLAUDE.md §9.8) ────────────────
+    // LLM calls are a documented exception to the 30-second guideline: large-model completions
+    // (GPT-5 with 16K output tokens, Claude with 30K) can take several minutes.
+    // 600 seconds covers the worst case without hanging indefinitely.
     builder.Services.AddHttpClient("AzureOpenAI", c =>
     {
-        c.Timeout = TimeSpan.FromSeconds(120);
+        c.Timeout = TimeSpan.FromSeconds(600);
     });
     builder.Services.AddHttpClient("OpenAI", c =>
     {
-        c.Timeout = TimeSpan.FromSeconds(120);
+        c.Timeout = TimeSpan.FromSeconds(600);
     });
     builder.Services.AddHttpClient("Google", c =>
     {
-        c.Timeout = TimeSpan.FromSeconds(120);
+        c.Timeout = TimeSpan.FromSeconds(600);
     });
     builder.Services.AddHttpClient("Anthropic", c =>
     {
-        c.Timeout = TimeSpan.FromSeconds(120);
+        c.Timeout = TimeSpan.FromSeconds(600);
         c.BaseAddress = new Uri("https://api.anthropic.com");
     });
 
@@ -72,6 +75,12 @@ try
     builder.Services.AddScoped<ILlmClientFactory>(sp => sp.GetRequiredService<LlmClientFactory>());
 
     // ── Pipeline stages ──────────────────────────────────────────────────────
+    builder.Services.Configure<StageMaxOutputTokensOptions>(
+        builder.Configuration.GetSection("StageMaxOutputTokens"));
+    builder.Services.Configure<AnalyzeThrottlingOptions>(
+        builder.Configuration.GetSection("AnalyzeThrottling"));
+    builder.Services.Configure<SynthesisOptions>(
+        builder.Configuration.GetSection("Synthesis"));
     builder.Services.AddScoped<PipelineDbPersistence>();
     builder.Services.AddScoped<DetectStage>();
     builder.Services.AddScoped<ParseStage>();

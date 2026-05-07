@@ -30,33 +30,24 @@ public sealed class OpenAiClient(
             ? BuildVisionUserContent(request.UserPrompt, request.ImageBase64, request.ImageMediaType ?? "image/png")
             : (object)request.UserPrompt;
 
-        // o-series models (o1, o3, o4-mini, etc.) use max_completion_tokens and do not support temperature
+        // o-series models (o1, o3, o4-mini, etc.) use max_completion_tokens and do not support temperature.
+        // gpt-5+ also uses max_completion_tokens but does support temperature.
         var isOSeries = request.Model.Length > 1
             && request.Model[0] is 'o' or 'O'
             && char.IsDigit(request.Model[1]);
 
-        object payload = isOSeries
-            ? new
-            {
-                model = request.Model,
-                messages = new object[]
-                {
-                    new { role = "system", content = request.SystemPrompt },
-                    new { role = "user",   content = userContent }
-                },
-                max_completion_tokens = request.MaxTokens
-            }
-            : new
-            {
-                model = request.Model,
-                messages = new object[]
-                {
-                    new { role = "system", content = request.SystemPrompt },
-                    new { role = "user",   content = userContent }
-                },
-                max_tokens = request.MaxTokens,
-                temperature = request.Temperature
-            };
+        var usesCompletionTokens = isOSeries
+            || request.Model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase);
+
+        var messages = new object[]
+        {
+            new { role = "system", content = request.SystemPrompt },
+            new { role = "user",   content = userContent }
+        };
+
+        object payload = usesCompletionTokens
+            ? new { model = request.Model, messages, max_completion_tokens = request.MaxTokens }
+            : new { model = request.Model, messages, max_tokens = request.MaxTokens, temperature = request.Temperature };
 
         using var client = httpClientFactory.CreateClient("OpenAI");
         client.DefaultRequestHeaders.Authorization =
@@ -85,15 +76,24 @@ public sealed class OpenAiClient(
         using var doc = JsonDocument.Parse(responseJson);
         var root = doc.RootElement;
 
-        var text = root
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString() ?? string.Empty;
+        var message = root.GetProperty("choices")[0].GetProperty("message");
+        var text = message.GetProperty("content").GetString();
 
         var usage = root.GetProperty("usage");
         var inputTokens = usage.GetProperty("prompt_tokens").GetInt32();
         var outputTokens = usage.GetProperty("completion_tokens").GetInt32();
+
+        // Reasoning models (o-series, gpt-5) can return null content when max_completion_tokens
+        // is hit during the reasoning phase before any output is produced. Log and surface as empty
+        // so StageRetryHelper can treat it as a retryable parse failure.
+        if (text is null)
+        {
+            var refusal = message.TryGetProperty("refusal", out var r) ? r.GetString() : null;
+            logger.LogWarning(
+                "LLM returned null content. Model={Model} InputTokens={InputTokens} OutputTokens={OutputTokens} Refusal={Refusal}",
+                request.Model, inputTokens, outputTokens, refusal ?? "none");
+            text = string.Empty;
+        }
 
         // Log token counts only — no content (CLAUDE.md §16.6)
         logger.LogInformation(

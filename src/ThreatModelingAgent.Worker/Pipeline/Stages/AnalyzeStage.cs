@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Diagnostics;
+using Microsoft.Extensions.Options;
 using ThreatModelingAgent.Worker.Llm;
 using ThreatModelingAgent.Worker.Pipeline.Contracts;
 using ThreatModelingAgent.Worker.Pipeline.Prompts;
@@ -14,8 +15,8 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 ///
 /// Model selection per method (spec §5.1):
 ///   Security-critical methods (stride, tenant_isolation, identity_session_delegation,
-///   ai_llm_threat, linddun) → strong model
-///   Pattern-driven methods (abuse_case, supply_chain, availability_resilience) → low-cost model
+///   ai_llm_threat, linddun, abuse_case, supply_chain, owasp_cumulus, owasp_cornucopia) → strong model
+///   Pattern-driven methods (availability_resilience, vast, pasta, octave, trike) → low-cost model
 ///
 /// Post-LLM deterministic validation:
 ///   - All affectedElementLabels MUST exist in the canonical model
@@ -26,10 +27,15 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 /// </summary>
 public sealed class AnalyzeStage(
     ILlmClientFactory llmFactory,
-    ILogger<AnalyzeStage> logger) : IPipelineStage<AnalyzeInput, ThreatCandidateSet>
+    ILogger<AnalyzeStage> logger,
+    IOptions<AnalyzeThrottlingOptions> throttlingOptions) : IPipelineStage<AnalyzeInput, ThreatCandidateSet>
 {
+    private readonly SemaphoreSlim _throttle = CreateThrottle(throttlingOptions.Value);
+    private readonly int _delayMsPerKChars = Math.Max(0, throttlingOptions.Value.DelayMsPerKChars);
+    private readonly AnalyzeThrottlingOptions _opts = throttlingOptions.Value;
+
     public const string SecurityExpertBaselineMethod = "security_expert_baseline";
-    private const int MaxAttempts = 3;
+    private const int MaxAttempts = 5;
 
     private static readonly HashSet<string> SecurityCriticalMethods = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -43,6 +49,7 @@ public sealed class AnalyzeStage(
         "abuse_case",       // multi-step attacker reasoning requires strong model
         "owasp_cumulus",    // cloud trust-boundary analysis requires strong model
         "owasp_cornucopia", // user-selected by reviewer — treat as security-critical
+        "supply_chain",     // CI/CD and dependency threats require groupKey precision; gpt-4o-mini misses Cloudflare token separation
         SecurityExpertBaselineMethod
     };
 
@@ -68,24 +75,29 @@ public sealed class AnalyzeStage(
         var canonicalJson = JsonSerializer.Serialize(modelForJson, SerializeOptions);
         var classificationJson = JsonSerializer.Serialize(input.ClassificationResult, SerializeOptions);
         var authGapSummary = ComputeAuthGapSummary(modelForPrompt);
+        var canonicalGapSummary = ComputeCanonicalGapSummary(modelForPrompt);
+        var privilegedPathSummary = ComputePrivilegedPathSummary(modelForPrompt);
         var userPrompt = PromptTemplates.BuildAnalyzeUser(
             canonicalJson, classificationJson,
             modelForPrompt.ApplicationDescription,
             modelForPrompt.ArchitectureDescription,
             modelForPrompt.CorrectionsContext,
-            authGapSummary);
+            authGapSummary,
+            canonicalGapSummary,
+            privilegedPathSummary);
 
         var systemPrompt = PromptTemplates.BuildAnalyzeSystem(input.Method);
 
-        // Token budget: 12,288 input per method (spec §7) — fail closed rather than truncate
-        TokenEstimator.AssertWithinBudget(systemPrompt, userPrompt, 12_288, $"ANALYZE:{input.Method}");
+        // Token budget per method — driven by config so it can be raised for high-TPM models.
+        // Default matches gpt-4o tier-1; set AnalyzeThrottling:InputBudgetPerMethod higher for GPT-5+ models.
+        TokenEstimator.AssertWithinBudget(systemPrompt, userPrompt, _opts.InputBudgetPerMethod, $"ANALYZE:{input.Method}");
 
         var request = new LlmRequest(
             SystemPrompt: systemPrompt,
             UserPrompt: userPrompt,
             Model: model,
             Temperature: 0.3f,
-            MaxTokens: 8192);
+            MaxTokens: _opts.MaxOutputTokens);
 
         var (output, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<ThreatCandidateSet>(
             llmClient, request, Validate, "ANALYZE_FAILED", MaxAttempts, logger, ct);
@@ -122,17 +134,43 @@ public sealed class AnalyzeStage(
         if (!methodsToRun.Contains(SecurityExpertBaselineMethod, StringComparer.OrdinalIgnoreCase))
             methodsToRun.Insert(0, SecurityExpertBaselineMethod);
 
+        // Estimate prompt char count once — canonical model JSON is the same for all methods.
+        // Stagger task launches so methods don't all hit the LLM API simultaneously (avoids 429 bursts).
+        var canonicalCharEstimate = JsonSerializer.Serialize(
+            canonicalModel with { ArchitectureDescription = null }, SerializeOptions).Length + 12_000;
+        var staggerIntervalMs = (canonicalCharEstimate / 1_000) * _delayMsPerKChars;
+
         logger.LogInformation(
-            "ANALYZE starting. MethodCount={MethodCount} Methods={Methods}",
+            "ANALYZE starting. MethodCount={MethodCount} Methods={Methods} StaggerIntervalMs={StaggerIntervalMs}",
             methodsToRun.Count,
-            string.Join(",", methodsToRun));
+            string.Join(",", methodsToRun),
+            staggerIntervalMs);
 
         var tasks = methodsToRun
-            .Select(method => ExecuteWithProgressAsync(
-                new AnalyzeInput(method, canonicalModel, classification), ct))
+            .Select((method, index) => ExecuteWithThrottlingAsync(
+                new AnalyzeInput(method, canonicalModel, classification),
+                index * staggerIntervalMs,
+                ct))
             .ToArray();
 
         return await Task.WhenAll(tasks);
+    }
+
+    private async Task<ThreatCandidateSet> ExecuteWithThrottlingAsync(
+        AnalyzeInput input, int initialDelayMs, CancellationToken ct)
+    {
+        if (initialDelayMs > 0)
+            await Task.Delay(initialDelayMs, ct);
+
+        await _throttle.WaitAsync(ct);
+        try
+        {
+            return await ExecuteWithProgressAsync(input, ct);
+        }
+        finally
+        {
+            _throttle.Release();
+        }
     }
 
     private async Task<ThreatCandidateSet> ExecuteWithProgressAsync(AnalyzeInput input, CancellationToken ct)
@@ -229,6 +267,33 @@ public sealed class AnalyzeStage(
         return string.Join("\n", gaps.Select(g => $"- {g}"));
     }
 
+    private static string? ComputeCanonicalGapSummary(CanonicalModel model)
+    {
+        var relevant = model.Gaps
+            .Where(g => string.Equals(g.SecurityRelevance, "critical", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(g.SecurityRelevance, "high", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (relevant.Length == 0) return null;
+
+        return string.Join("\n", relevant.Select(g =>
+            $"- [{g.SecurityRelevance.ToUpperInvariant()}] {g.Area}: {g.Description}"));
+    }
+
+    private static string? ComputePrivilegedPathSummary(CanonicalModel model)
+    {
+        if (model.PrivilegedPaths.Length == 0) return null;
+
+        return string.Join("\n", model.PrivilegedPaths.Select(p =>
+            $"- {p.Description} | blast radius: {p.ImpactIfCompromised}"));
+    }
+
+    private static SemaphoreSlim CreateThrottle(AnalyzeThrottlingOptions options)
+    {
+        var max = Math.Max(1, options.MaxConcurrentMethods);
+        return new SemaphoreSlim(max, max);
+    }
+
     private static string? Validate(ThreatCandidateSet o)
     {
         if (string.IsNullOrWhiteSpace(o.Method)) return "method is missing";
@@ -244,4 +309,40 @@ public sealed class AnalyzeStage(
 
         return null;
     }
+}
+
+/// <summary>
+/// Controls LLM rate limiting for the ANALYZE stage.
+/// Registered via Configure&lt;AnalyzeThrottlingOptions&gt; and bound to "AnalyzeThrottling" config section.
+/// </summary>
+public sealed class AnalyzeThrottlingOptions
+{
+    /// <summary>Maximum number of concurrent LLM calls across all parallel analyze methods.</summary>
+    public int MaxConcurrentMethods { get; init; } = 4;
+
+    /// <summary>
+    /// Milliseconds to delay per 1,000 characters of estimated prompt size before starting each method.
+    /// Staggers API calls to avoid TPM burst errors (429). Set to 0 to disable staggering.
+    /// </summary>
+    public int DelayMsPerKChars { get; init; } = 50;
+
+    /// <summary>
+    /// Milliseconds to wait after all analyze methods complete before starting synthesis.
+    /// Allows the sliding TPM window to partially clear, reducing 429s on the synthesis call.
+    /// </summary>
+    public int PreSynthesisDelayMs { get; init; } = 20_000;
+
+    /// <summary>
+    /// Maximum estimated input tokens per analyze method call. Fail-fast before sending an
+    /// oversized prompt to the LLM. Default: 12,288 (gpt-4o tier-1). Set to 50,000+ for
+    /// GPT-5 or other high-TPM models where the canonical model can be larger.
+    /// </summary>
+    public int InputBudgetPerMethod { get; init; } = 12_288;
+
+    /// <summary>
+    /// max_completion_tokens per analyze method call. Reasoning models consume tokens
+    /// internally before output; set higher than expected output to leave headroom.
+    /// Default: 8,192. Raise to 16,000+ for GPT-5/o-series models.
+    /// </summary>
+    public int MaxOutputTokens { get; init; } = 8_192;
 }

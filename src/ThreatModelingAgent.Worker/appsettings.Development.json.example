@@ -31,8 +31,30 @@
   },
 
   "LlmRouting": {
-    "StrongModel": "gpt-4o",
+    "StrongModel": "gpt-5",
     "LowCostModel": "gpt-4o-mini"
+  },
+
+  "StageMaxOutputTokens": {
+    "Parse": 8192,
+    "Normalize": 16000,
+    "NormalizeEnrich": 16000,
+    "Classify": 8192
+  },
+
+  "AnalyzeThrottling": {
+    "MaxConcurrentMethods": 2,
+    "DelayMsPerKChars": 50,
+    "PreSynthesisDelayMs": 20000,
+    "InputBudgetPerMethod": 50000,
+    "MaxOutputTokens": 16000
+  },
+
+  "Synthesis": {
+    "TokenCeiling": 200000,
+    "MaxOutputTokens": 32000,
+    "FrameworkMappingInputBudget": 30000,
+    "FrameworkMappingMaxOutputTokens": 8192
   },
 
   "ApplicationInsights": {

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using ThreatModelingAgent.Worker.Llm;
 using ThreatModelingAgent.Worker.Pipeline.Contracts;
 using ThreatModelingAgent.Worker.Pipeline.Prompts;
@@ -20,7 +21,8 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 /// </summary>
 public sealed class ClassifyStage(
     ILlmClientFactory llmFactory,
-    ILogger<ClassifyStage> logger) : IPipelineStage<ClassifyInput, ClassificationResult>
+    ILogger<ClassifyStage> logger,
+    IOptions<StageMaxOutputTokensOptions> stageTokenOpts) : IPipelineStage<ClassifyInput, ClassificationResult>
 {
     private const int MaxAttempts = 3;
     private const int MaxSelectedMethods = 6;
@@ -73,9 +75,20 @@ public sealed class ClassifyStage(
         // ArchitectureDescription appears in both [SYSTEM_CONTEXT] and inside the serialized
         // [CANONICAL_MODEL] JSON — sending it twice wastes tokens. Null it out in the JSON copy
         // so it only travels via [SYSTEM_CONTEXT], allowing a higher limit without blowing the budget.
+        // Also strip enrichment-only fields (PrivilegedPaths, Gaps, BackgroundJobs, Assumptions,
+        // ClarificationQuestions) — classify only needs architecture structure to select methods.
+        // This prevents large enrichment output from GPT-5-class models overflowing the budget.
         const int MaxArchDescChars = 4_000;
         var modelForPrompt = TruncateArchDesc(input.ConfirmedModel, MaxArchDescChars);
-        var modelForJson = modelForPrompt with { ArchitectureDescription = null };
+        var modelForJson = modelForPrompt with
+        {
+            ArchitectureDescription   = null,
+            PrivilegedPaths           = [],
+            Gaps                      = [],
+            BackgroundJobs            = [],
+            Assumptions               = [],
+            ClarificationQuestions    = [],
+        };
 
         var canonicalJson = JsonSerializer.Serialize(modelForJson, SerializeOptions);
         var correctionsJson = JsonSerializer.Serialize(input.UserCorrections, SerializeOptions);
@@ -85,15 +98,16 @@ public sealed class ClassifyStage(
             modelForPrompt.ArchitectureDescription,
             modelForPrompt.CorrectionsContext);
 
-        // Token budget: 8,192 input (spec §7) — fail closed rather than truncate
-        TokenEstimator.AssertWithinBudget(PromptTemplates.ClassifySystem, userPrompt, 8_192, "CLASSIFY");
+        // Token budget: raised to 30,000 to accommodate large-context models (GPT-5+).
+        // The 8,192 original limit was calibrated for gpt-4o tier-1.
+        TokenEstimator.AssertWithinBudget(PromptTemplates.ClassifySystem, userPrompt, 30_000, "CLASSIFY");
 
         var request = new LlmRequest(
             SystemPrompt: PromptTemplates.ClassifySystem,
             UserPrompt: userPrompt,
             Model: model,
             Temperature: 0f,
-            MaxTokens: 2048);
+            MaxTokens: stageTokenOpts.Value.Classify);
 
         var (output, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<ClassificationResult>(
             llmClient, request, Validate, "CLASSIFY_FAILED", MaxAttempts, logger, ct);

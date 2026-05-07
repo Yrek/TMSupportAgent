@@ -16,8 +16,14 @@ public class FrameworkMapping
     public string MappingType { get; private set; } = string.Empty;  // direct | approximate
     public DateTimeOffset CreatedAt { get; private set; }
 
+    // Must stay in sync with FrameworkNormalizer.Normalize() canonical output values.
     private static readonly HashSet<string> AllowedFrameworks =
-        ["owasp_top10", "owasp_api_top10", "asvs", "cis_controls", "ncsc", "twelve_factor"];
+    [
+        "stride", "vast", "pasta", "octave", "trike",
+        "mitre_attack", "owasp_cumulus", "owasp_cornucopia",
+        "owasp_top10", "owasp_api_top10",
+        "asvs", "cis_controls", "ncsc", "twelve_factor", "cwe"
+    ];
 
     private static readonly HashSet<string> AllowedMappingTypes = ["direct", "approximate"];
 

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using ThreatModelingAgent.Worker.Llm;
 using ThreatModelingAgent.Worker.Pipeline.Contracts;
@@ -14,7 +15,7 @@ namespace ThreatModelingAgent.Worker.Tests.Pipeline;
 /// AnalyzeStage runs one LLM sub-stage per selected threat modeling method.
 /// Security invariants under test:
 ///   1. Security-critical methods (stride, tenant_isolation, etc.) use the strong model.
-///   2. Pattern-driven methods (abuse_case, supply_chain) use the low-cost model.
+///   2. Pattern-driven methods (availability_resilience, vast, pasta, octave, trike) use the low-cost model.
 ///   3. Threats referencing unknown element labels are moved to rejectedCandidates
 ///      (EnforceTraceability — spec §5.1 Validation point 2).
 ///   4. LLM output is schema-validated — bad output retries then fails.
@@ -38,7 +39,8 @@ public sealed class AnalyzeStageTests
         factory.GetLowCostModel().Returns(lowCostModel);
         factory.GetForModel(Arg.Any<string>()).Returns(client);
 
-        var stage = new AnalyzeStage(factory, NullLogger<AnalyzeStage>.Instance);
+        var throttling = Options.Create(new AnalyzeThrottlingOptions { MaxConcurrentMethods = 100, DelayMsPerKChars = 0 });
+        var stage = new AnalyzeStage(factory, NullLogger<AnalyzeStage>.Instance, throttling);
         return (stage, factory, client);
     }
 
@@ -110,6 +112,8 @@ public sealed class AnalyzeStageTests
     [InlineData("identity_session_delegation")]
     [InlineData("ai_llm_threat")]
     [InlineData("linddun")]
+    [InlineData("abuse_case")]
+    [InlineData("supply_chain")]
     [InlineData("security_expert_baseline")]
     public async Task SecurityCriticalMethod_UsesStrongModel(string method)
     {
@@ -125,9 +129,9 @@ public sealed class AnalyzeStageTests
     }
 
     [Theory]
-    [InlineData("abuse_case")]
-    [InlineData("supply_chain")]
     [InlineData("availability_resilience")]
+    [InlineData("vast")]
+    [InlineData("pasta")]
     public async Task PatternDrivenMethod_UsesLowCostModel(string method)
     {
         var (stage, factory, client) = BuildStage(lowCostModel: "gpt-4o-mini");
@@ -249,7 +253,7 @@ public sealed class AnalyzeStageTests
 
         await act.Should().ThrowAsync<PipelineStageException>()
             .Where(ex => ex.ErrorCode == "ANALYZE_FAILED");
-        await client.Received(3).CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>());
+        await client.Received(5).CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

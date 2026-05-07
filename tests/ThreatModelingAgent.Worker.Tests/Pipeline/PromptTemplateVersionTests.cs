@@ -53,9 +53,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void NormalizeEnrichSystem_VersionIs_normalize_enrich_1_0_0()
+    public void NormalizeEnrichSystem_VersionIs_normalize_enrich_2_0_0()
     {
-        PromptTemplates.NormalizeEnrichSystem.Should().Contain("prompt-version: normalize-enrich-1.0.0");
+        PromptTemplates.NormalizeEnrichSystem.Should().Contain("prompt-version: normalize-enrich-2.0.0");
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class PromptTemplateVersionTests
         var system = PromptTemplates.BuildAnalyzeSystem(method);
         system.Should().Contain(VersionPrefix,
             because: $"ANALYZE system prompt for method {method} must carry a prompt-version");
-        system.Should().Contain("prompt-version: analyze-2.7.0");
+        system.Should().Contain("prompt-version: analyze-3.0.0");
     }
 
     [Fact]

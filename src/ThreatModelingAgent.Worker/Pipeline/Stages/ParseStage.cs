@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using Microsoft.Extensions.Options;
 using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Worker.Llm;
 using ThreatModelingAgent.Worker.Pipeline.Contracts;
@@ -23,7 +24,8 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 public sealed class ParseStage(
     IBlobStorage blobStorage,
     ILlmClientFactory llmFactory,
-    ILogger<ParseStage> logger) : IPipelineStage<ParseInput, ParseOutput>
+    ILogger<ParseStage> logger,
+    IOptions<StageMaxOutputTokensOptions> stageTokenOpts) : IPipelineStage<ParseInput, ParseOutput>
 {
     private const int MaxAttempts = 3;
     private const int MaxTextBytes = 80_000; // ~20k tokens
@@ -100,7 +102,7 @@ public sealed class ParseStage(
             UserPrompt: userPrompt,
             Model: model,
             Temperature: 0f,
-            MaxTokens: 4096,
+            MaxTokens: stageTokenOpts.Value.Parse,
             ImageBase64: imageBase64,
             ImageMediaType: imageMediaType);
 

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Worker.Llm;
 using ThreatModelingAgent.Worker.Pipeline.Contracts;
@@ -27,7 +28,8 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 /// </summary>
 public sealed class NormalizeStage(
     ILlmClientFactory llmFactory,
-    ILogger<NormalizeStage> logger) : IPipelineStage<NormalizeInput, CanonicalModel>
+    ILogger<NormalizeStage> logger,
+    IOptions<StageMaxOutputTokensOptions> stageTokenOpts) : IPipelineStage<NormalizeInput, CanonicalModel>
 {
     private const int MaxAttempts = 3;
     private static readonly HashSet<string> StructuredTypes = ["mermaid", "drawio", "plantuml"];
@@ -72,15 +74,15 @@ public sealed class NormalizeStage(
             parsedJson, input.ArtifactType,
             input.ApplicationDescription, input.ArchitectureDescription);
 
-        // Token budget: 12,288 input (spec §7) — fail closed rather than truncate
-        TokenEstimator.AssertWithinBudget(PromptTemplates.NormalizeSystem, userPrompt, 12_288, "NORMALIZE");
+        // Token budget: raised to 30,000 to accommodate large-context models (GPT-5+).
+        TokenEstimator.AssertWithinBudget(PromptTemplates.NormalizeSystem, userPrompt, 30_000, "NORMALIZE");
 
         var request = new LlmRequest(
             SystemPrompt: PromptTemplates.NormalizeSystem,
             UserPrompt: userPrompt,
             Model: model,
             Temperature: 0.2f,
-            MaxTokens: 8192);
+            MaxTokens: stageTokenOpts.Value.Normalize);
 
         var (output, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<CanonicalModel>(
             llmClient, request, Validate, "NORMALIZE_FAILED", MaxAttempts, logger, ct);
@@ -116,14 +118,14 @@ public sealed class NormalizeStage(
         var userPrompt = PromptTemplates.BuildNormalizeEnrichUser(
             structuralJson, applicationDescription, architectureDescription);
 
-        TokenEstimator.AssertWithinBudget(PromptTemplates.NormalizeEnrichSystem, userPrompt, 12_288, "NORMALIZE_ENRICH");
+        TokenEstimator.AssertWithinBudget(PromptTemplates.NormalizeEnrichSystem, userPrompt, 30_000, "NORMALIZE_ENRICH");
 
         var request = new LlmRequest(
             SystemPrompt: PromptTemplates.NormalizeEnrichSystem,
             UserPrompt: userPrompt,
             Model: model,
             Temperature: 0.2f,
-            MaxTokens: 4096);
+            MaxTokens: stageTokenOpts.Value.NormalizeEnrich);
 
         try
         {

@@ -49,6 +49,11 @@ internal sealed class ArchitectureConfiguration : IEntityTypeConfiguration<Archi
             .HasColumnType("jsonb")
             .IsRequired();
 
+        builder.Property(a => a.DeploymentContextJson)
+            .HasColumnName("deployment_context")
+            .HasColumnType("jsonb")
+            .IsRequired();
+
         builder.Property(a => a.ConfirmedAt).HasColumnName("confirmed_at");
 
         builder.Property(a => a.ConfirmedBy)

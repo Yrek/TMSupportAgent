@@ -41,16 +41,22 @@ public sealed class NormalizeStage(
     {
         if (StructuredTypes.Contains(input.ArtifactType))
         {
-            var deterministic = TryDeterministicNormalize(input.Parsed);
+            var deterministic = TryDeterministicNormalize(
+                input.Parsed, input.ApplicationDescription, input.ArchitectureDescription);
+
             if (deterministic is not null && deterministic.DataFlows.Length > 0)
             {
+                // A5: Enrich the structurally-extracted model with security context the
+                // deterministic parser cannot produce (assumptions, gaps, privileged paths, etc.)
+                var enriched = await EnrichWithLlmAsync(
+                    deterministic, input.ApplicationDescription, input.ArchitectureDescription, ct);
+
                 logger.LogInformation(
-                    "NORMALIZE complete (deterministic). Components={Components} Actors={Actors} DataStores={DataStores} DataFlows={DataFlows}",
-                    deterministic.Components.Length,
-                    deterministic.Actors.Length,
-                    deterministic.DataStores.Length,
-                    deterministic.DataFlows.Length);
-                return deterministic;
+                    "NORMALIZE complete (deterministic+enrichment). Components={Components} Actors={Actors} DataStores={DataStores} DataFlows={DataFlows} Gaps={Gaps} Assumptions={Assumptions}",
+                    enriched.Components.Length, enriched.Actors.Length,
+                    enriched.DataStores.Length, enriched.DataFlows.Length,
+                    enriched.Gaps.Length, enriched.Assumptions.Length);
+                return enriched;
             }
 
             logger.LogInformation(
@@ -62,7 +68,9 @@ public sealed class NormalizeStage(
         var llmClient = llmFactory.GetForModel(model);
 
         var parsedJson = JsonSerializer.Serialize(input.Parsed, SerializeOptions);
-        var userPrompt = PromptTemplates.BuildNormalizeUser(parsedJson, input.ArtifactType);
+        var userPrompt = PromptTemplates.BuildNormalizeUser(
+            parsedJson, input.ArtifactType,
+            input.ApplicationDescription, input.ArchitectureDescription);
 
         // Token budget: 12,288 input (spec §7) — fail closed rather than truncate
         TokenEstimator.AssertWithinBudget(PromptTemplates.NormalizeSystem, userPrompt, 12_288, "NORMALIZE");
@@ -77,8 +85,15 @@ public sealed class NormalizeStage(
         var (output, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<CanonicalModel>(
             llmClient, request, Validate, "NORMALIZE_FAILED", MaxAttempts, logger, ct);
 
+        // User-supplied context fields are injected here — not part of the LLM's output schema
+        output = output with
+        {
+            ApplicationDescription = input.ApplicationDescription,
+            ArchitectureDescription = input.ArchitectureDescription
+        };
+
         logger.LogInformation(
-            "NORMALIZE complete. Components={Components} DataFlows={DataFlows} Gaps={Gaps} " +
+            "NORMALIZE complete (LLM). Components={Components} DataFlows={DataFlows} Gaps={Gaps} " +
             "InputTokens={InputTokens} OutputTokens={OutputTokens}",
             output.Components.Length, output.DataFlows.Length, output.Gaps.Length,
             inputTokens, outputTokens);
@@ -86,7 +101,87 @@ public sealed class NormalizeStage(
         return output;
     }
 
-    private static CanonicalModel? TryDeterministicNormalize(ParseOutput parsed)
+    // A5: LLM enrichment for the deterministic path — fills security fields the
+    // structural parser cannot produce. Non-fatal: skeletal model returned on failure.
+    private async Task<CanonicalModel> EnrichWithLlmAsync(
+        CanonicalModel skeletal,
+        string? applicationDescription,
+        string? architectureDescription,
+        CancellationToken ct)
+    {
+        var model = llmFactory.GetStrongModel();
+        var llmClient = llmFactory.GetForModel(model);
+
+        var structuralJson = JsonSerializer.Serialize(skeletal, SerializeOptions);
+        var userPrompt = PromptTemplates.BuildNormalizeEnrichUser(
+            structuralJson, applicationDescription, architectureDescription);
+
+        TokenEstimator.AssertWithinBudget(PromptTemplates.NormalizeEnrichSystem, userPrompt, 12_288, "NORMALIZE_ENRICH");
+
+        var request = new LlmRequest(
+            SystemPrompt: PromptTemplates.NormalizeEnrichSystem,
+            UserPrompt: userPrompt,
+            Model: model,
+            Temperature: 0.2f,
+            MaxTokens: 4096);
+
+        try
+        {
+            var (enrichment, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<EnrichmentOutput>(
+                llmClient, request, ValidateEnrichment, "NORMALIZE_ENRICH_FAILED", 2, logger, ct);
+
+            logger.LogInformation(
+                "NORMALIZE enrichment complete. Assumptions={A} Gaps={G} PrivilegedPaths={P} InputTokens={IT} OutputTokens={OT}",
+                enrichment.Assumptions.Length, enrichment.Gaps.Length, enrichment.PrivilegedPaths.Length,
+                inputTokens, outputTokens);
+
+            return skeletal with
+            {
+                DeploymentContext       = enrichment.DeploymentContext ?? skeletal.DeploymentContext,
+                TrustBoundaries         = enrichment.TrustBoundaries.Length > 0 ? enrichment.TrustBoundaries : skeletal.TrustBoundaries,
+                Assumptions             = enrichment.Assumptions.Length > 0 ? enrichment.Assumptions : skeletal.Assumptions,
+                Gaps                    = enrichment.Gaps.Length > 0 ? enrichment.Gaps : skeletal.Gaps,
+                PrivilegedPaths         = enrichment.PrivilegedPaths.Length > 0 ? enrichment.PrivilegedPaths : skeletal.PrivilegedPaths,
+                ClarificationQuestions  = enrichment.ClarificationQuestions.Length > 0 ? enrichment.ClarificationQuestions : skeletal.ClarificationQuestions,
+                SensitiveDataTypes      = enrichment.SensitiveDataTypes.Length > 0 ? enrichment.SensitiveDataTypes : skeletal.SensitiveDataTypes,
+                SecretsUsage            = enrichment.SecretsUsage.Length > 0 ? enrichment.SecretsUsage : skeletal.SecretsUsage,
+                HasLoggingMonitoring    = enrichment.HasLoggingMonitoring,
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "NORMALIZE enrichment failed — returning skeletal model. This is non-critical.");
+            return skeletal;
+        }
+    }
+
+    private sealed record EnrichmentOutput(
+        DeploymentContext? DeploymentContext,
+        CanonicalTrustBoundary[] TrustBoundaries,
+        Assumption[] Assumptions,
+        Gap[] Gaps,
+        PrivilegedPath[] PrivilegedPaths,
+        ClarificationQuestion[] ClarificationQuestions,
+        string[] SensitiveDataTypes,
+        SecretsUsage[] SecretsUsage,
+        bool HasLoggingMonitoring);
+
+    private static string? ValidateEnrichment(EnrichmentOutput o)
+    {
+        if (o.TrustBoundaries is null)        return "trustBoundaries is null";
+        if (o.Assumptions is null)            return "assumptions is null";
+        if (o.Gaps is null)                   return "gaps is null";
+        if (o.PrivilegedPaths is null)        return "privilegedPaths is null";
+        if (o.ClarificationQuestions is null) return "clarificationQuestions is null";
+        if (o.SensitiveDataTypes is null)     return "sensitiveDataTypes is null";
+        if (o.SecretsUsage is null)           return "secretsUsage is null";
+        return null;
+    }
+
+    private static CanonicalModel? TryDeterministicNormalize(
+        ParseOutput parsed,
+        string? applicationDescription,
+        string? architectureDescription)
     {
         try
         {
@@ -124,7 +219,7 @@ public sealed class NormalizeStage(
                         dataStores.Add(new CanonicalDataStore(
                             label,
                             InferStoreType(label),
-                            ContainsSensitiveData(label),
+                            IsDataStoreSensitive(label),
                             IsEncrypted(label)));
                         break;
                     case "external":
@@ -163,13 +258,14 @@ public sealed class NormalizeStage(
             var networkExposure = hasInternetEdge ? "internet_facing" : "unknown";
 
             return new CanonicalModel(
-                SystemPurpose: "Architecture extracted from structured diagram.",
+                SystemPurpose: applicationDescription?.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .FirstOrDefault()?.Trim(),
                 Components: components.ToArray(),
                 Actors: actors.ToArray(),
                 ExternalSystems: externalSystems.ToArray(),
                 DataStores: dataStores.ToArray(),
                 DataFlows: dataFlows,
-                TrustBoundaries: [],
+                TrustBoundaries: DetectTrustBoundaries(actors, components, externalSystems, dataStores, parsed.RawBoundaries),
                 NetworkExposure: networkExposure,
                 AuthenticationMethods: authMethods.ToArray(),
                 AuthorizationModel: "unknown",
@@ -185,7 +281,10 @@ public sealed class NormalizeStage(
                 AiLlmBoundaries: [],
                 Assumptions: [],
                 Gaps: [],
-                ClarificationQuestions: []);
+                ClarificationQuestions: [],
+                ApplicationDescription: applicationDescription,
+                ArchitectureDescription: architectureDescription,
+                DeploymentContext: DetectDeploymentContext(parsed));
         }
         catch
         {
@@ -226,11 +325,27 @@ public sealed class NormalizeStage(
         return "data_store";
     }
 
+    // Used for flow labels — checks whether the flow carries sensitive data based on label keywords.
     private static bool ContainsSensitiveData(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return false;
         var t = text.ToLowerInvariant();
-        return t.Contains("password") || t.Contains("credential") || t.Contains("token") || t.Contains("secret");
+        return t.Contains("password") || t.Contains("credential") || t.Contains("token")
+            || t.Contains("secret") || t.Contains("sas") || t.Contains("customer");
+    }
+
+    // Used for data store labels — more permissive than flow label check.
+    // Databases, object stores, message buses, and log sinks in customer-facing systems
+    // almost universally contain sensitive data; default true for structural storage types.
+    private static bool IsDataStoreSensitive(string label)
+    {
+        if (string.IsNullOrWhiteSpace(label)) return false;
+        var l = label.ToLowerInvariant();
+        return l.Contains("sql") || l.Contains("database") || l.Contains("storage")
+            || l.Contains("blob") || l.Contains("vault") || l.Contains("log")
+            || l.Contains("analytics") || l.Contains("queue") || l.Contains("bus")
+            || l.Contains("cosmos") || l.Contains("redis") || l.Contains("table")
+            || ContainsSensitiveData(label);
     }
 
     private static bool IsEncrypted(string label)
@@ -286,6 +401,100 @@ public sealed class NormalizeStage(
 
         return hints.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
+
+    // Builds trust boundaries from raw diagram boundaries when present; falls back to
+    // synthetic boundaries derived from element categories (external/internal/data tier).
+    private static CanonicalTrustBoundary[] DetectTrustBoundaries(
+        List<CanonicalActor> actors,
+        List<CanonicalComponent> components,
+        List<CanonicalExternalSystem> externalSystems,
+        List<CanonicalDataStore> dataStores,
+        RawBoundary[] rawBoundaries)
+    {
+        if (rawBoundaries.Length > 0)
+        {
+            return rawBoundaries
+                .Where(rb => !string.IsNullOrWhiteSpace(rb.Label))
+                .Select(rb => new CanonicalTrustBoundary(
+                    rb.Label.Trim(),
+                    rb.ContainedElements,
+                    InferBoundaryType(rb.Label, rb.BoundaryHints)))
+                .ToArray();
+        }
+
+        var boundaries = new List<CanonicalTrustBoundary>();
+
+        var externalLabels = actors.Select(a => a.Label)
+            .Concat(externalSystems.Select(e => e.Label))
+            .ToArray();
+        if (externalLabels.Length > 0)
+            boundaries.Add(new CanonicalTrustBoundary(
+                "External / Internet Boundary", externalLabels, "internet_facing"));
+
+        if (components.Count > 0)
+            boundaries.Add(new CanonicalTrustBoundary(
+                "Internal Services Boundary",
+                components.Select(c => c.Label).ToArray(),
+                "internal"));
+
+        if (dataStores.Count > 0)
+            boundaries.Add(new CanonicalTrustBoundary(
+                "Data Tier Boundary",
+                dataStores.Select(d => d.Label).ToArray(),
+                "data_tier"));
+
+        return boundaries.ToArray();
+    }
+
+    private static string InferBoundaryType(string label, string[] hints)
+    {
+        var l = label.ToLowerInvariant();
+        var hs = new HashSet<string>(hints ?? [], StringComparer.OrdinalIgnoreCase);
+        if (hs.Contains("vpc") || l.Contains("vpc"))                                   return "vpc";
+        if (hs.Contains("dmz") || l.Contains("dmz"))                                   return "dmz";
+        if (hs.Contains("untrusted") || l.Contains("internet") || l.Contains("extern")) return "internet_facing";
+        if (hs.Contains("trusted") || l.Contains("internal"))                          return "internal";
+        if (l.Contains("data") || l.Contains("db") || l.Contains("database"))          return "data_tier";
+        if (l.Contains("ml") || l.Contains("ai") || l.Contains("model"))               return "ml_boundary";
+        return "unknown";
+    }
+
+    // Keyword-based detection of deployment environment and infra controls from diagram labels.
+    // Results seed the DeploymentContext that users can review and adjust before confirming.
+    private static DeploymentContext DetectDeploymentContext(ParseOutput parsed)
+    {
+        var allText = string.Join(" ",
+            parsed.RawElements.Select(e => e.Label)
+            .Concat(parsed.RawFlows.Select(f => f.Label ?? ""))
+            .Concat(parsed.RawFlows.Select(f => f.From ?? ""))
+            .Concat(parsed.RawFlows.Select(f => f.To ?? "")))
+            .ToLowerInvariant();
+
+        var environment = "unknown";
+        if (HasAny(allText, "aws", "amazon", "s3", "ec2", "lambda", "dynamodb", "cloudfront", "ecs", "eks"))
+            environment = "aws";
+        else if (HasAny(allText, "azure", "cosmos", "servicebus", "apim", "keyvault", "aks"))
+            environment = "azure";
+        else if (HasAny(allText, "gcp", "google cloud", "bigquery", "pub/sub", "cloud run", "gke"))
+            environment = "gcp";
+        else if (HasAny(allText, "on-prem", "on_prem", "on premise", "datacenter", "data center"))
+            environment = "on_prem";
+
+        var containerized = HasAny(allText, "docker", "container", "kubernetes", "k8s", "pod", "helm", "ecs", "eks", "aks", "gke");
+        var serverless = HasAny(allText, "lambda", "function", "cloud run", "azure function", "serverless", "faas");
+
+        var controls = new List<string>();
+        if (HasAny(allText, "waf", "web application firewall")) controls.Add("waf");
+        if (HasAny(allText, "cdn", "cloudfront", "fastly", "akamai", "cloudflare")) controls.Add("cdn");
+        if (HasAny(allText, "api gateway", "api-gateway", "apigw", "apim")) controls.Add("api_gateway");
+        if (HasAny(allText, "load balancer", "alb", "elb", "nlb", "ingress")) controls.Add("load_balancer");
+        if (HasAny(allText, "ddos", "shield", "ddos protection", "ddos mitigation")) controls.Add("ddos_protection");
+
+        return new DeploymentContext(environment, containerized, serverless, controls.ToArray());
+    }
+
+    private static bool HasAny(string haystack, params string[] needles)
+        => needles.Any(n => haystack.Contains(n, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Persists the canonical model to blob for cross-phase availability.</summary>
     public static async Task PersistAsync(

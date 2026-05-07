@@ -56,7 +56,7 @@ internal sealed class JobConfiguration : IEntityTypeConfiguration<Job>
 
         builder.Property(j => j.ArchitectureDescription)
             .HasColumnName("architecture_description")
-            .HasMaxLength(4000);
+            .HasColumnType("text");
 
         builder.Property(j => j.LlmTokenUsageJson)
             .HasColumnName("llm_token_usage")

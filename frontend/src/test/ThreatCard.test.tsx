@@ -26,6 +26,7 @@ const mockThreat: Threat = {
   findingType: "Confirmed",
   status: "Open",
   source: "System",
+  riskRating: null,
   mitigations: [],
   frameworkMappings: [],
   notes: [],

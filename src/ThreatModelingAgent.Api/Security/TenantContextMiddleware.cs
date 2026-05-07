@@ -36,14 +36,10 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
             var isAdminRoute = context.Request.Path.StartsWithSegments("/v1/admin", StringComparison.OrdinalIgnoreCase);
             var isSessionRoute = context.Request.Path.StartsWithSegments("/v1/auth/session", StringComparison.OrdinalIgnoreCase);
 
-            if (isPlatformAdmin && (isAdminRoute || isSessionRoute))
+            // Session route is the org-discovery endpoint — no org_id required for any authenticated user.
+            // Admin routes require platform:admin role; org_id not required there either.
+            if (isSessionRoute || (isPlatformAdmin && isAdminRoute))
             {
-                // Platform admin tokens are accepted on:
-                //   - /v1/admin/* (platform admin API)
-                //   - /v1/auth/session (session introspection/sign-out)
-                // For org-scoped routes, platform admins are allowed only when mapped as org members.
-
-                // Allowed admin/session route — no org_id claim required; skip tenant context setup
                 await next(context);
                 return;
             }

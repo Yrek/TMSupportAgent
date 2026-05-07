@@ -1,8 +1,16 @@
+using System.Text.Json;
 using ThreatModelingAgent.Domain.Entities;
 
 namespace ThreatModelingAgent.Api.Dtos;
 
 // ── Response DTOs (CLAUDE.md §6.6 — purpose-specific, no domain model exposed) ──
+
+public record RiskRatingDto(
+    string Likelihood,
+    string Impact,
+    string Severity,
+    string? LikelihoodJustification,
+    string? ImpactJustification);
 
 public record ThreatDto(
     Guid Id,
@@ -24,10 +32,13 @@ public record ThreatDto(
     string FindingType,
     string Status,
     string Source,
+    RiskRatingDto? RiskRating,
     IReadOnlyList<MitigationDto> Mitigations,
     IReadOnlyList<FrameworkMappingDto> FrameworkMappings,
     DateTimeOffset CreatedAt)
 {
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+
     public static ThreatDto From(Threat t) => new(
         Id: t.Id,
         Identifier: t.Identifier,
@@ -48,9 +59,17 @@ public record ThreatDto(
         FindingType: t.FindingType.ToString(),
         Status: t.Status.ToString(),
         Source: t.Source,
+        RiskRating: DeserializeRiskRating(t.RiskRatingJson),
         Mitigations: t.Mitigations.Select(MitigationDto.From).ToList(),
         FrameworkMappings: t.FrameworkMappings.Select(FrameworkMappingDto.From).ToList(),
         CreatedAt: t.CreatedAt);
+
+    private static RiskRatingDto? DeserializeRiskRating(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try { return JsonSerializer.Deserialize<RiskRatingDto>(json, JsonOpts); }
+        catch { return null; }
+    }
 }
 
 public record MitigationDto(

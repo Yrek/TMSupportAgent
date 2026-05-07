@@ -123,7 +123,7 @@ export function UploadJobPage() {
               {...register("architectureDescription")}
               placeholder="Any context not obvious from the diagram (trust boundaries, assumptions, external dependencies)."
               rows={4}
-              maxLength={4000}
+              maxLength={20000}
             />
           </div>
 

@@ -40,7 +40,6 @@ public sealed class ClassifyStage(
         "owasp_cumulus",
         "owasp_cornucopia",
         "maestro",
-        "emlsg",
         "supply_chain",
         "availability_resilience"
     };
@@ -53,12 +52,12 @@ public sealed class ClassifyStage(
         ["multi_tenant_saas"]         = ["stride", "abuse_case", "tenant_isolation"],
         ["identity_complex"]          = ["stride", "abuse_case", "identity_session_delegation"],
         ["privacy_heavy"]             = ["stride", "abuse_case", "linddun"],
-        ["llm_enabled"]               = ["stride", "abuse_case", "ai_llm_threat", "maestro", "emlsg", "mitre_attack"],
-        ["agentic_mcp_enabled"]       = ["stride", "abuse_case", "ai_llm_threat", "maestro", "emlsg", "mitre_attack"],
+        ["llm_enabled"]               = ["stride", "abuse_case", "ai_llm_threat", "maestro", "mitre_attack"],
+        ["agentic_mcp_enabled"]       = ["stride", "abuse_case", "ai_llm_threat", "maestro", "mitre_attack"],
         ["microservice_distributed"]  = ["stride", "abuse_case"],
         ["event_driven"]              = ["stride", "abuse_case"],
         ["integration_heavy"]         = ["stride", "abuse_case", "supply_chain"],
-        ["cloud_native"]              = ["stride", "abuse_case"],
+        ["cloud_native"]              = ["stride", "abuse_case", "supply_chain"],
     };
 
     private static readonly JsonSerializerOptions SerializeOptions = new()
@@ -71,9 +70,20 @@ public sealed class ClassifyStage(
         var model = llmFactory.GetLowCostModel();
         var llmClient = llmFactory.GetForModel(model);
 
-        var canonicalJson = JsonSerializer.Serialize(input.ConfirmedModel, SerializeOptions);
+        // ArchitectureDescription appears in both [SYSTEM_CONTEXT] and inside the serialized
+        // [CANONICAL_MODEL] JSON — sending it twice wastes tokens. Null it out in the JSON copy
+        // so it only travels via [SYSTEM_CONTEXT], allowing a higher limit without blowing the budget.
+        const int MaxArchDescChars = 4_000;
+        var modelForPrompt = TruncateArchDesc(input.ConfirmedModel, MaxArchDescChars);
+        var modelForJson = modelForPrompt with { ArchitectureDescription = null };
+
+        var canonicalJson = JsonSerializer.Serialize(modelForJson, SerializeOptions);
         var correctionsJson = JsonSerializer.Serialize(input.UserCorrections, SerializeOptions);
-        var userPrompt = PromptTemplates.BuildClassifyUser(canonicalJson, correctionsJson);
+        var userPrompt = PromptTemplates.BuildClassifyUser(
+            canonicalJson, correctionsJson,
+            modelForPrompt.ApplicationDescription,
+            modelForPrompt.ArchitectureDescription,
+            modelForPrompt.CorrectionsContext);
 
         // Token budget: 8,192 input (spec §7) — fail closed rather than truncate
         TokenEstimator.AssertWithinBudget(PromptTemplates.ClassifySystem, userPrompt, 8_192, "CLASSIFY");
@@ -193,6 +203,14 @@ public sealed class ClassifyStage(
             result.SelectedMethods.Length, limited.Length, required.Count);
 
         return result with { SelectedMethods = limited };
+    }
+
+    private static CanonicalModel TruncateArchDesc(CanonicalModel model, int maxChars)
+    {
+        var desc = model.ArchitectureDescription;
+        return desc is not null && desc.Length > maxChars
+            ? model with { ArchitectureDescription = desc[..maxChars] + " [truncated]" }
+            : model;
     }
 
     private static string? Validate(ClassificationResult o)

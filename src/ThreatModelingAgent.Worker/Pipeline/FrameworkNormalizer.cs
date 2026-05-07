@@ -7,7 +7,7 @@ namespace ThreatModelingAgent.Worker.Pipeline;
 /// (when persisting framework mappings to DB). Must not be duplicated — CLAUDE.md §14.
 ///
 /// Allowed values: stride, vast, pasta, octave, trike, mitre_attack, owasp_cumulus,
-/// owasp_cornucopia, owasp_top10, owasp_api_top10, asvs, cis_controls, ncsc, twelve_factor.
+/// owasp_cornucopia, owasp_top10, owasp_api_top10, asvs, cis_controls, ncsc, twelve_factor, cwe.
 /// Returns null for unknown frameworks so the caller can skip them silently.
 /// </summary>
 internal static class FrameworkNormalizer
@@ -31,6 +31,7 @@ internal static class FrameworkNormalizer
             "cis" or "cis_controls" or "cis_benchmarks" => "cis_controls",
             "ncsc" => "ncsc",
             "twelve_factor" or "12_factor" or "12factor" => "twelve_factor",
+            "cwe" => "cwe",
             _ => null
         };
     }

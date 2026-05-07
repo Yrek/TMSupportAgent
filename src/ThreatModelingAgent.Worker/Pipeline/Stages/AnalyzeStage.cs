@@ -39,8 +39,10 @@ public sealed class AnalyzeStage(
         "ai_llm_threat",
         "linddun",
         "maestro",
-        "emlsg",
         "mitre_attack",
+        "abuse_case",       // multi-step attacker reasoning requires strong model
+        "owasp_cumulus",    // cloud trust-boundary analysis requires strong model
+        "owasp_cornucopia", // user-selected by reviewer — treat as security-critical
         SecurityExpertBaselineMethod
     };
 
@@ -57,9 +59,21 @@ public sealed class AnalyzeStage(
 
         var llmClient = llmFactory.GetForModel(model);
 
-        var canonicalJson = JsonSerializer.Serialize(input.CanonicalModel, SerializeOptions);
+        // Null out ArchitectureDescription in the JSON copy — it is sent once via [SYSTEM_CONTEXT]
+        // to avoid double-counting tokens. Limit raised to 12,000 chars as a result.
+        const int MaxArchDescChars = 12_000;
+        var modelForPrompt = TruncateArchDesc(input.CanonicalModel, MaxArchDescChars);
+        var modelForJson = modelForPrompt with { ArchitectureDescription = null };
+
+        var canonicalJson = JsonSerializer.Serialize(modelForJson, SerializeOptions);
         var classificationJson = JsonSerializer.Serialize(input.ClassificationResult, SerializeOptions);
-        var userPrompt = PromptTemplates.BuildAnalyzeUser(canonicalJson, classificationJson);
+        var authGapSummary = ComputeAuthGapSummary(modelForPrompt);
+        var userPrompt = PromptTemplates.BuildAnalyzeUser(
+            canonicalJson, classificationJson,
+            modelForPrompt.ApplicationDescription,
+            modelForPrompt.ArchitectureDescription,
+            modelForPrompt.CorrectionsContext,
+            authGapSummary);
 
         var systemPrompt = PromptTemplates.BuildAnalyzeSystem(input.Method);
 
@@ -172,6 +186,47 @@ public sealed class AnalyzeStage(
             Candidates = [.. valid],
             RejectedCandidates = [.. invalid]
         };
+    }
+
+    // Deterministically surfaces auth/authz gaps before the LLM runs, so every method's prompt
+    // explicitly sees unauthenticated sensitive flows and missing access control declarations.
+    private static CanonicalModel TruncateArchDesc(CanonicalModel model, int maxChars)
+    {
+        var desc = model.ArchitectureDescription;
+        return desc is not null && desc.Length > maxChars
+            ? model with { ArchitectureDescription = desc[..maxChars] + " [truncated]" }
+            : model;
+    }
+
+    private static string? ComputeAuthGapSummary(CanonicalModel model)
+    {
+        var gaps = new List<string>();
+
+        var unauthSensitiveFlows = model.DataFlows
+            .Where(f => f.ContainsSensitiveData && !f.Authenticated)
+            .Select(f => f.Label ?? $"{f.From}→{f.To}")
+            .ToArray();
+        if (unauthSensitiveFlows.Length > 0)
+            gaps.Add($"Unauthenticated flows carrying sensitive data: {string.Join(", ", unauthSensitiveFlows)}");
+
+        if (model.AuthenticationMethods.Length == 0)
+            gaps.Add("No authentication methods declared in the model");
+
+        if (model.AuthorizationModel is null or "none" or "unknown")
+            gaps.Add($"Authorization model is '{model.AuthorizationModel ?? "not set"}' — access controls may be absent");
+
+        var untrustedExternal = model.ExternalSystems
+            .Where(e => e.TrustLevel is null or "unknown")
+            .Select(e => e.Label)
+            .ToArray();
+        if (untrustedExternal.Length > 0)
+            gaps.Add($"External systems with unknown trust level: {string.Join(", ", untrustedExternal)}");
+
+        if (model.TrustBoundaries.Length == 0)
+            gaps.Add("No trust boundaries defined — boundary-crossing threats may be underspecified");
+
+        if (gaps.Count == 0) return null;
+        return string.Join("\n", gaps.Select(g => $"- {g}"));
     }
 
     private static string? Validate(ThreatCandidateSet o)

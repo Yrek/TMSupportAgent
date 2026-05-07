@@ -32,6 +32,14 @@ export interface RejectedCandidate {
   createdAt: string;
 }
 
+export interface OWASPRiskRating {
+  likelihood: "high" | "medium" | "low";
+  impact: "high" | "medium" | "low";
+  severity: "critical" | "high" | "medium" | "low" | "note";
+  likelihoodJustification: string | null;
+  impactJustification: string | null;
+}
+
 export interface Threat {
   id: string;
   identifier: string;
@@ -54,6 +62,7 @@ export interface Threat {
   status: ThreatStatus;
   source: "System" | "User";
   sourceMethods?: string[] | undefined;
+  riskRating: OWASPRiskRating | null;
   mitigations: Mitigation[];
   frameworkMappings: FrameworkMapping[];
   notes: ThreatNote[];

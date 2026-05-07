@@ -40,6 +40,16 @@ public sealed class ArchitecturesController(
     IAuditLogger audit,
     ILogger<ArchitecturesController> logger) : ControllerBase
 {
+    private static readonly HashSet<string> AllowedEnvironments = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "aws", "azure", "gcp", "on_prem", "hybrid", "unknown"
+    };
+
+    private static readonly HashSet<string> AllowedInfraControls = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "waf", "cdn", "api_gateway", "load_balancer", "ddos_protection"
+    };
+
     private static readonly HashSet<string> AllowedThreatMethods = new(StringComparer.OrdinalIgnoreCase)
     {
         "stride",
@@ -56,7 +66,6 @@ public sealed class ArchitecturesController(
         "owasp_cumulus",
         "owasp_cornucopia",
         "maestro",
-        "emlsg",
         "supply_chain",
         "availability_resilience"
     };
@@ -76,6 +85,83 @@ public sealed class ArchitecturesController(
 
         var arch = await architectures.GetByJobIdAsync(JobId.From(jobId), orgIdValue, ct);
         if (arch is null) return NotFound();
+
+        var elements = await architectures.ListElementsAsync(arch.Id, orgIdValue, ct);
+        var corrections = await architectures.ListCorrectionsAsync(arch.Id, orgIdValue, ct);
+        return Ok(ArchitectureDto.From(arch, elements, corrections));
+    }
+
+    // PATCH /v1/orgs/{orgId}/jobs/{jobId}/architecture/deployment-context
+    [HttpPatch("architecture/deployment-context")]
+    public async Task<IActionResult> PatchDeploymentContext(
+        Guid orgId,
+        Guid jobId,
+        [FromBody] PatchDeploymentContextRequest request,
+        CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        var orgIdValue = OrgId.From(orgId);
+
+        if (!await memberships.HasOrgAccessAsync(orgIdValue, userId, ct: ct))
+            return Forbid();
+
+        var job = await jobs.GetByIdAsync(JobId.From(jobId), orgIdValue, ct);
+        if (job is null) return NotFound();
+
+        if (job.Status != JobStatus.AwaitingReview)
+            return Conflict(new
+            {
+                code = "INVALID_JOB_STATUS",
+                message = "Deployment context can only be corrected while the job is in AwaitingReview status."
+            });
+
+        // Validate environment allow-list (CLAUDE.md §6.3)
+        if (string.IsNullOrWhiteSpace(request.Environment) ||
+            !AllowedEnvironments.Contains(request.Environment))
+            return UnprocessableEntity(new
+            {
+                code = "INVALID_ENVIRONMENT",
+                message = $"Unknown environment '{request.Environment}'. Valid values: {string.Join(", ", AllowedEnvironments)}"
+            });
+
+        // Validate infra controls allow-list
+        var invalidControls = (request.InfraControls ?? [])
+            .Where(c => !AllowedInfraControls.Contains(c))
+            .ToArray();
+        if (invalidControls.Length > 0)
+            return UnprocessableEntity(new
+            {
+                code = "INVALID_INFRA_CONTROLS",
+                message = $"Unknown infra controls: {string.Join(", ", invalidControls)}. Valid values: {string.Join(", ", AllowedInfraControls)}"
+            });
+
+        var arch = await architectures.GetByJobIdAsync(JobId.From(jobId), orgIdValue, ct);
+        if (arch is null) return NotFound();
+
+        var deploymentContextJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            environment = request.Environment.ToLowerInvariant(),
+            containerized = request.Containerized,
+            serverless = request.Serverless,
+            infraControls = (request.InfraControls ?? [])
+                .Select(c => c.ToLowerInvariant())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+        });
+
+        arch.UpdateDeploymentContext(deploymentContextJson);
+        await architectures.SaveChangesAsync(ct);
+
+        await audit.LogAsync("architecture.deployment_context_updated",
+            orgId: orgIdValue,
+            userId: userId,
+            resourceType: "architecture",
+            resourceId: arch.Id,
+            ct: ct);
+
+        logger.LogInformation(
+            "Deployment context updated. JobId={JobId} ArchId={ArchId}",
+            jobId, arch.Id);
 
         var elements = await architectures.ListElementsAsync(arch.Id, orgIdValue, ct);
         var corrections = await architectures.ListCorrectionsAsync(arch.Id, orgIdValue, ct);

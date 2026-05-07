@@ -47,7 +47,9 @@ public sealed record RawBoundary(
 
 public sealed record NormalizeInput(
     ParseOutput Parsed,
-    string ArtifactType);
+    string ArtifactType,
+    string? ApplicationDescription = null,
+    string? ArchitectureDescription = null);
 
 // CanonicalModel — the authoritative model used by all downstream stages.
 // Produced by NORMALIZE, confirmed by user review, consumed by CLASSIFY+ANALYZE+SYNTHESIZE.
@@ -74,7 +76,13 @@ public sealed record CanonicalModel(
     AiLlmBoundary[] AiLlmBoundaries,
     Assumption[] Assumptions,
     Gap[] Gaps,
-    ClarificationQuestion[] ClarificationQuestions);
+    ClarificationQuestion[] ClarificationQuestions,
+    // User-supplied context — survives blob round-trip and feeds CLASSIFY/ANALYZE
+    string? ApplicationDescription = null,
+    string? ArchitectureDescription = null,
+    DeploymentContext? DeploymentContext = null,
+    // Re-analysis only: human-readable summary of corrections applied since last run
+    string? CorrectionsContext = null);
 
 public sealed record CanonicalComponent(string Label, string Type, string? Description, string[] Tags);
 public sealed record CanonicalActor(string Label, string Type, bool IsExternal);
@@ -85,7 +93,19 @@ public sealed record CanonicalTrustBoundary(string Label, string[] ContainedComp
 public sealed record PrivilegedPath(string Description, string[] InvolvedComponentLabels, string ImpactIfCompromised);
 public sealed record SecretsUsage(string ComponentLabel, string SecretType, string StorageLocation);
 public sealed record BackgroundJob(string Label, string Trigger, string[] AccessedResources);
-public sealed record AiLlmBoundary(string Label, string Provider, bool UserInputPassedToModel, bool ModelOutputUsedInResponse);
+public sealed record AiLlmBoundary(
+    string Label,
+    string Provider,
+    bool UserInputPassedToModel,
+    bool ModelOutputUsedInResponse,
+    bool ModelOutputUsedInToolCall = false,   // true = output drives further tool invocations (indirect prompt injection risk)
+    bool ModelOutputWrittenToStore = false);  // true = output persisted to DB/storage
+
+public sealed record DeploymentContext(
+    string Environment,         // aws | azure | gcp | on_prem | hybrid | unknown
+    bool Containerized,
+    bool Serverless,
+    string[] InfraControls);    // detected controls: waf, cdn, api_gateway, load_balancer, ddos_protection
 public sealed record Assumption(string Description, string ImpactIfWrong);
 public sealed record Gap(string Area, string Description, string SecurityRelevance);  // critical | high | medium
 public sealed record ClarificationQuestion(string Question, string Priority, string Topic, string Reason);
@@ -136,6 +156,13 @@ public sealed record ThreatCandidateSet(
     ThreatCandidate[] Candidates,
     RejectedCandidate[] RejectedCandidates);
 
+public sealed record OwaspRiskRating(
+    string Likelihood,             // high | medium | low
+    string Impact,                 // high | medium | low
+    string Severity,               // critical | high | medium | low | note (derived from likelihood × impact)
+    string? LikelihoodJustification,
+    string? ImpactJustification);
+
 public sealed record ThreatCandidate(
     string Title,
     string MethodCategory,
@@ -152,7 +179,9 @@ public sealed record ThreatCandidate(
     string[] EvidenceBasis,
     string EvidenceStrength,       // direct | inferred | assumption_dependent
     string? Assumptions,
-    string FindingType);           // confirmed | conditional
+    string FindingType,            // confirmed | conditional
+    OwaspRiskRating? RiskRating = null,
+    string? GroupKey = null);      // allow-listed attack-vector classifier; null = unconstrained
 
 public sealed record RejectedCandidate(
     string Title,
@@ -198,7 +227,8 @@ public sealed record FinalThreat(
     string FindingType,
     Mitigation[] Mitigations,
     FrameworkMapping[] FrameworkMappings,
-    string[]? SourceMethods = null);
+    string[]? SourceMethods = null,
+    OwaspRiskRating? RiskRating = null);
 
 public sealed record Mitigation(
     string Title,

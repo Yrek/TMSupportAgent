@@ -41,6 +41,10 @@ internal sealed class PipelineDbPersistence(
     public async Task<Architecture> PersistArchitectureAsync(
         JobId jobId, OrgId orgId, CanonicalModel model, CancellationToken ct)
     {
+        var deploymentContextJson = model.DeploymentContext is not null
+            ? JsonSerializer.Serialize(model.DeploymentContext, JsonOptions)
+            : "{}";
+
         var arch = Architecture.Create(
             jobId: jobId,
             orgId: orgId,
@@ -48,7 +52,8 @@ internal sealed class PipelineDbPersistence(
             classification: [],  // populated after CLASSIFY in Phase 2
             assumptionsJson: JsonSerializer.Serialize(model.Assumptions, JsonOptions),
             gapsJson: JsonSerializer.Serialize(model.Gaps, JsonOptions),
-            clarificationQuestionsJson: JsonSerializer.Serialize(model.ClarificationQuestions, JsonOptions));
+            clarificationQuestionsJson: JsonSerializer.Serialize(model.ClarificationQuestions, JsonOptions),
+            deploymentContextJson: deploymentContextJson);
 
         await architectures.AddAsync(arch, ct);
 
@@ -106,7 +111,7 @@ internal sealed class PipelineDbPersistence(
         foreach (var ai in model.AiLlmBoundaries)
             await architectures.AddElementAsync(
                 CreateExtractedElement(arch.Id, orgId, ElementType.LlmBoundary, ai.Label, null,
-                    new { provider = ai.Provider, userInputPassedToModel = ai.UserInputPassedToModel, modelOutputUsedInResponse = ai.ModelOutputUsedInResponse }), ct);
+                    new { provider = ai.Provider, userInputPassedToModel = ai.UserInputPassedToModel, modelOutputUsedInResponse = ai.ModelOutputUsedInResponse, modelOutputUsedInToolCall = ai.ModelOutputUsedInToolCall, modelOutputWrittenToStore = ai.ModelOutputWrittenToStore }), ct);
 
         await architectures.SaveChangesAsync(ct);
 
@@ -170,6 +175,10 @@ internal sealed class PipelineDbPersistence(
                 .Select(id => id!.Value)
                 .ToArray();
 
+            var riskRatingJson = ft.RiskRating is not null
+                ? JsonSerializer.Serialize(ft.RiskRating, JsonOptions)
+                : null;
+
             var threat = Threat.CreateFromPipeline(
                 jobId: jobId,
                 orgId: orgId,
@@ -189,7 +198,8 @@ internal sealed class PipelineDbPersistence(
                 evidenceBasis: [],
                 evidenceStrength: ParseEvidenceStrength(ft.EvidenceStrength),
                 assumptions: null,
-                findingType: findingType);
+                findingType: findingType,
+                riskRatingJson: riskRatingJson);
 
             await threats.AddAsync(threat, ct);
 
@@ -344,7 +354,9 @@ internal sealed class PipelineDbPersistence(
                         Label: el.Name,
                         Provider: GetString(props, "provider") ?? "unknown",
                         UserInputPassedToModel: GetBool(props, "userInputPassedToModel"),
-                        ModelOutputUsedInResponse: GetBool(props, "modelOutputUsedInResponse")));
+                        ModelOutputUsedInResponse: GetBool(props, "modelOutputUsedInResponse"),
+                        ModelOutputUsedInToolCall: GetBool(props, "modelOutputUsedInToolCall"),
+                        ModelOutputWrittenToStore: GetBool(props, "modelOutputWrittenToStore")));
                     break;
             }
         }

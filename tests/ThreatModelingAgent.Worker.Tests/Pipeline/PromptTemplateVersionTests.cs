@@ -46,6 +46,19 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
+    public void NormalizeEnrichSystem_ContainsVersionString()
+    {
+        PromptTemplates.NormalizeEnrichSystem.Should().Contain(VersionPrefix,
+            because: "NORMALIZE_ENRICH system prompt must carry a prompt-version");
+    }
+
+    [Fact]
+    public void NormalizeEnrichSystem_VersionIs_normalize_enrich_1_0_0()
+    {
+        PromptTemplates.NormalizeEnrichSystem.Should().Contain("prompt-version: normalize-enrich-1.0.0");
+    }
+
+    [Fact]
     public void ClassifySystem_ContainsVersionString()
     {
         PromptTemplates.ClassifySystem.Should().Contain(VersionPrefix,
@@ -68,7 +81,7 @@ public sealed class PromptTemplateVersionTests
         var system = PromptTemplates.BuildAnalyzeSystem(method);
         system.Should().Contain(VersionPrefix,
             because: $"ANALYZE system prompt for method {method} must carry a prompt-version");
-        system.Should().Contain("prompt-version: analyze-2.2.0");
+        system.Should().Contain("prompt-version: analyze-2.7.0");
     }
 
     [Fact]
@@ -79,9 +92,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void SynthesizeSystem_VersionIs_synthesize_2_0_0()
+    public void SynthesizeSystem_VersionIs_synthesize_2_5_0()
     {
-        PromptTemplates.SynthesizeSystem.Should().Contain("prompt-version: synthesize-2.0.0");
+        PromptTemplates.SynthesizeSystem.Should().Contain("prompt-version: synthesize-2.5.0");
     }
 
     [Fact]
@@ -103,6 +116,7 @@ public sealed class PromptTemplateVersionTests
     [Theory]
     [InlineData(nameof(PromptTemplates.ParseSystem))]
     [InlineData(nameof(PromptTemplates.NormalizeSystem))]
+    [InlineData(nameof(PromptTemplates.NormalizeEnrichSystem))]
     [InlineData(nameof(PromptTemplates.ClassifySystem))]
     [InlineData(nameof(PromptTemplates.SynthesizeSystem))]
     [InlineData(nameof(PromptTemplates.FrameworkMappingSystem))]
@@ -112,6 +126,7 @@ public sealed class PromptTemplateVersionTests
         {
             nameof(PromptTemplates.ParseSystem)            => PromptTemplates.ParseSystem,
             nameof(PromptTemplates.NormalizeSystem)        => PromptTemplates.NormalizeSystem,
+            nameof(PromptTemplates.NormalizeEnrichSystem)  => PromptTemplates.NormalizeEnrichSystem,
             nameof(PromptTemplates.ClassifySystem)         => PromptTemplates.ClassifySystem,
             nameof(PromptTemplates.SynthesizeSystem)       => PromptTemplates.SynthesizeSystem,
             nameof(PromptTemplates.FrameworkMappingSystem) => PromptTemplates.FrameworkMappingSystem,

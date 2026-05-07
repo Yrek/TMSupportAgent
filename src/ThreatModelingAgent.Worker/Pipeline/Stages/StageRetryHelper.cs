@@ -72,11 +72,15 @@ public static class StageRetryHelper
             }
             catch (HttpRequestException ex) when (IsRetryable(ex) && !IsQuotaExhausted(ex) && attempt < maxAttempts)
             {
+                var delay = ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests
+                    ? GetRateLimitDelay(ex.Message)
+                    : TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
+
                 logger.LogWarning(
-                    "LLM request transient error on attempt {Attempt}/{Max}. Stage={StageErrorCode}",
-                    attempt, maxAttempts, stageErrorCode);
+                    "LLM request transient error on attempt {Attempt}/{Max}. Stage={StageErrorCode} RetryAfterMs={RetryAfterMs}",
+                    attempt, maxAttempts, stageErrorCode, (int)delay.TotalMilliseconds);
                 lastException = ex;
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)), ct);
+                await Task.Delay(delay, ct);
             }
             catch (HttpRequestException ex)
             {
@@ -130,10 +134,30 @@ public static class StageRetryHelper
     private static bool IsQuotaExhausted(HttpRequestException ex)
     {
         var msg = ex.Message ?? string.Empty;
+        // "quota" alone is too broad — rate-limit (429) messages also contain "quota" (e.g. "tokens per min quota").
+        // Match only billing/account-level exhaustion, not per-minute rate limits.
         return msg.Contains("insufficient_quota", StringComparison.OrdinalIgnoreCase)
-            || msg.Contains("quota", StringComparison.OrdinalIgnoreCase)
             || msg.Contains("billing", StringComparison.OrdinalIgnoreCase)
-            || msg.Contains("credit balance is too low", StringComparison.OrdinalIgnoreCase);
+            || msg.Contains("credit balance is too low", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("exceeded your current quota", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Parses "Please try again in X.XXXs" from OpenAI 429 messages; falls back to 45s.
+    private static TimeSpan GetRateLimitDelay(string? message)
+    {
+        if (message is not null)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(
+                message, @"try again in (\d+(?:\.\d+)?)s", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success && double.TryParse(match.Groups[1].Value,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var seconds))
+            {
+                return TimeSpan.FromSeconds(seconds + 2); // small buffer
+            }
+        }
+        return TimeSpan.FromSeconds(45);
     }
 }
 

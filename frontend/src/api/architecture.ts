@@ -25,6 +25,13 @@ export interface ArchitectureElement {
   corrections: Correction[];
 }
 
+export interface DeploymentContext {
+  environment: "aws" | "azure" | "gcp" | "on_prem" | "hybrid" | "unknown";
+  containerized: boolean;
+  serverless: boolean;
+  infraControls: string[];
+}
+
 export interface ArchitectureModel {
   id: string;
   jobId: string;
@@ -34,6 +41,7 @@ export interface ArchitectureModel {
   assumptions: Array<{ text: string; confirmed: boolean }>;
   gaps: string[];
   clarificationQuestions: Array<{ question: string; priority: string; topic?: string }>;
+  deploymentContext: DeploymentContext | null;
   isConfirmed: boolean;
   confirmedAt: string | null;
   createdAt: string;
@@ -131,6 +139,29 @@ export function useCorrectElement(orgId: string, jobId: string) {
     }) => {
       const res = await apiClient.post<ArchitectureElement>(
         `/orgs/${orgId}/jobs/${jobId}/elements/${elementId}`,
+        req,
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["architecture", orgId, jobId] });
+    },
+  });
+}
+
+export interface PatchDeploymentContextRequest {
+  environment: DeploymentContext["environment"];
+  containerized: boolean;
+  serverless: boolean;
+  infraControls: string[];
+}
+
+export function useUpdateDeploymentContext(orgId: string, jobId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (req: PatchDeploymentContextRequest) => {
+      const res = await apiClient.patch<ArchitectureModel>(
+        `/orgs/${orgId}/jobs/${jobId}/architecture/deployment-context`,
         req,
       );
       return res.data;

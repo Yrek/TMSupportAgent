@@ -275,7 +275,15 @@ function appendThreatSection(lines: string[], title: string, threats: unknown[])
     const frameworks = asArray(threat["frameworkMappings"]);
 
     lines.push(`### ${id} - ${threatTitle}`);
+    const riskRating = isRecord(threat["riskRating"]) ? threat["riskRating"] as Record<string, unknown> : null;
     const meta: string[] = [];
+    if (riskRating) {
+      const sev = asString(riskRating["severity"]);
+      const lkl = asString(riskRating["likelihood"]);
+      const imp = asString(riskRating["impact"]);
+      if (sev || lkl || imp)
+        meta.push(`Risk: ${sev ? sev.toUpperCase() : "?"} (likelihood: ${lkl ?? "?"}, impact: ${imp ?? "?"})`);
+    }
     if (methodCategory) meta.push(`Category: ${methodCategory}`);
     if (sourceMethods.length > 0) meta.push(`Methods: ${sourceMethods.join(", ")}`);
     if (confidence) meta.push(`Confidence: ${confidence}`);
@@ -432,6 +440,7 @@ function renderAnalysisAsTmBom(
       methodCategory: t.methodCategory,
       sourceMethods: t.sourceMethods,
       confidence: t.confidence,
+      riskRating: t.riskRating,
       affectedElementLabels: t.affectedElementLabels,
       description: t.description,
       attackScenario: t.attackScenario,
@@ -519,7 +528,7 @@ function renderAnalysisAsThreatDragonV2(
         id: idx + 1,
         title: t.title,
         status: t.findingType,
-        severity: t.confidence,
+        severity: t.riskRating?.severity ?? t.confidence,
         type: t.methodCategory,
         description: t.description,
         mitigation: t.mitigations.map((m) => m.title).join("; "),
@@ -613,6 +622,7 @@ type NormalizedThreat = {
   evidenceBasis: string[];
   evidenceStrength: string | null;
   assumptions: string | null;
+  riskRating: { likelihood: string | null; impact: string | null; severity: string | null; likelihoodJustification: string | null; impactJustification: string | null } | null;
   mitigations: Array<{ title: string; description: string | null; priority: string | null }>;
   frameworkMappings: Array<{ framework: string; reference: string; mappingType: string | null }>;
   disposition: "confirmed" | "conditional";
@@ -647,6 +657,17 @@ function normalizeThreat(value: unknown, disposition: "confirmed" | "conditional
     evidenceBasis: asStringArray(t["evidenceBasis"]),
     evidenceStrength: asString(t["evidenceStrength"]),
     assumptions: asString(t["assumptions"]),
+    riskRating: (() => {
+      const rr = t["riskRating"];
+      if (!isRecord(rr)) return null;
+      return {
+        likelihood: asString(rr["likelihood"]),
+        impact: asString(rr["impact"]),
+        severity: asString(rr["severity"]),
+        likelihoodJustification: asString(rr["likelihoodJustification"]),
+        impactJustification: asString(rr["impactJustification"]),
+      };
+    })(),
     mitigations: asArray(t["mitigations"]).map((m) => {
       const rec = isRecord(m) ? m : {};
       return {

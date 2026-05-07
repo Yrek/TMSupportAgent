@@ -84,6 +84,11 @@ internal sealed class ThreatConfiguration : IEntityTypeConfiguration<Threat>
             .IsRequired();
 
         builder.Property(t => t.Source).HasColumnName("source").HasMaxLength(20).IsRequired();
+
+        builder.Property(t => t.RiskRatingJson)
+            .HasColumnName("risk_rating")
+            .HasColumnType("jsonb");
+
         builder.Property(t => t.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(t => t.UpdatedAt).HasColumnName("updated_at").IsRequired();
 

@@ -18,6 +18,22 @@ const CONFIDENCE_VARIANT: Record<string, "success" | "warning" | "destructive"> 
   Low: "destructive",
 };
 
+const SEVERITY_VARIANT: Record<string, "destructive" | "warning" | "secondary" | "outline"> = {
+  critical: "destructive",
+  high: "destructive",
+  medium: "warning",
+  low: "secondary",
+  note: "outline",
+};
+
+const SEVERITY_LABEL: Record<string, string> = {
+  critical: "Critical",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+  note: "Note",
+};
+
 export function ThreatCard({ threat, selected, onClick, onShowInArchitecture }: ThreatCardProps) {
   const canShowInArchitecture =
     typeof onShowInArchitecture === "function" && threat.affectedElementIds.length > 0;
@@ -50,6 +66,14 @@ export function ThreatCard({ threat, selected, onClick, onShowInArchitecture }: 
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {threat.riskRating && (
+          <Badge
+            variant={SEVERITY_VARIANT[threat.riskRating.severity] ?? "secondary"}
+            className="text-xs font-semibold"
+          >
+            {SEVERITY_LABEL[threat.riskRating.severity] ?? threat.riskRating.severity}
+          </Badge>
+        )}
         <Badge variant="outline" className="text-xs">{threat.methodCategory}</Badge>
         {Array.isArray(threat.sourceMethods) && threat.sourceMethods.length > 0 && (
           <Badge variant="secondary" className="text-xs">

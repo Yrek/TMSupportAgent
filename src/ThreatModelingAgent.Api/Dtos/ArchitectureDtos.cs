@@ -15,6 +15,7 @@ public record ArchitectureDto(
     object Assumptions,       // deserialized from jsonb
     object Gaps,
     object ClarificationQuestions,
+    object? DeploymentContext,  // deserialized from jsonb; null means not yet detected
     bool IsConfirmed,
     DateTimeOffset? ConfirmedAt,
     DateTimeOffset CreatedAt,
@@ -41,6 +42,7 @@ public record ArchitectureDto(
             Assumptions: DeserializeJsonb(arch.AssumptionsJson),
             Gaps: DeserializeJsonb(arch.GapsJson),
             ClarificationQuestions: DeserializeJsonb(arch.ClarificationQuestionsJson),
+            DeploymentContext: arch.DeploymentContextJson == "{}" ? null : DeserializeJsonb(arch.DeploymentContextJson),
             IsConfirmed: arch.IsConfirmed,
             ConfirmedAt: arch.ConfirmedAt,
             CreatedAt: arch.CreatedAt,
@@ -166,6 +168,20 @@ public class CorrectElementRequest
 
     /// <summary>Free-text note — required for AddNote, optional otherwise.</summary>
     public string? Note { get; set; }
+}
+
+/// <summary>
+/// Correct the auto-detected deployment context before confirming the architecture.
+/// All fields are required — a full replacement, not a partial patch.
+/// Valid environments: aws, azure, gcp, on_prem, hybrid, unknown.
+/// Valid infraControls: waf, cdn, api_gateway, load_balancer, ddos_protection.
+/// </summary>
+public class PatchDeploymentContextRequest
+{
+    public string Environment { get; set; } = null!;
+    public bool Containerized { get; set; }
+    public bool Serverless { get; set; }
+    public string[] InfraControls { get; set; } = [];
 }
 
 /// <summary>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
-import { X, MessageSquare, Shield } from "lucide-react";
+import { X, MessageSquare, Shield, Activity } from "lucide-react";
 import type { Threat } from "@/api/threats";
 import { ThreatStatusBadge } from "./ThreatStatusBadge";
 import { FindingTypeBadge } from "./FindingTypeBadge";
@@ -96,6 +96,20 @@ export function ThreatDetailPanel({
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="flex flex-wrap gap-2">
           <ThreatStatusBadge status={threat.status} />
+          {threat.riskRating && (
+            <Badge
+              variant={
+                threat.riskRating.severity === "critical" || threat.riskRating.severity === "high"
+                  ? "destructive"
+                  : threat.riskRating.severity === "medium"
+                  ? "warning"
+                  : "secondary"
+              }
+              className="font-semibold"
+            >
+              {threat.riskRating.severity.charAt(0).toUpperCase() + threat.riskRating.severity.slice(1)}
+            </Badge>
+          )}
           <Badge variant="outline">{threat.methodCategory}</Badge>
           {sourceMethods.map((method) => (
             <Badge key={method} variant="secondary">{method}</Badge>
@@ -104,6 +118,33 @@ export function ThreatDetailPanel({
             {threat.confidence} confidence
           </Badge>
         </div>
+
+        {threat.riskRating && (
+          <Section title="OWASP Risk Rating">
+            <div className="rounded-md border p-3 space-y-2">
+              <div className="flex items-center gap-2 text-sm">
+                <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-muted-foreground">Likelihood:</span>
+                <span className="font-medium capitalize">{threat.riskRating.likelihood}</span>
+                <span className="mx-1 text-muted-foreground">·</span>
+                <span className="text-muted-foreground">Impact:</span>
+                <span className="font-medium capitalize">{threat.riskRating.impact}</span>
+              </div>
+              {threat.riskRating.likelihoodJustification && (
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium">Likelihood: </span>
+                  {threat.riskRating.likelihoodJustification}
+                </p>
+              )}
+              {threat.riskRating.impactJustification && (
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium">Impact: </span>
+                  {threat.riskRating.impactJustification}
+                </p>
+              )}
+            </div>
+          </Section>
+        )}
 
         <Section title="Description">
           <p className="text-sm">{threat.description}</p>

@@ -36,6 +36,7 @@ public class Threat
     public FindingType FindingType { get; private set; }
     public ThreatStatus Status { get; private set; }
     public string Source { get; private set; } = string.Empty;     // system | user
+    public string? RiskRatingJson { get; private set; }            // jsonb — OWASP risk rating
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
@@ -65,7 +66,8 @@ public class Threat
         string[] evidenceBasis,
         EvidenceStrength evidenceStrength,
         string? assumptions,
-        FindingType findingType)
+        FindingType findingType,
+        string? riskRatingJson = null)
     {
         // Invariant: High confidence MUST NOT be set on conditional findings (spec §9)
         if (confidence == ConfidenceLevel.High && findingType == FindingType.Conditional)
@@ -99,6 +101,7 @@ public class Threat
             FindingType = findingType,
             Status = ThreatStatus.Open,
             Source = "system",
+            RiskRatingJson = riskRatingJson,
             CreatedAt = now,
             UpdatedAt = now
         };

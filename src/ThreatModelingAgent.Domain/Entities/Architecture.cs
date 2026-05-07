@@ -17,6 +17,7 @@ public class Architecture
     public string AssumptionsJson { get; private set; } = "[]";       // jsonb — list of {text, confirmed}
     public string GapsJson { get; private set; } = "[]";              // jsonb — material unknowns
     public string ClarificationQuestionsJson { get; private set; } = "[]"; // jsonb — prioritized questions
+    public string DeploymentContextJson { get; private set; } = "{}"; // jsonb — detected deployment environment
     public DateTimeOffset? ConfirmedAt { get; private set; }
     public UserId? ConfirmedBy { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
@@ -35,7 +36,8 @@ public class Architecture
         string[] classification,
         string assumptionsJson,
         string gapsJson,
-        string clarificationQuestionsJson)
+        string clarificationQuestionsJson,
+        string deploymentContextJson = "{}")
     {
         var now = DateTimeOffset.UtcNow;
         return new Architecture
@@ -49,6 +51,7 @@ public class Architecture
             AssumptionsJson = assumptionsJson,
             GapsJson = gapsJson,
             ClarificationQuestionsJson = clarificationQuestionsJson,
+            DeploymentContextJson = deploymentContextJson,
             CreatedAt = now,
             UpdatedAt = now
         };
@@ -98,6 +101,16 @@ public class Architecture
     public void UpdateClassification(string[] classification)
     {
         Classification = classification;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>
+    /// Overwrites the deployment context with a user-supplied correction.
+    /// Only permitted while the architecture is awaiting review (enforced at the API layer).
+    /// </summary>
+    public void UpdateDeploymentContext(string deploymentContextJson)
+    {
+        DeploymentContextJson = deploymentContextJson;
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 }

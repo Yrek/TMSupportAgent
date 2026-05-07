@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ThreatModelingAgent.Domain.Entities;
 using ThreatModelingAgent.Domain.Enums;
 using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Domain.ValueObjects;
@@ -127,7 +128,11 @@ internal sealed class JobOrchestrator(
 
         // NORMALIZE
         await TransitionAsync(job, JobStatus.Normalizing, ct);
-        var normalizeInput = new NormalizeInput(parseOutput, detectOutput.ArtifactType);
+        var normalizeInput = new NormalizeInput(
+            parseOutput,
+            detectOutput.ArtifactType,
+            message.ApplicationDescription,
+            message.ArchitectureDescription);
         var canonicalModel = await normalizeStage.ExecuteAsync(normalizeInput, ct);
         var sampleFlows = canonicalModel.DataFlows
             .Take(3)
@@ -175,6 +180,12 @@ internal sealed class JobOrchestrator(
         if (message.ArtifactType == "manual")
         {
             canonicalModel = await dbPersistence.BuildCanonicalModelFromElementsAsync(job.Id, orgId, ct);
+            // Inject user-supplied context stored on the job entity
+            canonicalModel = canonicalModel with
+            {
+                ApplicationDescription = job.ApplicationDescription,
+                ArchitectureDescription = job.ArchitectureDescription,
+            };
             // Persist so CorrectionApplicator and any re-analysis paths can load normally
             await NormalizeStage.PersistAsync(canonicalModel, orgId.Value, job.Id.Value, blobStorage, ct);
 
@@ -184,6 +195,21 @@ internal sealed class JobOrchestrator(
         else
         {
             canonicalModel = await NormalizeStage.LoadAsync(orgId.Value, job.Id.Value, blobStorage, ct);
+            // Ensure descriptions are always present — the canonical blob may pre-date this feature,
+            // or Phase 1 may not have injected them. Fall back to the job entity (authoritative source)
+            // then to the Phase 2 message as a last resort.
+            if (canonicalModel.ApplicationDescription is null || canonicalModel.ArchitectureDescription is null)
+            {
+                canonicalModel = canonicalModel with
+                {
+                    ApplicationDescription = canonicalModel.ApplicationDescription
+                        ?? job.ApplicationDescription
+                        ?? message.ApplicationDescription,
+                    ArchitectureDescription = canonicalModel.ArchitectureDescription
+                        ?? job.ArchitectureDescription
+                        ?? message.ArchitectureDescription,
+                };
+            }
         }
 
         // Apply user corrections from DB before CLASSIFY (re-analysis support)
@@ -192,6 +218,13 @@ internal sealed class JobOrchestrator(
         {
             canonicalModel = CorrectionApplicator.Apply(
                 canonicalModel, arch.Value.elements, arch.Value.corrections, logger);
+
+            // Inject a human-readable corrections summary so downstream stages can reason about
+            // what changed since the previous analysis run (re-analysis corrections context)
+            canonicalModel = canonicalModel with
+            {
+                CorrectionsContext = BuildCorrectionsSummary(arch.Value.corrections)
+            };
 
             // Re-persist corrected canonical model to blob so all downstream stages use it
             await NormalizeStage.PersistAsync(canonicalModel, orgId.Value, job.Id.Value, blobStorage, ct);
@@ -268,6 +301,34 @@ internal sealed class JobOrchestrator(
         logger.LogInformation(
             "Pipeline complete. JobId={JobId} Status={Status} Threats={Threats}",
             job.Id, finalStatus, finalOutput.ConfirmedThreats.Length);
+    }
+
+    private static string BuildCorrectionsSummary(IReadOnlyList<ArchitectureCorrection> corrections)
+    {
+        var lines = new List<string>
+        {
+            $"{corrections.Count} user correction(s) applied since last analysis:"
+        };
+
+        foreach (var c in corrections.Take(20))
+        {
+            var scope = c.ElementId.HasValue ? $"element" : "architecture";
+            var change = c.CorrectionType switch
+            {
+                CorrectionType.Update        => $"Updated {c.FieldName} from '{c.OriginalValue}' to '{c.CorrectedValue}'",
+                CorrectionType.MarkIncorrect => $"Marked {c.FieldName} as incorrect (was '{c.OriginalValue}')",
+                CorrectionType.MarkAssumed   => $"Marked {c.FieldName} as an assumption",
+                CorrectionType.MarkConfirmed => $"Confirmed {c.FieldName} = '{c.OriginalValue}'",
+                CorrectionType.AddNote       => $"Added note: {c.Note}",
+                _                            => $"Correction to {c.FieldName}"
+            };
+            lines.Add($"- [{scope}] {change}");
+        }
+
+        if (corrections.Count > 20)
+            lines.Add($"... and {corrections.Count - 20} more corrections.");
+
+        return string.Join("\n", lines);
     }
 
     private async Task TransitionAsync(Domain.Entities.Job job, JobStatus newStatus, CancellationToken ct)

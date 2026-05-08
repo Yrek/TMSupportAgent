@@ -17,6 +17,7 @@ public sealed record AnalysisJobMessage(
     string? ApplicationDescription = null,
     string? ArchitectureDescription = null,
     string[]? SelectedMethods = null,
+    string[]? RejectedMethods = null,
     PipelinePhase Phase = PipelinePhase.Parse);
 
 public enum PipelinePhase

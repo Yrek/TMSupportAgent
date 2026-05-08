@@ -117,7 +117,7 @@ public sealed class ArchitecturesControllerTests
         });
 
         _factory.JobQueue.EnqueueAnalyzePhaseAsync(
-            Arg.Any<JobId>(), Arg.Any<OrgId>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string[]?>(), Arg.Any<CancellationToken>())
+            Arg.Any<JobId>(), Arg.Any<OrgId>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string[]?>(), Arg.Any<string[]?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         var client = _factory.CreateAuthenticatedClient(userId, orgId);
@@ -130,7 +130,7 @@ public sealed class ArchitecturesControllerTests
 
         response.EnsureSuccessStatusCode();
         await _factory.JobQueue.Received(1).EnqueueAnalyzePhaseAsync(
-            Arg.Any<JobId>(), Arg.Any<OrgId>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string[]?>(), Arg.Any<CancellationToken>());
+            Arg.Any<JobId>(), Arg.Any<OrgId>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string[]?>(), Arg.Any<string[]?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

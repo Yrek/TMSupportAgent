@@ -209,13 +209,18 @@ internal sealed class PipelineDbPersistence(
                 if (priority is not ("critical" or "high" or "medium" or "low"))
                     priority = "medium";
 
+                string? acceptanceCriteriaJson = m.AcceptanceCriteria is { Length: > 0 }
+                    ? JsonSerializer.Serialize(m.AcceptanceCriteria, JsonOptions)
+                    : null;
+
                 var mitigation = DomainMitigation.Create(
                     threatId: threat.Id,
                     orgId: orgId,
                     title: m.Title,
                     description: m.Description,
                     priority: priority,
-                    category: null);
+                    category: null,
+                    acceptanceCriteriaJson: acceptanceCriteriaJson);
                 await threats.AddMitigationAsync(mitigation, ct);
             }
 

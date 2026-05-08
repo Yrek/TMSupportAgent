@@ -86,6 +86,8 @@ try
         builder.Configuration.GetSection("AnalyzeThrottling"));
     builder.Services.Configure<SynthesisOptions>(
         builder.Configuration.GetSection("Synthesis"));
+    builder.Services.Configure<ClassifyOptions>(
+        builder.Configuration.GetSection("Classify"));
     builder.Services.AddScoped<PipelineDbPersistence>();
     builder.Services.AddScoped<DetectStage>();
     builder.Services.AddScoped<ParseStage>();

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
-import { X, MessageSquare, Shield, Activity } from "lucide-react";
+import { X, MessageSquare, Shield, Activity, CheckSquare } from "lucide-react";
 import type { Threat } from "@/api/threats";
 import { ThreatStatusBadge } from "./ThreatStatusBadge";
 import { FindingTypeBadge } from "./FindingTypeBadge";
@@ -186,7 +186,7 @@ export function ThreatDetailPanel({
           <Section title="Mitigations">
             <div className="space-y-2">
               {mitigations.map((m) => (
-                <div key={m.id} className="rounded-md border p-3 space-y-1">
+                <div key={m.id} className="rounded-md border p-3 space-y-1.5">
                   <div className="flex items-center gap-2">
                     <Shield className="h-3.5 w-3.5 text-green-600" />
                     <span className="text-sm font-medium">{m.title}</span>
@@ -195,6 +195,17 @@ export function ThreatDetailPanel({
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">{m.description}</p>
+                  {m.acceptanceCriteria?.length > 0 && (
+                    <div className="space-y-0.5 pt-0.5">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Done when</p>
+                      {m.acceptanceCriteria.map((ac, i) => (
+                        <div key={i} className="flex items-start gap-1.5">
+                          <CheckSquare className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+                          <span className="text-xs text-muted-foreground">{ac}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

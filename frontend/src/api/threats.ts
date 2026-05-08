@@ -8,6 +8,7 @@ export interface Mitigation {
   description: string;
   priority: "critical" | "high" | "medium" | "low";
   category: string | null;
+  acceptanceCriteria: string[];
 }
 
 export interface FrameworkMapping {

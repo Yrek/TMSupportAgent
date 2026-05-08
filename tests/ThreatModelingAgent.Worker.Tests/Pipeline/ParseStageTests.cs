@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Worker.Llm;
@@ -39,7 +40,7 @@ public sealed class ParseStageTests
         factory.GetLowCostModel().Returns(lowCostModel);
         factory.GetForModel(Arg.Any<string>()).Returns(client);
 
-        var stage = new ParseStage(blob, factory, NullLogger<ParseStage>.Instance);
+        var stage = new ParseStage(blob, factory, NullLogger<ParseStage>.Instance, Options.Create(new StageMaxOutputTokensOptions()));
         return (stage, factory, client, blob);
     }
 

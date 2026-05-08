@@ -24,6 +24,7 @@ internal sealed class MitigationConfiguration : IEntityTypeConfiguration<Mitigat
         builder.Property(m => m.Description).HasColumnName("description").IsRequired();
         builder.Property(m => m.Priority).HasColumnName("priority").HasMaxLength(20).IsRequired();
         builder.Property(m => m.Category).HasColumnName("category").HasMaxLength(100);
+        builder.Property(m => m.AcceptanceCriteriaJson).HasColumnName("acceptance_criteria").HasColumnType("text");
         builder.Property(m => m.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(m => m.UpdatedAt).HasColumnName("updated_at").IsRequired();
 

@@ -222,6 +222,13 @@ public sealed class ArchitecturesController(
                 message = $"Unsupported methods/frameworks: {string.Join(", ", invalid)}"
             });
 
+        var rejectedMethods = (request?.RejectedMethods ?? [])
+            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Select(m => m.Trim().ToLowerInvariant())
+            .Where(m => AllowedThreatMethods.Contains(m))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         // Mark as confirmed and load the artifact details needed to enqueue Phase 2
         arch.Confirm(userId);
         await architectures.SaveChangesAsync(ct);
@@ -233,7 +240,7 @@ public sealed class ArchitecturesController(
         var artifactType = job.ArtifactType ?? "manual";
 
         await jobQueue.EnqueueAnalyzePhaseAsync(
-            JobId.From(jobId), orgIdValue, blobPath, artifactType, selectedMethods, ct);
+            JobId.From(jobId), orgIdValue, blobPath, artifactType, selectedMethods, rejectedMethods, ct);
 
         // Transition job to Classifying so the status reflects Phase 2 starting
         job.Transition(JobStatus.Classifying);

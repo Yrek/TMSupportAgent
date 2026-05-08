@@ -15,6 +15,7 @@ public class Mitigation
     public string Description { get; private set; } = string.Empty;
     public string Priority { get; private set; } = string.Empty;  // critical | high | medium | low
     public string? Category { get; private set; }
+    public string? AcceptanceCriteriaJson { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
@@ -29,7 +30,8 @@ public class Mitigation
         string title,
         string description,
         string priority,
-        string? category)
+        string? category,
+        string? acceptanceCriteriaJson = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ArgumentException.ThrowIfNullOrWhiteSpace(description);
@@ -46,6 +48,7 @@ public class Mitigation
             Description = description,
             Priority = priority,
             Category = category,
+            AcceptanceCriteriaJson = acceptanceCriteriaJson,
             CreatedAt = now,
             UpdatedAt = now
         };

@@ -131,7 +131,8 @@ public sealed record UserCorrection(
 public sealed record ClassifyInput(
     CanonicalModel ConfirmedModel,
     UserCorrection[] UserCorrections,
-    string[] UserSelectedMethods);
+    string[] UserSelectedMethods,
+    string[] UserRejectedMethods);
 
 public sealed record ClassificationResult(
     string[] Categories,
@@ -238,7 +239,8 @@ public sealed record FinalThreat(
 public sealed record Mitigation(
     string Title,
     string Description,
-    string Priority);             // critical | high | medium | low
+    string Priority,              // critical | high | medium | low
+    string[] AcceptanceCriteria); // 1-3 testable verification conditions
 
 public sealed record FrameworkMapping(
     string Framework,            // OWASP | ASVS | CIS | NCSC | STRIDE

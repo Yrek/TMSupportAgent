@@ -89,6 +89,7 @@ internal sealed class ServiceBusJobQueue : IJobQueue, IAsyncDisposable
             applicationDescription,
             architectureDescription,
             null,
+            null,
             PipelinePhase.Parse), ct);
 
     public Task EnqueueAnalyzePhaseAsync(
@@ -97,6 +98,7 @@ internal sealed class ServiceBusJobQueue : IJobQueue, IAsyncDisposable
         string artifactBlobPath,
         string artifactType,
         string[]? selectedMethods = null,
+        string[]? rejectedMethods = null,
         CancellationToken ct = default)
         => SendAsync(new AnalysisJobMessage(
             jobId.Value,
@@ -106,6 +108,7 @@ internal sealed class ServiceBusJobQueue : IJobQueue, IAsyncDisposable
             null,
             null,
             selectedMethods,
+            rejectedMethods,
             PipelinePhase.Analyze), ct);
 
     private async Task SendAsync(AnalysisJobMessage message, CancellationToken ct)

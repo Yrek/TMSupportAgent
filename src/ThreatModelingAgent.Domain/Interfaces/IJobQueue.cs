@@ -25,5 +25,6 @@ public interface IJobQueue
         string artifactBlobPath,
         string artifactType,
         string[]? selectedMethods = null,
+        string[]? rejectedMethods = null,
         CancellationToken ct = default);
 }

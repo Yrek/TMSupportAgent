@@ -255,7 +255,12 @@ internal sealed class JobOrchestrator(
             .Select(m => m.Trim().ToLowerInvariant())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var classifyInput = new ClassifyInput(canonicalModel, userCorrections, selectedMethods);
+        var rejectedMethods = (message.RejectedMethods ?? [])
+            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Select(m => m.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var classifyInput = new ClassifyInput(canonicalModel, userCorrections, selectedMethods, rejectedMethods);
         var classification = await classifyStage.ExecuteAsync(classifyInput, ct);
 
         // Update architecture classification in DB now that CLASSIFY has run

@@ -127,6 +127,7 @@ public class ConfirmArchitectureRequest
 {
     public string? Note { get; set; }
     public string[]? SelectedMethods { get; set; }
+    public string[]? RejectedMethods { get; set; }
 }
 
 /// <summary>

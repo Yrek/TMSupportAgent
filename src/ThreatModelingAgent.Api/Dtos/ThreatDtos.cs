@@ -77,14 +77,25 @@ public record MitigationDto(
     string Title,
     string Description,
     string Priority,
-    string? Category)
+    string? Category,
+    string[] AcceptanceCriteria)
 {
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+
     public static MitigationDto From(Mitigation m) => new(
         Id: m.Id,
         Title: m.Title,
         Description: m.Description,
         Priority: m.Priority,
-        Category: m.Category);
+        Category: m.Category,
+        AcceptanceCriteria: DeserializeAcceptanceCriteria(m.AcceptanceCriteriaJson));
+
+    private static string[] DeserializeAcceptanceCriteria(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return JsonSerializer.Deserialize<string[]>(json, JsonOpts) ?? []; }
+        catch { return []; }
+    }
 }
 
 public record FrameworkMappingDto(

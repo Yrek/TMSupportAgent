@@ -625,7 +625,7 @@ export function AnalysisPage() {
             {/* Export tab */}
             {activeTab === "export" && (
             <TabsContent value="export" className="flex-1 overflow-y-auto mt-0">
-              <ExportPanel orgId={orgId} jobId={jobId} analysisData={analysisData} architecture={architecture} />
+              <ExportPanel orgId={orgId} jobId={jobId} analysisData={analysisData} architecture={architecture} threats={allThreats} />
             </TabsContent>
             )}
           </Tabs>

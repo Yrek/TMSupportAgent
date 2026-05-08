@@ -1,8 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { toast } from "sonner";
-import { Check, Circle, ArrowRight, AlertCircle, Cpu, FileText, ArrowLeft, Clock, DollarSign } from "lucide-react";
+import { Check, Circle, ArrowRight, AlertCircle, Cpu, FileText, ArrowLeft, Clock, DollarSign, ChevronDown, ChevronUp } from "lucide-react";
 import { useJob } from "@/api/jobs";
 import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
 import { AppShell } from "@/components/layout/AppShell";
@@ -84,6 +84,41 @@ function getStageState(
   return "pending";
 }
 
+function DescriptionBlock({
+  applicationDescription,
+  architectureDescription,
+}: {
+  applicationDescription: string | null;
+  architectureDescription: string | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="rounded-md border bg-muted/30 p-3 text-sm">
+      <div className={expanded ? undefined : "line-clamp-3"}>
+        {applicationDescription && (
+          <p className="mb-1">
+            <span className="font-medium text-muted-foreground">App: </span>
+            {applicationDescription}
+          </p>
+        )}
+        {architectureDescription && (
+          <p>
+            <span className="font-medium text-muted-foreground">Arch: </span>
+            {architectureDescription}
+          </p>
+        )}
+      </div>
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="mt-1 flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground"
+      >
+        {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        {expanded ? "Show less" : "Show more"}
+      </button>
+    </div>
+  );
+}
+
 export function JobDetailPage() {
   const params = useParams<{ orgId: string; jobId: string }>();
   const orgId = requiredParam(params.orgId, "orgId");
@@ -162,20 +197,10 @@ export function JobDetailPage() {
         </div>
 
         {(job.applicationDescription || job.architectureDescription) && (
-          <div className="rounded-md border bg-muted/30 p-3">
-            {job.applicationDescription && (
-              <div className="mb-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Application Description</p>
-                <p className="text-sm">{job.applicationDescription}</p>
-              </div>
-            )}
-            {job.architectureDescription && (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Architecture Description</p>
-                <p className="text-sm">{job.architectureDescription}</p>
-              </div>
-            )}
-          </div>
+          <DescriptionBlock
+            applicationDescription={job.applicationDescription ?? null}
+            architectureDescription={job.architectureDescription ?? null}
+          />
         )}
 
         {/* Pipeline stepper */}

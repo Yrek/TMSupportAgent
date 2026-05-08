@@ -448,6 +448,59 @@ public sealed class SynthesizeStageTests
         returnedPath.Should().Be($"{orgId}/outputs/{jobId}/analysis.json");
     }
 
+    // ── Acceptance criteria round-trip ───────────────────────────────────────
+
+    [Fact]
+    public async Task MitigationAcceptanceCriteria_PreservedInOutput()
+    {
+        var (stage, _, strongClient, cheapClient, _) = BuildStage();
+
+        var mitigation = new Mitigation(
+            Title: "Enforce MFA",
+            Description: "Require multi-factor authentication for all users.",
+            Priority: "high",
+            AcceptanceCriteria: ["MFA is enforced on all login paths", "No bypass route exists in auth middleware"]);
+
+        var threat = MakeThreat("T-001") with { Mitigations = [mitigation] };
+        var output = MinimalFinalOutput(confirmed: [threat]);
+
+        strongClient.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ResponseFor(output));
+        cheapClient.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(CheapResponse(Array.Empty<object>()));
+
+        var result = await stage.ExecuteAsync(MinimalInput(), None);
+
+        var resultMitigation = result.ConfirmedThreats[0].Mitigations[0];
+        resultMitigation.AcceptanceCriteria.Should().HaveCount(2,
+            because: "acceptance criteria must survive JSON serialization through the stage");
+        resultMitigation.AcceptanceCriteria.Should().Contain("MFA is enforced on all login paths");
+        resultMitigation.AcceptanceCriteria.Should().Contain("No bypass route exists in auth middleware");
+    }
+
+    [Fact]
+    public async Task MitigationWithEmptyAcceptanceCriteria_ReturnsEmptyArray()
+    {
+        var (stage, _, strongClient, cheapClient, _) = BuildStage();
+
+        var mitigation = new Mitigation(
+            Title: "Add logging",
+            Description: "Log all auth events.",
+            Priority: "medium",
+            AcceptanceCriteria: []);
+
+        var threat = MakeThreat("T-001") with { Mitigations = [mitigation] };
+        strongClient.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ResponseFor(MinimalFinalOutput(confirmed: [threat])));
+        cheapClient.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(CheapResponse(Array.Empty<object>()));
+
+        var result = await stage.ExecuteAsync(MinimalInput(), None);
+
+        result.ConfirmedThreats[0].Mitigations[0].AcceptanceCriteria.Should().NotBeNull();
+        result.ConfirmedThreats[0].Mitigations[0].AcceptanceCriteria.Should().BeEmpty();
+    }
+
     // ── Token budget ──────────────────────────────────────────────────────────
 
     [Fact]

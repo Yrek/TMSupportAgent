@@ -22,10 +22,10 @@ namespace ThreatModelingAgent.Worker.Pipeline.Stages;
 public sealed class ClassifyStage(
     ILlmClientFactory llmFactory,
     ILogger<ClassifyStage> logger,
-    IOptions<StageMaxOutputTokensOptions> stageTokenOpts) : IPipelineStage<ClassifyInput, ClassificationResult>
+    IOptions<StageMaxOutputTokensOptions> stageTokenOpts,
+    IOptions<ClassifyOptions> classifyOpts) : IPipelineStage<ClassifyInput, ClassificationResult>
 {
     private const int MaxAttempts = 3;
-    private const int MaxSelectedMethods = 6;
     private static readonly HashSet<string> AllowedMethods = new(StringComparer.OrdinalIgnoreCase)
     {
         "stride",
@@ -112,10 +112,13 @@ public sealed class ClassifyStage(
         var (output, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<ClassificationResult>(
             llmClient, request, Validate, "CLASSIFY_FAILED", MaxAttempts, logger, ct);
 
-        // Deterministic post-validation: enforce required methods and user-selected methods.
-        output = EnforceRequiredMethods(output, model);
+        // Deterministic post-validation: enforce required methods, add user selections,
+        // limit total count, then strip any methods the user explicitly rejected.
+        // Rejection is applied last — user decision overrides spec requirements.
+        output = EnforceRequiredMethods(output, model, input.UserRejectedMethods);
         output = EnforceUserSelectedMethods(output, input.UserSelectedMethods);
         output = LimitSelectedMethods(output, input.UserSelectedMethods);
+        output = StripRejectedMethods(output, input.UserRejectedMethods);
 
         logger.LogInformation(
             "CLASSIFY complete. Categories={Categories} Methods={Methods} " +
@@ -126,8 +129,10 @@ public sealed class ClassifyStage(
         return output;
     }
 
-    private ClassificationResult EnforceRequiredMethods(ClassificationResult result, string model)
+    private ClassificationResult EnforceRequiredMethods(
+        ClassificationResult result, string model, string[] userRejected)
     {
+        var rejectedSet = userRejected.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var existing = result.SelectedMethods.Select(m => m.Method).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var toAdd = new List<SelectedMethod>();
 
@@ -138,6 +143,14 @@ public sealed class ClassifyStage(
             foreach (var method in required)
             {
                 if (existing.Contains(method)) continue;
+
+                if (rejectedSet.Contains(method))
+                {
+                    logger.LogInformation(
+                        "CLASSIFY: required method skipped — user explicitly rejected it. Category={Category} Method={Method}",
+                        category, method);
+                    continue;
+                }
 
                 logger.LogWarning(
                     "CLASSIFY: required method omitted by model — adding. Category={Category} Method={Method}",
@@ -156,6 +169,23 @@ public sealed class ClassifyStage(
         if (toAdd.Count == 0) return result;
 
         return result with { SelectedMethods = [.. result.SelectedMethods, .. toAdd] };
+    }
+
+    private ClassificationResult StripRejectedMethods(
+        ClassificationResult result, string[] userRejected)
+    {
+        if (userRejected.Length == 0) return result;
+
+        var rejectedSet = userRejected.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var stripped = result.SelectedMethods.Where(m => !rejectedSet.Contains(m.Method)).ToArray();
+
+        var dropped = result.SelectedMethods.Length - stripped.Length;
+        if (dropped > 0)
+            logger.LogInformation(
+                "CLASSIFY: stripped {Dropped} method(s) per user rejection. Rejected={Rejected}",
+                dropped, string.Join(", ", userRejected));
+
+        return result with { SelectedMethods = stripped };
     }
 
     private ClassificationResult EnforceUserSelectedMethods(
@@ -192,7 +222,7 @@ public sealed class ClassifyStage(
         ClassificationResult result,
         IReadOnlyCollection<string> userSelectedMethods)
     {
-        if (result.SelectedMethods.Length <= MaxSelectedMethods)
+        if (result.SelectedMethods.Length <= classifyOpts.Value.MaxSelectedMethods)
             return result;
 
         var userSelectedSet = userSelectedMethods.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -201,7 +231,7 @@ public sealed class ClassifyStage(
             .Where(m => m.RequiredBySpec || userSelectedSet.Contains(m.Method))
             .ToList();
 
-        var optionalSlots = Math.Max(0, MaxSelectedMethods - required.Count);
+        var optionalSlots = Math.Max(0, classifyOpts.Value.MaxSelectedMethods - required.Count);
         var optional = result.SelectedMethods
             .Where(m => !m.RequiredBySpec)
             .Take(optionalSlots)
@@ -212,9 +242,15 @@ public sealed class ClassifyStage(
             .DistinctBy(m => m.Method, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+        var limitedSet = limited.Select(m => m.Method).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var dropped = result.SelectedMethods
+            .Where(m => !limitedSet.Contains(m.Method))
+            .Select(m => m.Method)
+            .ToArray();
+
         logger.LogWarning(
-            "CLASSIFY selected too many methods; limiting for runtime control. Selected={Selected} LimitedTo={Limited} RequiredKept={RequiredKept}",
-            result.SelectedMethods.Length, limited.Length, required.Count);
+            "CLASSIFY selected too many methods; limiting for runtime control. Selected={Selected} LimitedTo={Limited} RequiredKept={RequiredKept} Dropped={Dropped}",
+            result.SelectedMethods.Length, limited.Length, required.Count, string.Join(", ", dropped));
 
         return result with { SelectedMethods = limited };
     }

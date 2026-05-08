@@ -547,10 +547,10 @@ public sealed class SynthesizeStage(
                 }
             }
 
-            // 1 key  → fine (no merge).
-            // 2–5    → specific accidental merge; worth flagging.
-            // > 5    → massive over-merge; already surfaced by WarnIfOverMerged.
-            if (groupKeys.Count is >= 2 and <= 5)
+            // 1–2 keys → fine (two-vector threats are legitimate compound findings).
+            // 3–5     → specific accidental merge; worth flagging.
+            // > 5     → massive over-merge; already surfaced by WarnIfOverMerged.
+            if (groupKeys.Count is >= 3 and <= 5)
             {
                 var label = threat.Title.Length > 50 ? threat.Title[..50] + "…" : threat.Title;
                 violations.Add($"{threat.Identifier} ({label}): [{string.Join(", ", groupKeys.OrderBy(k => k))}]");
@@ -559,7 +559,7 @@ public sealed class SynthesizeStage(
 
         if (violations.Count > 0 && logger.IsEnabled(LogLevel.Warning))
             logger.LogWarning(
-                "SYNTHESIZE: {Count} confirmed threat(s) show possible cross-group-key merge (2–5 distinct keys). {Threats}",
+                "SYNTHESIZE: {Count} confirmed threat(s) show possible cross-group-key merge (3–5 distinct keys). {Threats}",
                 violations.Count, string.Join(" | ", violations));
     }
 

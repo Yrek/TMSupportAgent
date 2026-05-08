@@ -1,6 +1,7 @@
 import { Download, FileCode2, FileJson, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { useExportAnalysis } from "@/api/threats";
+import type { Threat } from "@/api/threats";
 import type { ArchitectureModel } from "@/api/architecture";
 import { Button } from "@/components/ui/button";
 
@@ -9,9 +10,10 @@ interface ExportPanelProps {
   jobId: string;
   analysisData: unknown;
   architecture?: ArchitectureModel | undefined;
+  threats?: Threat[] | undefined;
 }
 
-export function ExportPanel({ orgId, jobId, analysisData, architecture }: ExportPanelProps) {
+export function ExportPanel({ orgId, jobId, analysisData, architecture, threats }: ExportPanelProps) {
   const exportAnalysis = useExportAnalysis(orgId, jobId);
 
   async function handleJsonExport() {
@@ -25,7 +27,7 @@ export function ExportPanel({ orgId, jobId, analysisData, architecture }: Export
 
   function handleMarkdownExport() {
     try {
-      const md = renderAnalysisAsMarkdown(analysisData);
+      const md = renderAnalysisAsMarkdown(analysisData, threats);
       downloadTextFile(md, `threat-model-${jobId}.md`, "text/markdown");
       toast.success("Markdown downloaded");
     } catch {
@@ -45,7 +47,7 @@ export function ExportPanel({ orgId, jobId, analysisData, architecture }: Export
 
   function handleTmBomExport() {
     try {
-      const tmBom = renderAnalysisAsTmBom(analysisData, architecture, orgId, jobId);
+      const tmBom = renderAnalysisAsTmBom(analysisData, architecture, orgId, jobId, threats);
       downloadTextFile(JSON.stringify(tmBom, null, 2), `tm-bom-${jobId}.json`, "application/json");
       toast.success("TM-BOM downloaded");
     } catch {
@@ -55,7 +57,7 @@ export function ExportPanel({ orgId, jobId, analysisData, architecture }: Export
 
   function handleThreatDragonV2Export() {
     try {
-      const td = renderAnalysisAsThreatDragonV2(analysisData, architecture, orgId, jobId);
+      const td = renderAnalysisAsThreatDragonV2(analysisData, architecture, orgId, jobId, threats);
       downloadTextFile(
         JSON.stringify(td, null, 2),
         `threat-dragon-v2-${jobId}.json`,
@@ -166,11 +168,15 @@ function downloadTextFile(content: string, fileName: string, mimeType: string) {
   URL.revokeObjectURL(url);
 }
 
-function renderAnalysisAsMarkdown(data: unknown): string {
+function renderAnalysisAsMarkdown(data: unknown, dbThreats?: Threat[]): string {
   if (!data || typeof data !== "object") return "# Threat Model\n\nNo analysis data available.";
   const d = data as Record<string, unknown>;
+  const statusByIdentifier = new Map<string, string>(
+    (dbThreats ?? []).map((t) => [t.identifier, t.status]),
+  );
   const confirmedThreats = asArray(d["confirmedThreats"]);
   const conditionalThreats = asArray(d["conditionalThreats"]);
+  const userAddedThreats = (dbThreats ?? []).filter((t) => t.findingType === "UserAdded");
   const recommendations = asArray(d["secureDesignRecommendations"]);
   const remediation = asArray(d["prioritizedRemediationList"]);
   const reviewQuestions = asStringArray(d["reviewQuestions"]);
@@ -211,8 +217,27 @@ function renderAnalysisAsMarkdown(data: unknown): string {
     lines.push("");
   }
 
-  appendThreatSection(lines, "Confirmed Threats", confirmedThreats);
-  appendThreatSection(lines, "Conditional Threats", conditionalThreats);
+  appendThreatSection(lines, "Confirmed Threats", confirmedThreats, statusByIdentifier);
+  appendThreatSection(lines, "Conditional Threats", conditionalThreats, statusByIdentifier);
+
+  if (userAddedThreats.length > 0) {
+    lines.push(`## User-Added Threats (${userAddedThreats.length})`);
+    userAddedThreats.forEach((t) => {
+      lines.push(`### ${t.identifier || t.id} - ${t.title}`);
+      const status = t.status;
+      lines.push(`Status: ${status} | Category: ${t.methodCategory}`);
+      if (t.description) lines.push(`- Description: ${t.description}`);
+      if (t.attackScenario) lines.push(`- Attack scenario: ${t.attackScenario}`);
+      if (t.mitigations.length > 0) {
+        lines.push("- Mitigations:");
+        t.mitigations.forEach((m) => {
+          lines.push(`  - ${m.title} (${m.priority}): ${m.description}`);
+          m.acceptanceCriteria.forEach((ac) => lines.push(`      - ${ac}`));
+        });
+      }
+      lines.push("");
+    });
+  }
 
   if (recommendations.length > 0) {
     lines.push("## Secure Design Recommendations");
@@ -254,13 +279,14 @@ function renderAnalysisAsMarkdown(data: unknown): string {
   return lines.join("\n");
 }
 
-function appendThreatSection(lines: string[], title: string, threats: unknown[]) {
+function appendThreatSection(lines: string[], title: string, threats: unknown[], statusByIdentifier?: Map<string, string>) {
   if (threats.length === 0) return;
   lines.push(`## ${title} (${threats.length})`);
   threats.forEach((t) => {
     const threat = t as Record<string, unknown>;
     const id = asString(threat["identifier"]) ?? "T-???";
     const threatTitle = asString(threat["title"]) ?? "Untitled threat";
+    const status = statusByIdentifier?.get(id);
     const methodCategory = asString(threat["methodCategory"]);
     const sourceMethods = asStringArray(threat["sourceMethods"]);
     const confidence = asString(threat["confidence"]);
@@ -288,13 +314,26 @@ function appendThreatSection(lines: string[], title: string, threats: unknown[])
     if (sourceMethods.length > 0) meta.push(`Methods: ${sourceMethods.join(", ")}`);
     if (confidence) meta.push(`Confidence: ${confidence}`);
     if (findingType) meta.push(`Type: ${findingType}`);
+    if (status) meta.push(`Status: ${status}`);
     if (meta.length > 0) lines.push(meta.join(" | "));
     if (affected.length > 0) lines.push(`Affected elements: ${affected.join(", ")}`);
     if (description) lines.push(`- Description: ${description}`);
     if (attackScenario) lines.push(`- Attack scenario: ${attackScenario}`);
+    const preconditions = asString(threat["preconditions"]);
+    const impactedAssets = asStringArray(threat["impactedAssets"]);
+    const existingControls = asString(threat["existingControls"]);
+    const evidenceBasis = asStringArray(threat["evidenceBasis"]);
+    const evidenceStrength = asString(threat["evidenceStrength"]);
+    const assumptions = asString(threat["assumptions"]);
+    if (preconditions) lines.push(`- Preconditions: ${preconditions}`);
+    if (impactedAssets.length > 0) lines.push(`- Impacted assets: ${impactedAssets.join(", ")}`);
     if (securityImpact) lines.push(`- Security impact: ${securityImpact}`);
     if (privacyImpact) lines.push(`- Privacy impact: ${privacyImpact}`);
+    if (existingControls) lines.push(`- Existing controls: ${existingControls}`);
     if (controlGaps) lines.push(`- Control gaps: ${controlGaps}`);
+    if (evidenceStrength || evidenceBasis.length > 0)
+      lines.push(`- Evidence: ${evidenceStrength ?? ""}${evidenceBasis.length > 0 ? ` — ${evidenceBasis.join(", ")}` : ""}`);
+    if (assumptions) lines.push(`- Assumptions: ${assumptions}`);
 
     if (mitigations.length > 0) {
       lines.push("- Mitigations:");
@@ -303,9 +342,14 @@ function appendThreatSection(lines: string[], title: string, threats: unknown[])
         const mTitle = asString(mitigation["title"]) ?? "Mitigation";
         const mPriority = asString(mitigation["priority"]);
         const mDescription = asString(mitigation["description"]);
+        const mCriteria = asStringArray(mitigation["acceptanceCriteria"]);
         lines.push(
           `  - ${mTitle}${mPriority ? ` (${mPriority})` : ""}${mDescription ? `: ${mDescription}` : ""}`,
         );
+        if (mCriteria.length > 0) {
+          lines.push(`    - Done when:`);
+          mCriteria.forEach((ac) => lines.push(`      - ${ac}`));
+        }
       });
     }
 
@@ -372,9 +416,14 @@ function renderAnalysisAsTmBom(
   architecture: ArchitectureModel | undefined,
   orgId: string,
   jobId: string,
+  dbThreats?: Threat[],
 ) {
   const d = isRecord(data) ? data : {};
-  const threats = extractThreatsFromAnalysis(data);
+  const statusByIdentifier = new Map<string, string>(
+    (dbThreats ?? []).map((t) => [t.identifier, t.status]),
+  );
+  const userAddedThreats = (dbThreats ?? []).filter((t) => t.findingType === "UserAdded").map(normalizeDbThreat);
+  const threats = [...extractThreatsFromAnalysis(data, statusByIdentifier), ...userAddedThreats];
   const methods = asArray(d["selectedMethodsWithRationale"]);
 
   const nodeElements = architecture?.elements.filter((e) => e.elementType !== "DataFlow") ?? [];
@@ -398,6 +447,7 @@ function renderAnalysisAsTmBom(
     system: {
       summary: asString(d["systemSummary"]),
       analysisStatus: asString(d["analysisStatus"]),
+      partialReason: asString(d["partialReason"]),
       architectureClassification: asStringArray(d["architectureClassification"]),
       reviewQuestions: asStringArray(d["reviewQuestions"]),
     },
@@ -407,6 +457,7 @@ function renderAnalysisAsTmBom(
         return {
           method: asString(rec["method"]),
           rationale: asString(rec["rationale"]),
+          requiredBySpec: rec["requiredBySpec"] === true,
         };
       })
       .filter((m) => m.method),
@@ -456,6 +507,7 @@ function renderAnalysisAsTmBom(
       mitigations: t.mitigations,
       frameworkMappings: t.frameworkMappings,
       disposition: t.disposition,
+      status: t.status,
     })),
     secureDesignRecommendations: asArray(d["secureDesignRecommendations"]),
     prioritizedRemediationList: asArray(d["prioritizedRemediationList"]),
@@ -467,9 +519,24 @@ function renderAnalysisAsThreatDragonV2(
   architecture: ArchitectureModel | undefined,
   orgId: string,
   jobId: string,
+  dbThreats?: Threat[],
 ) {
   const d = isRecord(data) ? data : {};
-  const threats = extractThreatsFromAnalysis(data);
+
+  // Build status lookup from DB threats (identifier → status)
+  const statusByIdentifier = new Map<string, string>(
+    (dbThreats ?? []).map((t) => [t.identifier, t.status]),
+  );
+
+  // Blob extraction gives rich fields (attackScenario, evidenceBasis, etc.)
+  const blobThreats = extractThreatsFromAnalysis(data, statusByIdentifier);
+
+  // Add user-added threats from DB (they are never in the blob)
+  const userAddedThreats = (dbThreats ?? [])
+    .filter((t) => t.findingType === "UserAdded")
+    .map(normalizeDbThreat);
+
+  const threats = [...blobThreats, ...userAddedThreats];
   const nodeElements = architecture?.elements.filter((e) => e.elementType !== "DataFlow") ?? [];
   const flowElements = architecture?.elements.filter((e) => e.elementType === "DataFlow") ?? [];
 
@@ -527,11 +594,17 @@ function renderAnalysisAsThreatDragonV2(
       threats: threats.map((t, idx) => ({
         id: idx + 1,
         title: t.title,
-        status: t.findingType,
+        status: mapToThreatDragonStatus(t.status),
         severity: t.riskRating?.severity ?? t.confidence,
         type: t.methodCategory,
-        description: t.description,
-        mitigation: t.mitigations.map((m) => m.title).join("; "),
+        description: [
+          t.description,
+          t.attackScenario ? `Attack scenario: ${t.attackScenario}` : null,
+          t.disposition === "conditional" ? `Conditional finding` : null,
+        ].filter(Boolean).join("\n\n"),
+        mitigation: t.mitigations
+          .map((m) => `${m.title}${m.acceptanceCriteria.length > 0 ? ` (done when: ${m.acceptanceCriteria.join("; ")})` : ""}`)
+          .join("; "),
         references: t.frameworkMappings.map((f) => `${f.framework}:${f.reference}`),
         sourceMethods: t.sourceMethods,
         affectedElementLabels: t.affectedElementLabels,
@@ -623,23 +696,25 @@ type NormalizedThreat = {
   evidenceStrength: string | null;
   assumptions: string | null;
   riskRating: { likelihood: string | null; impact: string | null; severity: string | null; likelihoodJustification: string | null; impactJustification: string | null } | null;
-  mitigations: Array<{ title: string; description: string | null; priority: string | null }>;
+  mitigations: Array<{ title: string; description: string | null; priority: string | null; acceptanceCriteria: string[] }>;
   frameworkMappings: Array<{ framework: string; reference: string; mappingType: string | null }>;
-  disposition: "confirmed" | "conditional";
+  disposition: "confirmed" | "conditional" | "user_added";
+  status: string;
 };
 
-function extractThreatsFromAnalysis(data: unknown): NormalizedThreat[] {
+function extractThreatsFromAnalysis(data: unknown, statusByIdentifier?: Map<string, string>): NormalizedThreat[] {
   if (!isRecord(data)) return [];
-  const confirmed = asArray(data["confirmedThreats"]).map((t) => normalizeThreat(t, "confirmed"));
-  const conditional = asArray(data["conditionalThreats"]).map((t) => normalizeThreat(t, "conditional"));
+  const confirmed = asArray(data["confirmedThreats"]).map((t) => normalizeThreat(t, "confirmed", statusByIdentifier));
+  const conditional = asArray(data["conditionalThreats"]).map((t) => normalizeThreat(t, "conditional", statusByIdentifier));
   return [...confirmed, ...conditional];
 }
 
-function normalizeThreat(value: unknown, disposition: "confirmed" | "conditional"): NormalizedThreat {
+function normalizeThreat(value: unknown, disposition: "confirmed" | "conditional" | "user_added", statusByIdentifier?: Map<string, string>): NormalizedThreat {
   const t = isRecord(value) ? value : {};
+  const identifier = asString(t["identifier"]) ?? "";
   return {
     id: asString(t["id"]) ?? "",
-    identifier: asString(t["identifier"]) ?? "",
+    identifier,
     title: asString(t["title"]) ?? "Untitled threat",
     findingType: asString(t["findingType"]) ?? "",
     methodCategory: asString(t["methodCategory"]),
@@ -674,6 +749,7 @@ function normalizeThreat(value: unknown, disposition: "confirmed" | "conditional
         title: asString(rec["title"]) ?? "Mitigation",
         description: asString(rec["description"]),
         priority: asString(rec["priority"]),
+        acceptanceCriteria: asStringArray(rec["acceptanceCriteria"]),
       };
     }),
     frameworkMappings: asArray(t["frameworkMappings"]).map((f) => {
@@ -685,5 +761,61 @@ function normalizeThreat(value: unknown, disposition: "confirmed" | "conditional
       };
     }),
     disposition,
+    status: statusByIdentifier?.get(identifier) ?? "Open",
+  };
+}
+
+function mapToThreatDragonStatus(status: string): string {
+  switch (status) {
+    case "Mitigated": return "Mitigated";
+    case "Accepted":
+    case "Rejected":  return "Not Applicable";
+    default:          return "Open";
+  }
+}
+
+function normalizeDbThreat(t: Threat): NormalizedThreat {
+  return {
+    id: t.id,
+    identifier: t.identifier,
+    title: t.title,
+    findingType: t.findingType,
+    methodCategory: t.methodCategory,
+    sourceMethods: t.sourceMethods ?? [],
+    confidence: t.confidence,
+    affectedElementLabels: [],
+    description: t.description,
+    attackScenario: t.attackScenario,
+    preconditions: t.preconditions ?? null,
+    impactedAssets: t.impactedAssets ?? [],
+    securityImpact: t.securityImpact ?? null,
+    privacyImpact: t.privacyImpact ?? null,
+    existingControls: t.existingControls ?? null,
+    controlGaps: t.controlGaps ?? null,
+    evidenceBasis: [],
+    evidenceStrength: null,
+    assumptions: null,
+    riskRating: t.riskRating
+      ? {
+          likelihood: t.riskRating.likelihood,
+          impact: t.riskRating.impact,
+          severity: t.riskRating.severity,
+          likelihoodJustification: t.riskRating.likelihoodJustification,
+          impactJustification: t.riskRating.impactJustification,
+        }
+      : null,
+    mitigations: t.mitigations.map((m) => ({
+      title: m.title,
+      description: m.description,
+      priority: m.priority,
+      acceptanceCriteria: m.acceptanceCriteria,
+    })),
+    frameworkMappings: t.frameworkMappings.map((f) => ({
+      framework: f.framework,
+      reference: f.reference,
+      mappingType: f.mappingType,
+    })),
+    disposition: t.findingType === "UserAdded" ? "user_added" : t.findingType === "Conditional" ? "conditional" : "confirmed",
+    status: t.status,
   };
 }

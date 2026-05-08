@@ -226,10 +226,16 @@ export function ReviewPage() {
       return;
     }
 
+    // Everything shown but not checked is an explicit rejection — backend won't add it back.
+    const rejectedMethods = METHOD_OPTIONS.map((m) => m.value).filter(
+      (v) => !selectedMethods.includes(v),
+    );
+
     try {
       await confirmArch.mutateAsync({
         note: confirmNote || undefined,
         selectedMethods,
+        rejectedMethods,
       });
       toast.success("Analysis started");
       navigate(`/orgs/${orgId}/jobs/${jobId}`);
@@ -538,7 +544,7 @@ export function ReviewPage() {
         <div className="space-y-3">
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
-              <Label>Threat methods/frameworks * ({selectedMethods.length} selected)</Label>
+              <Label>Threat methods/frameworks — checked methods will run ({selectedMethods.length} selected)</Label>
               <div className="flex items-center gap-1">
                 <Button
                   type="button"
@@ -583,7 +589,7 @@ export function ReviewPage() {
                 })}
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">At least one selection is required.</p>
+            <p className="text-xs text-muted-foreground">Unchecked methods will not run, even if the AI suggests them. At least one must be selected.</p>
           </div>
 
           <div className="space-y-1.5">

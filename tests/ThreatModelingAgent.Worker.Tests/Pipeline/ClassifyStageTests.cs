@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using ThreatModelingAgent.Worker.Llm;
 using ThreatModelingAgent.Worker.Pipeline.Contracts;
@@ -35,7 +36,7 @@ public sealed class ClassifyStageTests
         factory.GetLowCostModel().Returns(lowCostModel);
         factory.GetForModel(Arg.Any<string>()).Returns(client);
 
-        var stage = new ClassifyStage(factory, NullLogger<ClassifyStage>.Instance);
+        var stage = new ClassifyStage(factory, NullLogger<ClassifyStage>.Instance, Options.Create(new StageMaxOutputTokensOptions()), Options.Create(new ClassifyOptions()));
         return (stage, factory, client);
     }
 
@@ -58,7 +59,8 @@ public sealed class ClassifyStageTests
     private static ClassifyInput MinimalInput() => new(
         ConfirmedModel: BuildMinimalCanonical(),
         UserCorrections: [],
-        UserSelectedMethods: []);
+        UserSelectedMethods: [],
+        UserRejectedMethods: []);
 
     private static CanonicalModel BuildMinimalCanonical() => new(
         SystemPurpose: "Test system",
@@ -270,7 +272,8 @@ public sealed class ClassifyStageTests
             [
                 new UserCorrection("elem-1", "type", "service", "database", "Update")
             ],
-            UserSelectedMethods: []);
+            UserSelectedMethods: [],
+            UserRejectedMethods: []);
 
         await stage.ExecuteAsync(inputWithCorrections, None);
 

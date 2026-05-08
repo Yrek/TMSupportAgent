@@ -21,7 +21,7 @@ internal sealed class FrameworkMappingConfiguration : IEntityTypeConfiguration<F
             .IsRequired();
 
         builder.Property(f => f.Framework).HasColumnName("framework").HasMaxLength(100).IsRequired();
-        builder.Property(f => f.Reference).HasColumnName("reference").HasMaxLength(200).IsRequired();
+        builder.Property(f => f.Reference).HasColumnName("reference").HasMaxLength(500).IsRequired();
         builder.Property(f => f.MappingType).HasColumnName("mapping_type").HasMaxLength(20).IsRequired();
         builder.Property(f => f.CreatedAt).HasColumnName("created_at").IsRequired();
 

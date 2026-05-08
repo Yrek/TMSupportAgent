@@ -1,20 +1,21 @@
 import { useAuth } from "@workos-inc/authkit-react";
 import { Navigate, useLocation } from "react-router-dom";
-import { setAccessToken, registerSilentRefresh } from "@/api/client";
+import { setAccessToken, registerSilentRefresh, hasAccessToken } from "@/api/client";
+import { isDevAuth } from "@/lib/env";
 import { useEffect, useState } from "react";
 
 interface RequireAuthProps {
   children: React.ReactNode;
 }
 
-export function RequireAuth({ children }: RequireAuthProps) {
+// WorkOS variant — only rendered when AuthKitProvider is in the tree (isDevAuth=false).
+function RequireAuthWorkOS({ children }: RequireAuthProps) {
   const { user, getAccessToken, isLoading } = useAuth();
   const location = useLocation();
   const [tokenReady, setTokenReady] = useState(false);
   const [tokenMissing, setTokenMissing] = useState(false);
 
   // Keep in-memory token in sync with WorkOS AuthKit.
-  // Run this primarily when the authenticated user identity changes.
   useEffect(() => {
     let cancelled = false;
     const userId = user?.id ?? null;
@@ -54,7 +55,6 @@ export function RequireAuth({ children }: RequireAuthProps) {
   }
 
   if (!user || tokenMissing) {
-    // Validate that the return_to path is internal before using it
     const returnTo = location.pathname + location.search;
     const isInternal = returnTo.startsWith("/") && !returnTo.startsWith("//");
     const error = tokenMissing ? "&error=missing_api_token" : "";
@@ -67,4 +67,33 @@ export function RequireAuth({ children }: RequireAuthProps) {
   }
 
   return <>{children}</>;
+}
+
+// Dev auth variant — checks in-memory token set by DevLoginPage.
+function RequireAuthDev({ children }: RequireAuthProps) {
+  const location = useLocation();
+  const [ready, setReady] = useState(hasAccessToken);
+
+  useEffect(() => {
+    setReady(hasAccessToken());
+  });
+
+  if (!ready) {
+    const returnTo = location.pathname + location.search;
+    const isInternal = returnTo.startsWith("/") && !returnTo.startsWith("//");
+    return (
+      <Navigate
+        to={`/login${isInternal ? `?return_to=${encodeURIComponent(returnTo)}` : ""}`}
+        replace
+      />
+    );
+  }
+
+  return <>{children}</>;
+}
+
+export function RequireAuth({ children }: RequireAuthProps) {
+  return isDevAuth
+    ? <RequireAuthDev>{children}</RequireAuthDev>
+    : <RequireAuthWorkOS>{children}</RequireAuthWorkOS>;
 }

@@ -19,6 +19,9 @@ internal sealed class UserRepository(AppDbContext db) : IUserRepository
     public Task<User?> GetByWorkOsUserIdAsync(string workOsUserId, CancellationToken ct = default)
         => db.Users.FirstOrDefaultAsync(u => u.WorkOsUserId == workOsUserId, ct);
 
+    public async Task AddAsync(User user, CancellationToken ct = default)
+        => await db.Users.AddAsync(user, ct);
+
     public Task SaveChangesAsync(CancellationToken ct = default)
         => db.SaveChangesAsync(ct);
 }

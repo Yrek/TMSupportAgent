@@ -24,7 +24,7 @@ public sealed record LlmRequest(
     string UserPrompt,
     string Model,
     float Temperature = 0f,
-    int MaxTokens = 4096,
+    int? MaxTokens = null,
     // Vision support — image/jpeg or image/png; null for text-only requests
     string? ImageBase64 = null,
     string? ImageMediaType = null);

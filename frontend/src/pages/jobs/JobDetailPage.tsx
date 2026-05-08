@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { toast } from "sonner";
-import { Check, Circle, ArrowRight, AlertCircle, Cpu, FileText, ArrowLeft } from "lucide-react";
+import { Check, Circle, ArrowRight, AlertCircle, Cpu, FileText, ArrowLeft, Clock, DollarSign } from "lucide-react";
 import { useJob } from "@/api/jobs";
 import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
 import { AppShell } from "@/components/layout/AppShell";
@@ -11,6 +11,37 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { JobStatus } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { requiredParam } from "@/lib/requiredParam";
+import type { JobUsage } from "@/api/jobs";
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
+
+function UsageSummaryBar({ usage }: { usage: JobUsage }) {
+  return (
+    <div className="flex flex-wrap gap-4 rounded-md border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+      <span className="flex items-center gap-1.5">
+        <Clock className="h-3.5 w-3.5" />
+        {formatDuration(usage.elapsedMs)}
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="text-xs font-mono">in {usage.totalInputTokens.toLocaleString()} / out {usage.totalOutputTokens.toLocaleString()} tok</span>
+      </span>
+      {usage.estimatedCostUsd != null && (
+        <span className="flex items-center gap-1.5">
+          <DollarSign className="h-3.5 w-3.5" />
+          {usage.estimatedCostUsd < 0.01
+            ? `<$0.01`
+            : `$${usage.estimatedCostUsd.toFixed(4)}`}
+        </span>
+      )}
+    </div>
+  );
+}
 
 const PIPELINE_STAGES: Array<{ status: JobStatus; label: string }> = [
   { status: "Pending", label: "Pending" },
@@ -201,6 +232,11 @@ export function JobDetailPage() {
             );
           })}
         </div>
+
+        {/* Usage summary — shown once analysis is complete */}
+        {(job.status === "Complete" || job.status === "Partial") && job.usageSummary && (
+          <UsageSummaryBar usage={job.usageSummary} />
+        )}
 
         {/* CTAs */}
         {job.status === "AwaitingReview" && (

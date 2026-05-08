@@ -194,7 +194,7 @@ internal sealed class PipelineDbPersistence(
                 privacyImpact: ft.PrivacyImpact,
                 existingControls: ft.ExistingControls,
                 controlGaps: ft.ControlGaps,
-                confidence: ParseConfidence(ft.Confidence),
+                confidence: ClampConfidence(ParseConfidence(ft.Confidence), findingType),
                 evidenceBasis: [],
                 evidenceStrength: ParseEvidenceStrength(ft.EvidenceStrength),
                 assumptions: null,
@@ -434,6 +434,13 @@ internal sealed class PipelineDbPersistence(
         "low" => ConfidenceLevel.Low,
         _ => ConfidenceLevel.Medium
     };
+
+    // Domain invariant: conditional findings cannot be High confidence (spec §9).
+    // The LLM occasionally assigns high confidence to conditionals; clamp rather than crash.
+    private static ConfidenceLevel ClampConfidence(ConfidenceLevel confidence, FindingType findingType) =>
+        findingType == FindingType.Conditional && confidence == ConfidenceLevel.High
+            ? ConfidenceLevel.Medium
+            : confidence;
 
     private static EvidenceStrength ParseEvidenceStrength(string? value) => value?.ToLowerInvariant() switch
     {

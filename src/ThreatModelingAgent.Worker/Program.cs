@@ -74,6 +74,11 @@ try
     builder.Services.AddScoped<LlmClientFactory>();
     builder.Services.AddScoped<ILlmClientFactory>(sp => sp.GetRequiredService<LlmClientFactory>());
 
+    // ── Token tracking and cost estimation ───────────────────────────────────
+    builder.Services.AddScoped<TokenUsageTracker>();
+    builder.Services.Configure<ModelPricingOptions>(
+        builder.Configuration.GetSection("ModelPricing"));
+
     // ── Pipeline stages ──────────────────────────────────────────────────────
     builder.Services.Configure<StageMaxOutputTokensOptions>(
         builder.Configuration.GetSection("StageMaxOutputTokens"));

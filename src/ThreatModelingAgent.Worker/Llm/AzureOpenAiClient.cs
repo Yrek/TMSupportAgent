@@ -13,7 +13,8 @@ namespace ThreatModelingAgent.Worker.Llm;
 public sealed class AzureOpenAiClient(
     IHttpClientFactory httpClientFactory,
     IConfiguration configuration,
-    ILogger<AzureOpenAiClient> logger) : ILlmClient
+    ILogger<AzureOpenAiClient> logger,
+    TokenUsageTracker tokenUsage) : ILlmClient
 {
     private static readonly JsonSerializerOptions SerializeOptions = new()
     {
@@ -39,6 +40,7 @@ public sealed class AzureOpenAiClient(
             && request.Model[0] is 'o' or 'O'
             && char.IsDigit(request.Model[1]);
 
+        int? maxTokens = request.MaxTokens;
         object payload = isOSeries
             ? new
             {
@@ -47,7 +49,7 @@ public sealed class AzureOpenAiClient(
                     new { role = "system", content = request.SystemPrompt },
                     new { role = "user",   content = userContent }
                 },
-                max_completion_tokens = request.MaxTokens
+                max_completion_tokens = maxTokens
             }
             : new
             {
@@ -56,7 +58,7 @@ public sealed class AzureOpenAiClient(
                     new { role = "system", content = request.SystemPrompt },
                     new { role = "user",   content = userContent }
                 },
-                max_tokens = request.MaxTokens,
+                max_tokens = maxTokens,
                 temperature = request.Temperature
             };
 
@@ -82,6 +84,8 @@ public sealed class AzureOpenAiClient(
         var usage = root.GetProperty("usage");
         var inputTokens = usage.GetProperty("prompt_tokens").GetInt32();
         var outputTokens = usage.GetProperty("completion_tokens").GetInt32();
+
+        tokenUsage.Record(request.Model, inputTokens, outputTokens);
 
         // Log token counts only — no content (CLAUDE.md §16.6)
         logger.LogInformation(

@@ -13,7 +13,8 @@ namespace ThreatModelingAgent.Worker.Llm;
 public sealed class OpenAiClient(
     IHttpClientFactory httpClientFactory,
     IConfiguration configuration,
-    ILogger<OpenAiClient> logger) : ILlmClient
+    ILogger<OpenAiClient> logger,
+    TokenUsageTracker tokenUsage) : ILlmClient
 {
     private static readonly JsonSerializerOptions SerializeOptions = new()
     {
@@ -45,9 +46,10 @@ public sealed class OpenAiClient(
             new { role = "user",   content = userContent }
         };
 
+        int? maxTokens = request.MaxTokens;
         object payload = usesCompletionTokens
-            ? new { model = request.Model, messages, max_completion_tokens = request.MaxTokens }
-            : new { model = request.Model, messages, max_tokens = request.MaxTokens, temperature = request.Temperature };
+            ? new { model = request.Model, messages, max_completion_tokens = maxTokens }
+            : new { model = request.Model, messages, max_tokens = maxTokens, temperature = request.Temperature };
 
         using var client = httpClientFactory.CreateClient("OpenAI");
         client.DefaultRequestHeaders.Authorization =
@@ -94,6 +96,8 @@ public sealed class OpenAiClient(
                 request.Model, inputTokens, outputTokens, refusal ?? "none");
             text = string.Empty;
         }
+
+        tokenUsage.Record(request.Model, inputTokens, outputTokens);
 
         // Log token counts only — no content (CLAUDE.md §16.6)
         logger.LogInformation(

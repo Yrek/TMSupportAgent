@@ -1,9 +1,12 @@
+using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using ThreatModelingAgent.Domain.Entities;
 using ThreatModelingAgent.Domain.Enums;
 using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Domain.ValueObjects;
+using ThreatModelingAgent.Worker.Llm;
 using ThreatModelingAgent.Worker.Pipeline.Contracts;
 using ThreatModelingAgent.Worker.Pipeline.Stages;
 
@@ -34,6 +37,8 @@ internal sealed class JobOrchestrator(
     AnalyzeStage analyzeStage,
     SynthesizeStage synthesizeStage,
     IOptions<AnalyzeThrottlingOptions> throttlingOptions,
+    TokenUsageTracker tokenUsage,
+    IOptions<ModelPricingOptions> pricingOpts,
     ILogger<JobOrchestrator> logger)
 {
     private static readonly JsonSerializerOptions TokenJsonOptions = new()
@@ -60,16 +65,22 @@ internal sealed class JobOrchestrator(
             "Pipeline starting. JobId={JobId} Phase={Phase} Status={Status}",
             jobId, message.Phase, job.Status);
 
+        var sw = Stopwatch.StartNew();
+
         try
         {
             if (message.Phase == PipelinePhase.Parse)
-                await RunParsePhaseAsync(message, job, orgId, ct);
+                await RunParsePhaseAsync(message, job, orgId, sw, ct);
             else
-                await RunAnalyzePhaseAsync(message, job, orgId, ct);
+                await RunAnalyzePhaseAsync(message, job, orgId, sw, ct);
         }
         catch (OperationCanceledException)
         {
             logger.LogWarning("Pipeline cancelled. JobId={JobId}", jobId);
+            // Persist Failed to DB using CancellationToken.None so the save completes even during
+            // graceful shutdown. Without this, the job is left in an intermediate state and the
+            // redelivered message will fail the state-machine transition on the next run.
+            await TryFailJobAsync(job, "PIPELINE_CANCELLED", orgId, CancellationToken.None);
             throw;
         }
         catch (PipelineStageException ex)
@@ -78,15 +89,7 @@ internal sealed class JobOrchestrator(
                 "Pipeline stage failed. JobId={JobId} ErrorCode={ErrorCode}",
                 jobId, ex.ErrorCode); // no Detail — may contain model output fragments
 
-            job.Transition(JobStatus.Failed, errorCode: ex.ErrorCode);
-            await jobs.SaveChangesAsync(ct);
-
-            await audit.LogAsync("job.failed",
-                orgId: orgId,
-                resourceType: "job",
-                resourceId: job.Id.Value,
-                details: new { errorCode = ex.ErrorCode },
-                ct: ct);
+            await TryFailJobAsync(job, ex.ErrorCode, orgId, ct);
         }
         catch (Exception ex)
         {
@@ -94,15 +97,7 @@ internal sealed class JobOrchestrator(
                 "Pipeline unexpected failure. JobId={JobId} Stage={Status}",
                 jobId, job.Status);
 
-            job.Transition(JobStatus.Failed, errorCode: "PIPELINE_ERROR");
-            await jobs.SaveChangesAsync(ct);
-
-            await audit.LogAsync("job.failed",
-                orgId: orgId,
-                resourceType: "job",
-                resourceId: job.Id.Value,
-                details: new { errorCode = "PIPELINE_ERROR" },
-                ct: ct);
+            await TryFailJobAsync(job, "PIPELINE_ERROR", orgId, ct);
         }
     }
 
@@ -112,6 +107,7 @@ internal sealed class JobOrchestrator(
         AnalysisJobMessage message,
         Domain.Entities.Job job,
         OrgId orgId,
+        Stopwatch sw,
         CancellationToken ct)
     {
         // DETECT
@@ -159,6 +155,7 @@ internal sealed class JobOrchestrator(
         // Transition to AWAITING_REVIEW — pipeline pauses until user confirms via API
         await TransitionAsync(job, JobStatus.AwaitingReview, ct);
 
+        LogUsageSummary(job.Id, "Parse", sw);
         logger.LogInformation("Pipeline paused for review. JobId={JobId}", job.Id);
 
         await audit.LogAsync("job.awaiting_review",
@@ -174,6 +171,7 @@ internal sealed class JobOrchestrator(
         AnalysisJobMessage message,
         Domain.Entities.Job job,
         OrgId orgId,
+        Stopwatch sw,
         CancellationToken ct)
     {
         // Load the canonical model.
@@ -290,10 +288,20 @@ internal sealed class JobOrchestrator(
         await dbPersistence.PersistFinalOutputAsync(
             job.Id, orgId, finalOutput, allCandidateSets, ct);
 
-        // Store output blob path + model routing summary in job record for cost tracking
-        job.RecordTokenUsage(JsonSerializer.Serialize(
-            new { outputBlobPath, modelRoutingSummary = finalOutput.ModelRoutingSummary },
-            TokenJsonOptions));
+        // Capture runtime usage before persisting — stop the stopwatch here so elapsed is accurate
+        sw.Stop();
+        var totalCost = pricingOpts.Value.EstimateTotalCostUsd(tokenUsage.PerModel);
+
+        // Store runtime usage + blob path in job record for UI display and cost tracking
+        job.RecordTokenUsage(JsonSerializer.Serialize(new
+        {
+            outputBlobPath,
+            modelRoutingSummary = finalOutput.ModelRoutingSummary,
+            elapsedMs          = sw.ElapsedMilliseconds,
+            totalInputTokens   = tokenUsage.TotalInputTokens,
+            totalOutputTokens  = tokenUsage.TotalOutputTokens,
+            estimatedCostUsd   = totalCost > 0m ? (decimal?)totalCost : null,
+        }, TokenJsonOptions));
 
         // Transition to final status
         var finalStatus = finalOutput.AnalysisStatus == "partial"
@@ -309,9 +317,71 @@ internal sealed class JobOrchestrator(
             details: new { status = finalStatus.ToString(), outputBlobPath },
             ct: ct);
 
+        LogUsageSummary(job.Id, "Analyze", sw);
+
         logger.LogInformation(
             "Pipeline complete. JobId={JobId} Status={Status} Threats={Threats}",
             job.Id, finalStatus, finalOutput.ConfirmedThreats.Length);
+    }
+
+    private async Task TryFailJobAsync(Domain.Entities.Job job, string errorCode, OrgId orgId, CancellationToken ct)
+    {
+        // Guard against double-transition when a save failure in one catch block causes us to
+        // re-enter another catch block with the job already in Failed (in-memory).
+        if (job.Status != JobStatus.Failed)
+            job.Transition(JobStatus.Failed, errorCode: errorCode);
+
+        try
+        {
+            await jobs.SaveChangesAsync(ct);
+        }
+        catch (Exception saveEx)
+        {
+            // Log and swallow — we cannot do better here. The message will be abandoned
+            // and redelivered, but we've at least logged the root cause.
+            logger.LogError(saveEx,
+                "Failed to persist job failure to DB. JobId={JobId} ErrorCode={ErrorCode}",
+                job.Id, errorCode);
+            return;
+        }
+
+        try
+        {
+            await audit.LogAsync("job.failed",
+                orgId: orgId,
+                resourceType: "job",
+                resourceId: job.Id.Value,
+                details: new { errorCode },
+                ct: ct);
+        }
+        catch (Exception auditEx)
+        {
+            logger.LogError(auditEx,
+                "Audit log failed after job failure. JobId={JobId}", job.Id);
+        }
+    }
+
+    private void LogUsageSummary(JobId jobId, string phase, Stopwatch sw)
+    {
+        sw.Stop();
+        var perModel = tokenUsage.PerModel;
+        var pricing = pricingOpts.Value;
+        var totalCost = pricing.EstimateTotalCostUsd(perModel);
+
+        var modelLines = new StringBuilder();
+        foreach (var (model, (input, output)) in perModel.OrderBy(kv => kv.Key))
+        {
+            var cost = pricing.EstimateCostUsd(model, input, output);
+            modelLines.Append($" | {model}: in={input:N0} out={output:N0}");
+            if (cost > 0m) modelLines.Append($" cost=${cost:F4}");
+        }
+
+        logger.LogInformation(
+            "Pipeline phase usage. JobId={JobId} Phase={Phase} ElapsedMs={ElapsedMs} TotalIn={TotalIn} TotalOut={TotalOut} EstCostUsd={EstCostUsd}{ModelBreakdown}",
+            jobId, phase, sw.ElapsedMilliseconds,
+            tokenUsage.TotalInputTokens, tokenUsage.TotalOutputTokens,
+            totalCost > 0m ? $"{totalCost:F4}" : "n/a",
+            modelLines.ToString());
     }
 
     private static string BuildCorrectionsSummary(IReadOnlyList<ArchitectureCorrection> corrections)

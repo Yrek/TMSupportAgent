@@ -12,12 +12,20 @@ export interface JobSummary {
   completedAt: string | null;
 }
 
+export interface JobUsage {
+  elapsedMs: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  estimatedCostUsd: number | null;
+}
+
 export interface JobDetail extends JobSummary {
   errorCode: string | null;
   threatCount: number | null;
   confirmedThreatCount: number | null;
   applicationDescription?: string | null;
   architectureDescription?: string | null;
+  usageSummary?: JobUsage | null;
 }
 
 export interface JobListFilters {

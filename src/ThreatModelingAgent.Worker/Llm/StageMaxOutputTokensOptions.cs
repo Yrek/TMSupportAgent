@@ -5,6 +5,7 @@ namespace ThreatModelingAgent.Worker.Llm;
 /// tokens internally before generating output, so effective output budget is
 /// max_completion_tokens minus reasoning tokens. Set these higher than the expected
 /// output size to leave headroom for the reasoning phase.
+/// Set any value to 0 (or negative) to omit the ceiling and let the model use its own default.
 /// Bound to config section "StageMaxOutputTokens".
 /// </summary>
 public sealed class StageMaxOutputTokensOptions

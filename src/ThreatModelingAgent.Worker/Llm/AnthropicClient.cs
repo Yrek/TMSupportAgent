@@ -13,7 +13,8 @@ namespace ThreatModelingAgent.Worker.Llm;
 public sealed class AnthropicClient(
     IHttpClientFactory httpClientFactory,
     IConfiguration configuration,
-    ILogger<AnthropicClient> logger) : ILlmClient
+    ILogger<AnthropicClient> logger,
+    TokenUsageTracker tokenUsage) : ILlmClient
 {
     private const string ApiUrl = "https://api.anthropic.com/v1/messages";
     private const string AnthropicVersion = "2023-06-01";
@@ -31,7 +32,7 @@ public sealed class AnthropicClient(
         var payload = new
         {
             model = request.Model,
-            max_tokens = request.MaxTokens,
+            max_tokens = request.MaxTokens ?? 100_000,
             temperature = request.Temperature,
             system = request.SystemPrompt,
             messages = new[] { new { role = "user", content = userContent } }
@@ -69,6 +70,8 @@ public sealed class AnthropicClient(
         var usage = root.GetProperty("usage");
         var inputTokens = usage.GetProperty("input_tokens").GetInt32();
         var outputTokens = usage.GetProperty("output_tokens").GetInt32();
+
+        tokenUsage.Record(request.Model, inputTokens, outputTokens);
 
         // Log token counts only — no content (CLAUDE.md §16.6)
         logger.LogInformation(

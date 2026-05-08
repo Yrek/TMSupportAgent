@@ -53,9 +53,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void NormalizeEnrichSystem_VersionIs_normalize_enrich_2_0_0()
+    public void NormalizeEnrichSystem_VersionIs_normalize_enrich_3_0_0()
     {
-        PromptTemplates.NormalizeEnrichSystem.Should().Contain("prompt-version: normalize-enrich-2.0.0");
+        PromptTemplates.NormalizeEnrichSystem.Should().Contain("prompt-version: normalize-enrich-3.0.0");
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class PromptTemplateVersionTests
         var system = PromptTemplates.BuildAnalyzeSystem(method);
         system.Should().Contain(VersionPrefix,
             because: $"ANALYZE system prompt for method {method} must carry a prompt-version");
-        system.Should().Contain("prompt-version: analyze-3.0.0");
+        system.Should().Contain("prompt-version: analyze-5.0.0");
     }
 
     [Fact]
@@ -110,6 +110,19 @@ public sealed class PromptTemplateVersionTests
         PromptTemplates.FrameworkMappingSystem.Should().Contain("prompt-version: framework-mapping-1.1.0");
     }
 
+    [Fact]
+    public void ReviewSystem_ContainsVersionString()
+    {
+        PromptTemplates.ReviewSystem.Should().Contain(VersionPrefix,
+            because: "Adversarial review sub-step system prompt must carry a prompt-version");
+    }
+
+    [Fact]
+    public void ReviewSystem_VersionIs_review_1_0_0()
+    {
+        PromptTemplates.ReviewSystem.Should().Contain("prompt-version: review-1.0.0");
+    }
+
     // ── No secrets or credentials in any template ─────────────────────────────
     // CLAUDE.md §16.3: secrets MUST NOT appear in prompts.
 
@@ -120,6 +133,7 @@ public sealed class PromptTemplateVersionTests
     [InlineData(nameof(PromptTemplates.ClassifySystem))]
     [InlineData(nameof(PromptTemplates.SynthesizeSystem))]
     [InlineData(nameof(PromptTemplates.FrameworkMappingSystem))]
+    [InlineData(nameof(PromptTemplates.ReviewSystem))]
     public void SystemPrompts_DoNotContainSecretPatterns(string templateName)
     {
         var template = templateName switch
@@ -130,6 +144,7 @@ public sealed class PromptTemplateVersionTests
             nameof(PromptTemplates.ClassifySystem)         => PromptTemplates.ClassifySystem,
             nameof(PromptTemplates.SynthesizeSystem)       => PromptTemplates.SynthesizeSystem,
             nameof(PromptTemplates.FrameworkMappingSystem) => PromptTemplates.FrameworkMappingSystem,
+            nameof(PromptTemplates.ReviewSystem)           => PromptTemplates.ReviewSystem,
             _ => throw new InvalidOperationException($"Unknown template: {templateName}")
         };
 
@@ -166,5 +181,17 @@ public sealed class PromptTemplateVersionTests
         result.Should().Contain("[THREATS]")
             .And.Contain("[/THREATS]",
                 because: "threat data passed to framework mapping must be delimited");
+    }
+
+    [Fact]
+    public void BuildReviewUser_WrapsContentInDelimiters()
+    {
+        var result = PromptTemplates.BuildReviewUser("{}", "[]");
+        result.Should().Contain("[ARCHITECTURE]")
+            .And.Contain("[/ARCHITECTURE]",
+                because: "canonical model passed to adversarial review must be delimited")
+            .And.Contain("[THREATS]")
+            .And.Contain("[/THREATS]",
+                because: "threat list passed to adversarial review must be delimited");
     }
 }

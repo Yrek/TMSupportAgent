@@ -107,7 +107,7 @@ public sealed class ClassifyStage(
             UserPrompt: userPrompt,
             Model: model,
             Temperature: 0f,
-            MaxTokens: stageTokenOpts.Value.Classify);
+            MaxTokens: stageTokenOpts.Value.Classify.ToMaxTokens());
 
         var (output, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<ClassificationResult>(
             llmClient, request, Validate, "CLASSIFY_FAILED", MaxAttempts, logger, ct);

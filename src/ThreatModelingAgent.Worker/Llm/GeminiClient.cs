@@ -14,7 +14,8 @@ namespace ThreatModelingAgent.Worker.Llm;
 public sealed class GeminiClient(
     IHttpClientFactory httpClientFactory,
     IConfiguration configuration,
-    ILogger<GeminiClient> logger) : ILlmClient
+    ILogger<GeminiClient> logger,
+    TokenUsageTracker tokenUsage) : ILlmClient
 {
     private const string BaseUrl = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -44,7 +45,7 @@ public sealed class GeminiClient(
             },
             generationConfig = new
             {
-                maxOutputTokens = request.MaxTokens,
+                maxOutputTokens = request.MaxTokens,   // null → omitted by WhenWritingNull → model uses its default
                 temperature = (double)request.Temperature
             }
         };
@@ -71,6 +72,8 @@ public sealed class GeminiClient(
         var usage = root.GetProperty("usageMetadata");
         var inputTokens = usage.GetProperty("promptTokenCount").GetInt32();
         var outputTokens = usage.GetProperty("candidatesTokenCount").GetInt32();
+
+        tokenUsage.Record(request.Model, inputTokens, outputTokens);
 
         // Log token counts only — no content (CLAUDE.md §16.6)
         logger.LogInformation(

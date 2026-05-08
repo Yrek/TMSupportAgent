@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { toast } from "sonner";
-import { ArrowLeft, RefreshCw, AlertTriangle, HelpCircle } from "lucide-react";
+import { ArrowLeft, RefreshCw, AlertTriangle, HelpCircle, Clock, DollarSign } from "lucide-react";
 import { useJob } from "@/api/jobs";
 import { useThreats, useUpdateThreatStatus, useAddThreatNote, useAddThreat, useAnalysis, useRejectedCandidates, type RejectedCandidate } from "@/api/threats";
 import { useArchitecture, useReanalyzeJob } from "@/api/architecture";
@@ -26,6 +26,14 @@ import type { Threat } from "@/api/threats";
 import type { ArchitectureElement } from "@/api/architecture";
 import type { ThreatStatus } from "@/lib/constants";
 import { requiredParam } from "@/lib/requiredParam";
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
 
 export function AnalysisPage() {
   const params = useParams<{ orgId: string; jobId: string }>();
@@ -271,9 +279,34 @@ export function AnalysisPage() {
 
         {/* Partial banner */}
         {job?.status === "Partial" && (
-          <div className="flex items-center gap-2 border-b bg-orange-50 px-4 py-2 text-sm text-orange-800">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            This analysis is incomplete due to architectural ambiguity. Some threats may be missing.
+          <div className="flex items-start gap-2 border-b bg-orange-50 px-4 py-2 text-sm text-orange-800">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>
+              {typeof analysis?.["partialReason"] === "string"
+                ? analysis["partialReason"]
+                : "This analysis is incomplete due to architectural ambiguity. Some threats may be missing."}
+            </span>
+          </div>
+        )}
+
+        {/* Usage summary */}
+        {job?.usageSummary && (
+          <div className="flex flex-wrap items-center gap-4 border-b px-4 py-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" />
+              {formatDuration(job.usageSummary.elapsedMs)}
+            </span>
+            <span className="font-mono">
+              in {job.usageSummary.totalInputTokens.toLocaleString()} / out {job.usageSummary.totalOutputTokens.toLocaleString()} tok
+            </span>
+            {job.usageSummary.estimatedCostUsd != null && (
+              <span className="flex items-center gap-1">
+                <DollarSign className="h-3.5 w-3.5" />
+                {job.usageSummary.estimatedCostUsd < 0.01
+                  ? "<$0.01"
+                  : `$${job.usageSummary.estimatedCostUsd.toFixed(4)}`}
+              </span>
+            )}
           </div>
         )}
 
@@ -297,20 +330,25 @@ export function AnalysisPage() {
             </div>
 
             {(job?.applicationDescription || job?.architectureDescription) && (
-              <div className="rounded-md border bg-muted/30 p-3">
-                {job.applicationDescription && (
-                  <div className="mb-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Application Description</p>
-                    <p className="text-sm">{job.applicationDescription}</p>
-                  </div>
-                )}
-                {job.architectureDescription && (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Architecture Description</p>
-                    <p className="text-sm">{job.architectureDescription}</p>
-                  </div>
-                )}
-              </div>
+              <details className="rounded-md border bg-muted/30">
+                <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
+                  System description
+                </summary>
+                <div className="space-y-2 px-3 pb-3 pt-1">
+                  {job.applicationDescription && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Application</p>
+                      <p className="text-sm">{job.applicationDescription}</p>
+                    </div>
+                  )}
+                  {job.architectureDescription && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Architecture</p>
+                      <p className="text-sm">{job.architectureDescription}</p>
+                    </div>
+                  )}
+                </div>
+              </details>
             )}
 
             {/* Review questions */}
@@ -390,9 +428,9 @@ export function AnalysisPage() {
                 </div>
               </div>
 
-              {/* Right: detail panel */}
-              <div className="min-h-0 flex-1 overflow-hidden md:h-full">
-                {selectedThreat ? (
+              {/* Right: detail panel — only rendered when a threat is selected */}
+              {selectedThreat && (
+                <div className="min-h-0 flex-1 overflow-hidden md:h-full">
                   <ThreatDetailPanel
                     threat={selectedThreat}
                     onClose={() => setSelectedThreat(null)}
@@ -403,12 +441,8 @@ export function AnalysisPage() {
                       await addNote.mutateAsync({ threatId: id, body });
                     }}
                   />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-                    Select a threat to view details
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
             </TabsContent>
             )}
 
@@ -517,37 +551,35 @@ export function AnalysisPage() {
                       onEdgeClick={handleEdgeClick}
                     />
                   </div>
-                  {/* GAP-TH5: per-element panel shown when element is selected */}
-                  <div className="min-h-0 w-full shrink-0 overflow-y-auto border-t xl:h-full xl:w-[24rem] xl:border-l xl:border-t-0">
-                    {selectedThreat ? (
-                      <ThreatDetailPanel
-                        threat={selectedThreat}
-                        onClose={() => setSelectedThreat(null)}
-                        onUpdateStatus={async (id, status) => {
-                          await updateStatus.mutateAsync({ threatId: id, status });
-                        }}
-                        onAddNote={async (id, body) => {
-                          await addNote.mutateAsync({ threatId: id, body });
-                        }}
-                      />
-                    ) : selectedElement ? (
-                      <ElementDetailPanel
-                        element={selectedElement}
-                        readOnly
-                        onPatch={async () => undefined}
-                        onDelete={async () => undefined}
-                        onCorrect={async () => undefined}
-                        relatedThreats={threatsForSelectedElement}
-                        onThreatClick={(t) => {
-                          setSelectedThreat(t);
-                        }}
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-                        Select an element or threat to view details.
-                      </div>
-                    )}
-                  </div>
+                  {/* GAP-TH5: per-element/threat panel — only rendered when something is selected */}
+                  {(selectedThreat ?? selectedElement) && (
+                    <div className="min-h-0 w-full shrink-0 overflow-y-auto border-t xl:h-full xl:w-[24rem] xl:border-l xl:border-t-0">
+                      {selectedThreat ? (
+                        <ThreatDetailPanel
+                          threat={selectedThreat}
+                          onClose={() => setSelectedThreat(null)}
+                          onUpdateStatus={async (id, status) => {
+                            await updateStatus.mutateAsync({ threatId: id, status });
+                          }}
+                          onAddNote={async (id, body) => {
+                            await addNote.mutateAsync({ threatId: id, body });
+                          }}
+                        />
+                      ) : selectedElement ? (
+                        <ElementDetailPanel
+                          element={selectedElement}
+                          readOnly
+                          onPatch={async () => undefined}
+                          onDelete={async () => undefined}
+                          onCorrect={async () => undefined}
+                          relatedThreats={threatsForSelectedElement}
+                          onThreatClick={(t) => {
+                            setSelectedThreat(t);
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="flex h-full items-center justify-center text-muted-foreground text-sm">

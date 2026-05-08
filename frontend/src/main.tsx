@@ -3,7 +3,7 @@ import { AuthKitProvider } from "@workos-inc/authkit-react";
 import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
 import { RouterProvider } from "react-router-dom";
 import { Toaster } from "sonner";
-import { env } from "@/lib/env";
+import { env, isDevAuth } from "@/lib/env";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { generateCorrelationId, logError } from "@/lib/logger";
 import { initSentry } from "@/lib/sentry";
@@ -64,13 +64,21 @@ const queryClient = new QueryClient({
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("Root element not found");
 
-createRoot(rootEl).render(
+const app = (
   <ErrorBoundary>
-    <AuthKitProvider clientId={env.VITE_WORKOS_CLIENT_ID} redirectUri={env.VITE_WORKOS_REDIRECT_URI}>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <Toaster richColors closeButton position="bottom-right" />
-      </QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+      <Toaster richColors closeButton position="bottom-right" />
+    </QueryClientProvider>
+  </ErrorBoundary>
+);
+
+createRoot(rootEl).render(
+  isDevAuth ? (
+    app
+  ) : (
+    <AuthKitProvider clientId={env.VITE_WORKOS_CLIENT_ID!} redirectUri={env.VITE_WORKOS_REDIRECT_URI!}>
+      {app}
     </AuthKitProvider>
-  </ErrorBoundary>,
+  ),
 );

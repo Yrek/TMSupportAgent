@@ -4,6 +4,20 @@ This guide gets the API and Worker running on your machine.
 
 ---
 
+## Auth modes
+
+There are two ways to authenticate locally:
+
+| Mode | When to use | What's needed |
+|---|---|---|
+| **Dev auth** (recommended for local dev) | Running locally without a WorkOS account | Nothing — self-contained HMAC JWT |
+| **WorkOS** | Testing real auth flows, invitations, or multi-tenant features | A WorkOS account and app |
+
+The default `appsettings.Development.json` and `frontend/.env.local` ship with dev auth enabled.
+See [Dev auth mode](#dev-auth-mode-no-workos-required) for details and [WorkOS auth mode](#workos-auth-mode) for how to switch.
+
+---
+
 ## Prerequisites
 
 | Tool | Version | Install |
@@ -13,7 +27,6 @@ This guide gets the API and Worker running on your machine.
 | EF Core CLI | Latest | `dotnet tool install --global dotnet-ef` |
 
 You will also need:
-- A **WorkOS** account and application (free tier) — [workos.com](https://workos.com)
 - An **Anthropic API key** or **Azure OpenAI** resource for the LLM pipeline
 
 ---
@@ -38,8 +51,8 @@ cp src/ThreatModelingAgent.Worker/appsettings.Development.json.example \
 Edit each file. Minimum required values:
 
 **API** (`src/ThreatModelingAgent.Api/appsettings.Development.json`):
-- `WorkOS:ClientId` — from WorkOS dashboard → API Keys
-- `WorkOS:ApiKey` — from WorkOS dashboard → API Keys (required for user invitations and erasure)
+- `DevAuth:Enabled` — `true` by default; skip WorkOS entirely (see [dev auth mode](#dev-auth-mode-no-workos-required))
+- `DevAuth:SigningKey` — at least 32 characters; pre-filled with a placeholder
 - `AzureServiceBus:ConnectionString` — required because API enqueues jobs on submit
 - `AzureServiceBus:QueueName` — queue to enqueue (`analysis-jobs` for local)
 
@@ -60,6 +73,71 @@ Change `LlmRouting` in the Worker config to route to Claude instead of GPT:
 **Azure OpenAI-only setup** (default): set `AzureOpenAI:Endpoint` and `AzureOpenAI:ApiKey`. The defaults (`gpt-4o` / `gpt-4o-mini`) require those deployments to exist in your resource.
 
 > These files are git-ignored (CLAUDE.md §10.1). Never commit them.
+
+---
+
+## Dev auth mode (no WorkOS required)
+
+Dev auth lets you run the full stack locally without a WorkOS account. It replaces the WorkOS JWT with a locally-signed HMAC JWT issued by `POST /v1/auth/dev-login`.
+
+### How it works
+
+1. The frontend shows a simple email form instead of the WorkOS sign-in button.
+2. Submitting the form calls `POST /v1/auth/dev-login` with `{ "email": "..." }`.
+3. The API finds or creates a local user + org in the database, then returns a signed JWT.
+4. The JWT carries the user's internal UUID as `sub` and the org UUID as `org_id`.
+5. `TenantContextMiddleware` detects these as GUIDs and skips the WorkOS lookup — everything else (authorization, tenant context, membership checks) works identically.
+
+### Configuration
+
+**API** (`appsettings.Development.json` — already pre-configured):
+```json
+"DevAuth": {
+  "Enabled": true,
+  "SigningKey": "dev-local-signing-key-change-me-32chars!!"
+}
+```
+
+Change `SigningKey` to any string of 32+ characters. It only needs to be consistent between restarts.
+
+**Frontend** (`.env.local` — already pre-configured):
+```
+VITE_DEV_AUTH=true
+```
+
+When `VITE_DEV_AUTH=true`, `VITE_WORKOS_CLIENT_ID` and `VITE_WORKOS_REDIRECT_URI` are not required.
+
+### First sign-in
+
+1. Start the API and run migrations (steps 3–5 below).
+2. Open `http://localhost:5173` → you are redirected to `/login`.
+3. Enter any email address (e.g. `admin@example.com`) and click **Sign in**.
+4. The API creates the user and a `dev-org` organization automatically.
+5. You are redirected to the app.
+
+A new email creates a new user. The same email always maps to the same user across restarts.
+
+### Safety
+
+- The API refuses to start if `DevAuth:Enabled=true` **and** `ASPNETCORE_ENVIRONMENT=Production`.
+- Dev JWTs are signed with a local HMAC key and are valid for 8 hours.
+- The `POST /v1/auth/dev-login` endpoint returns 404 when DevAuth is disabled.
+
+---
+
+## WorkOS auth mode
+
+To use real WorkOS auth instead, set `DevAuth:Enabled=false` in the API config and `VITE_DEV_AUTH=false` (or remove the line) in `.env.local`.
+
+Additional required values for WorkOS mode:
+
+**API** (`appsettings.Development.json`):
+- `WorkOS:ClientId` — from WorkOS dashboard → API Keys
+- `WorkOS:ApiKey` — from WorkOS dashboard → API Keys (required for user invitations and erasure)
+
+**Frontend** (`.env.local`):
+- `VITE_WORKOS_CLIENT_ID=<client_...>`
+- `VITE_WORKOS_REDIRECT_URI=http://localhost:5173/auth/callback`
 
 ---
 
@@ -208,7 +286,9 @@ Required frontend env values (copy `frontend/.env.example` to `frontend/.env.loc
 - `VITE_WORKOS_CLIENT_ID=<client_...>`
 - `VITE_WORKOS_REDIRECT_URI=http://localhost:5173/auth/callback`
 
-### WorkOS local AuthKit setup (required)
+### WorkOS local AuthKit setup (required in WorkOS mode only)
+
+Skip this section when using dev auth (`VITE_DEV_AUTH=true`).
 
 In the WorkOS dashboard, open the AuthKit application that matches your `VITE_WORKOS_CLIENT_ID` and configure:
 
@@ -366,7 +446,10 @@ Integration tests that need a database use the `ConnectionStrings__DefaultConnec
 ## Troubleshooting
 
 **`WorkOS:ClientId is required` at startup**  
-The API cannot start without a WorkOS Client ID. Ensure `appsettings.Development.json` has it set.
+Only happens in WorkOS mode (`DevAuth:Enabled=false`). Either set `WorkOS:ClientId` or set `DevAuth:Enabled=true` to use dev auth instead.
+
+**`DevAuth:SigningKey must be at least 32 characters` at startup**  
+The signing key in `DevAuth:SigningKey` is too short. Provide any 32+ character string.
 
 **`Connection string 'DefaultConnection' is missing`**  
 Either Docker is not running or the file is not configured. Run `docker compose ps` to check.
@@ -383,7 +466,7 @@ The emulator depends on SQL Edge which can take 30–60 seconds to start. Check 
 ---
 
 **Frontend build fails with missing `VITE_*` values**  
-Set `VITE_API_BASE_URL`, `VITE_WORKOS_CLIENT_ID`, and `VITE_WORKOS_REDIRECT_URI` before running `npm run build` or the containerized frontend deployment.
+In dev auth mode (`VITE_DEV_AUTH=true`), only `VITE_API_BASE_URL` is required. In WorkOS mode, also set `VITE_WORKOS_CLIENT_ID` and `VITE_WORKOS_REDIRECT_URI`.
 
 ---
 

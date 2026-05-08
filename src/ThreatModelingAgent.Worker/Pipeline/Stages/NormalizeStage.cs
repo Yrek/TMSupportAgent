@@ -82,7 +82,7 @@ public sealed class NormalizeStage(
             UserPrompt: userPrompt,
             Model: model,
             Temperature: 0.2f,
-            MaxTokens: stageTokenOpts.Value.Normalize);
+            MaxTokens: stageTokenOpts.Value.Normalize.ToMaxTokens());
 
         var (output, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<CanonicalModel>(
             llmClient, request, Validate, "NORMALIZE_FAILED", MaxAttempts, logger, ct);
@@ -125,7 +125,7 @@ public sealed class NormalizeStage(
             UserPrompt: userPrompt,
             Model: model,
             Temperature: 0.2f,
-            MaxTokens: stageTokenOpts.Value.NormalizeEnrich);
+            MaxTokens: stageTokenOpts.Value.NormalizeEnrich.ToMaxTokens());
 
         try
         {
@@ -139,15 +139,18 @@ public sealed class NormalizeStage(
 
             return skeletal with
             {
-                DeploymentContext       = enrichment.DeploymentContext ?? skeletal.DeploymentContext,
-                TrustBoundaries         = enrichment.TrustBoundaries.Length > 0 ? enrichment.TrustBoundaries : skeletal.TrustBoundaries,
-                Assumptions             = enrichment.Assumptions.Length > 0 ? enrichment.Assumptions : skeletal.Assumptions,
-                Gaps                    = enrichment.Gaps.Length > 0 ? enrichment.Gaps : skeletal.Gaps,
-                PrivilegedPaths         = enrichment.PrivilegedPaths.Length > 0 ? enrichment.PrivilegedPaths : skeletal.PrivilegedPaths,
-                ClarificationQuestions  = enrichment.ClarificationQuestions.Length > 0 ? enrichment.ClarificationQuestions : skeletal.ClarificationQuestions,
-                SensitiveDataTypes      = enrichment.SensitiveDataTypes.Length > 0 ? enrichment.SensitiveDataTypes : skeletal.SensitiveDataTypes,
-                SecretsUsage            = enrichment.SecretsUsage.Length > 0 ? enrichment.SecretsUsage : skeletal.SecretsUsage,
-                HasLoggingMonitoring    = enrichment.HasLoggingMonitoring,
+                DeploymentContext            = enrichment.DeploymentContext ?? skeletal.DeploymentContext,
+                TrustBoundaries              = enrichment.TrustBoundaries.Length > 0 ? enrichment.TrustBoundaries : skeletal.TrustBoundaries,
+                Assumptions                  = enrichment.Assumptions.Length > 0 ? enrichment.Assumptions : skeletal.Assumptions,
+                Gaps                         = enrichment.Gaps.Length > 0 ? enrichment.Gaps : skeletal.Gaps,
+                PrivilegedPaths              = enrichment.PrivilegedPaths.Length > 0 ? enrichment.PrivilegedPaths : skeletal.PrivilegedPaths,
+                ClarificationQuestions       = enrichment.ClarificationQuestions.Length > 0 ? enrichment.ClarificationQuestions : skeletal.ClarificationQuestions,
+                SensitiveDataTypes           = enrichment.SensitiveDataTypes.Length > 0 ? enrichment.SensitiveDataTypes : skeletal.SensitiveDataTypes,
+                SecretsUsage                 = enrichment.SecretsUsage.Length > 0 ? enrichment.SecretsUsage : skeletal.SecretsUsage,
+                HasLoggingMonitoring         = enrichment.HasLoggingMonitoring,
+                UntrustedContentProcessors   = enrichment.UntrustedContentProcessors.Length > 0 ? enrichment.UntrustedContentProcessors : (skeletal.UntrustedContentProcessors ?? []),
+                OutboundInternetComponents   = enrichment.OutboundInternetComponents.Length > 0 ? enrichment.OutboundInternetComponents : (skeletal.OutboundInternetComponents ?? []),
+                FederatedIdentityProviders   = enrichment.FederatedIdentityProviders.Length > 0 ? enrichment.FederatedIdentityProviders : (skeletal.FederatedIdentityProviders ?? []),
             };
         }
         catch (Exception ex)
@@ -166,17 +169,23 @@ public sealed class NormalizeStage(
         ClarificationQuestion[] ClarificationQuestions,
         string[] SensitiveDataTypes,
         SecretsUsage[] SecretsUsage,
-        bool HasLoggingMonitoring);
+        bool HasLoggingMonitoring,
+        string[] UntrustedContentProcessors,
+        string[] OutboundInternetComponents,
+        string[] FederatedIdentityProviders);
 
     private static string? ValidateEnrichment(EnrichmentOutput o)
     {
-        if (o.TrustBoundaries is null)        return "trustBoundaries is null";
-        if (o.Assumptions is null)            return "assumptions is null";
-        if (o.Gaps is null)                   return "gaps is null";
-        if (o.PrivilegedPaths is null)        return "privilegedPaths is null";
-        if (o.ClarificationQuestions is null) return "clarificationQuestions is null";
-        if (o.SensitiveDataTypes is null)     return "sensitiveDataTypes is null";
-        if (o.SecretsUsage is null)           return "secretsUsage is null";
+        if (o.TrustBoundaries is null)             return "trustBoundaries is null";
+        if (o.Assumptions is null)                 return "assumptions is null";
+        if (o.Gaps is null)                        return "gaps is null";
+        if (o.PrivilegedPaths is null)             return "privilegedPaths is null";
+        if (o.ClarificationQuestions is null)      return "clarificationQuestions is null";
+        if (o.SensitiveDataTypes is null)          return "sensitiveDataTypes is null";
+        if (o.SecretsUsage is null)                return "secretsUsage is null";
+        if (o.UntrustedContentProcessors is null)  return "untrustedContentProcessors is null";
+        if (o.OutboundInternetComponents is null)  return "outboundInternetComponents is null";
+        if (o.FederatedIdentityProviders is null)  return "federatedIdentityProviders is null";
         return null;
     }
 

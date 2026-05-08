@@ -82,7 +82,12 @@ public sealed record CanonicalModel(
     string? ArchitectureDescription = null,
     DeploymentContext? DeploymentContext = null,
     // Re-analysis only: human-readable summary of corrections applied since last run
-    string? CorrectionsContext = null);
+    string? CorrectionsContext = null,
+    // Security-enriched component categorisation — populated by NORMALIZE_ENRICH.
+    // Nullable to preserve backward compat when deserializing blobs produced before this field existed.
+    string[]? UntrustedContentProcessors = null,  // labels of components that process user-submitted files/messages
+    string[]? OutboundInternetComponents = null,   // labels of components with unrestricted outbound internet access
+    string[]? FederatedIdentityProviders = null);  // external IdPs / federated tenant patterns trusted by the system
 
 public sealed record CanonicalComponent(string Label, string Type, string? Description, string[] Tags);
 public sealed record CanonicalActor(string Label, string Type, bool IsExternal);

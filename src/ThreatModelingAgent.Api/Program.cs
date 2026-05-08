@@ -1,13 +1,16 @@
 using System.Security.Claims;
+using System.Text;
 using System.Threading.RateLimiting;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using Serilog.Events;
 using ThreatModelingAgent.Api.Errors;
 using ThreatModelingAgent.Api.Security;
+using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Infrastructure;
 using ThreatModelingAgent.Infrastructure.Persistence;
 
@@ -47,85 +50,141 @@ try
                 TelemetryConverter.Traces);
     });
 
+    // ── Dev auth guard — must not run in Production (CLAUDE.md §4.2) ────────
+    var devAuthEnabled = builder.Configuration.GetValue<bool>("DevAuth:Enabled");
+    if (devAuthEnabled && builder.Environment.IsProduction())
+        throw new InvalidOperationException("DevAuth:Enabled must not be true in Production.");
+
     // ── Validate required config at startup — fail closed (CLAUDE.md §4.3) ──
-    var workosClientId = builder.Configuration["WorkOS:ClientId"]
-        ?? throw new InvalidOperationException("WorkOS:ClientId is required.");
-    var workosIssuer = builder.Configuration["WorkOS:Issuer"]
-        ?? throw new InvalidOperationException("WorkOS:Issuer is required.");
-
     static string NormalizeNoTrailingSlash(string value) => value.Trim().TrimEnd('/');
-    var configuredIssuer = NormalizeNoTrailingSlash(workosIssuer);
-    var configuredClientIssuerPrefix = "/user_management/client_";
-
-    var clientIssuer = configuredIssuer.Contains(configuredClientIssuerPrefix, StringComparison.OrdinalIgnoreCase)
-        ? configuredIssuer
-        : $"{configuredIssuer}/user_management/{workosClientId}";
-
-    var platformIssuer = configuredIssuer.Contains(configuredClientIssuerPrefix, StringComparison.OrdinalIgnoreCase)
-        ? configuredIssuer[..configuredIssuer.IndexOf(configuredClientIssuerPrefix, StringComparison.OrdinalIgnoreCase)]
-        : configuredIssuer;
-
-    var validIssuers = new[] { platformIssuer, clientIssuer };
 
     // ── Infrastructure (DB, repos, audit logger) ────────────────────────────
     builder.Services.AddInfrastructure(builder.Configuration);
     builder.Services.AddHttpContextAccessor();
 
-    // ── WorkOS HTTP client — explicit timeout (CLAUDE.md §9.8) ─────────────
-    builder.Services.AddHttpClient("WorkOS", c =>
-    {
-        c.Timeout = TimeSpan.FromSeconds(15);
-    });
+    // In dev auth mode override WorkOsHttpClient (which requires WorkOS:ApiKey) with a no-op
+    // so controllers that inject IWorkOsClient start up without WorkOS credentials.
+    // Must come after AddInfrastructure — last registration wins in MS DI.
+    if (devAuthEnabled)
+        builder.Services.AddScoped<IWorkOsClient, NoOpWorkOsClient>();
 
     // ── Tenant context — scoped, populated from JWT by middleware ───────────
     builder.Services.AddScoped<TenantContext>();
     builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
 
-    // ── JWT authentication — WorkOS JWKS (CLAUDE.md §8.1) ──────────────────
-    builder.Services
-        .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddJwtBearer(options =>
-        {
-            options.Authority = clientIssuer;
-            options.Audience = workosClientId;
-            options.MetadataAddress = $"{clientIssuer}/.well-known/openid-configuration";
-            options.RequireHttpsMetadata = true; // MUST NOT disable (CLAUDE.md §11.4)
-            options.TokenValidationParameters = new()
-            {
-                ValidateIssuer = true,
-                ValidIssuers = validIssuers,
-                ValidateAudience = true,
-                ValidAudience = workosClientId,
-                // WorkOS tokens may carry client_id while aud can be omitted depending on flow.
-                AudienceValidator = (audiences, securityToken, _) =>
-                {
-                    if (audiences?.Any(a => string.Equals(a, workosClientId, StringComparison.Ordinal)) == true)
-                        return true;
+    if (devAuthEnabled)
+    {
+        // ── Dev auth: local HMAC JWT, no WorkOS required ─────────────────────
+        var devSigningKey = builder.Configuration["DevAuth:SigningKey"]
+            ?? throw new InvalidOperationException("DevAuth:SigningKey is required when DevAuth:Enabled is true.");
+        if (devSigningKey.Length < 32)
+            throw new InvalidOperationException("DevAuth:SigningKey must be at least 32 characters.");
 
-                    var clientIdClaim = securityToken switch
+        builder.Services
+            .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.RequireHttpsMetadata = false; // local dev only — HTTPS not required
+                options.TokenValidationParameters = new()
+                {
+                    ValidateIssuer = true,
+                    ValidIssuer = DevAuthConstants.Issuer,
+                    ValidateAudience = true,
+                    ValidAudience = DevAuthConstants.Audience,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(devSigningKey))
+                };
+                options.Events = new JwtBearerEvents
+                {
+                    OnAuthenticationFailed = ctx =>
                     {
-                        JsonWebToken jwt => jwt.Claims.FirstOrDefault(c => c.Type == "client_id")?.Value,
-                        _ => null
-                    };
+                        var correlationId = ctx.HttpContext.Items["CorrelationId"];
+                        Log.Warning(
+                            "Dev JWT authentication failed. CorrelationId={CorrelationId} ErrorType={ErrorType}",
+                            correlationId,
+                            ctx.Exception.GetType().Name);
+                        return Task.CompletedTask;
+                    }
+                };
+            });
 
-                    return string.Equals(clientIdClaim, workosClientId, StringComparison.Ordinal);
-                },
-                ValidateLifetime = true,
-                ValidateIssuerSigningKey = true
-            };
-            options.Events = new JwtBearerEvents
-            {
-                OnAuthenticationFailed = ctx =>
-                {
-                    var correlationId = ctx.HttpContext.Items["CorrelationId"];
-                    Log.Warning(
-                        "JWT authentication failed. CorrelationId={CorrelationId} ErrorType={ErrorType}",
-                        correlationId,
-                        ctx.Exception.GetType().Name); // type only — not message (may contain token)
-                    return Task.CompletedTask;
-                }
-            };
+        builder.Services.AddSingleton(new DevAuthSigningKeyHolder(devSigningKey));
+    }
+    else
+    {
+        // Registered with null so DI resolves; controller checks IsEnabled before use.
+        builder.Services.AddSingleton(new DevAuthSigningKeyHolder(null));
+        // ── WorkOS JWT authentication — JWKS (CLAUDE.md §8.1) ────────────────
+        var workosClientId = builder.Configuration["WorkOS:ClientId"]
+            ?? throw new InvalidOperationException("WorkOS:ClientId is required.");
+        var workosIssuer = builder.Configuration["WorkOS:Issuer"]
+            ?? throw new InvalidOperationException("WorkOS:Issuer is required.");
+
+        var configuredIssuer = NormalizeNoTrailingSlash(workosIssuer);
+        var configuredClientIssuerPrefix = "/user_management/client_";
+
+        var clientIssuer = configuredIssuer.Contains(configuredClientIssuerPrefix, StringComparison.OrdinalIgnoreCase)
+            ? configuredIssuer
+            : $"{configuredIssuer}/user_management/{workosClientId}";
+
+        var platformIssuer = configuredIssuer.Contains(configuredClientIssuerPrefix, StringComparison.OrdinalIgnoreCase)
+            ? configuredIssuer[..configuredIssuer.IndexOf(configuredClientIssuerPrefix, StringComparison.OrdinalIgnoreCase)]
+            : configuredIssuer;
+
+        var validIssuers = new[] { platformIssuer, clientIssuer };
+
+        // ── WorkOS HTTP client — explicit timeout (CLAUDE.md §9.8) ───────────
+        builder.Services.AddHttpClient("WorkOS", c =>
+        {
+            c.Timeout = TimeSpan.FromSeconds(15);
         });
+
+        builder.Services
+            .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.Authority = clientIssuer;
+                options.Audience = workosClientId;
+                options.MetadataAddress = $"{clientIssuer}/.well-known/openid-configuration";
+                options.RequireHttpsMetadata = true; // MUST NOT disable (CLAUDE.md §11.4)
+                options.TokenValidationParameters = new()
+                {
+                    ValidateIssuer = true,
+                    ValidIssuers = validIssuers,
+                    ValidateAudience = true,
+                    ValidAudience = workosClientId,
+                    // WorkOS tokens may carry client_id while aud can be omitted depending on flow.
+                    AudienceValidator = (audiences, securityToken, _) =>
+                    {
+                        if (audiences?.Any(a => string.Equals(a, workosClientId, StringComparison.Ordinal)) == true)
+                            return true;
+
+                        var clientIdClaim = securityToken switch
+                        {
+                            JsonWebToken jwt => jwt.Claims.FirstOrDefault(c => c.Type == "client_id")?.Value,
+                            _ => null
+                        };
+
+                        return string.Equals(clientIdClaim, workosClientId, StringComparison.Ordinal);
+                    },
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true
+                };
+                options.Events = new JwtBearerEvents
+                {
+                    OnAuthenticationFailed = ctx =>
+                    {
+                        var correlationId = ctx.HttpContext.Items["CorrelationId"];
+                        Log.Warning(
+                            "JWT authentication failed. CorrelationId={CorrelationId} ErrorType={ErrorType}",
+                            correlationId,
+                            ctx.Exception.GetType().Name); // type only — not message (may contain token)
+                        return Task.CompletedTask;
+                    }
+                };
+            });
+    }
 
     builder.Services.AddAuthorization(options =>
     {

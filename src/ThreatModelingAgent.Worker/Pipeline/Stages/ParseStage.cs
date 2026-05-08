@@ -102,7 +102,7 @@ public sealed class ParseStage(
             UserPrompt: userPrompt,
             Model: model,
             Temperature: 0f,
-            MaxTokens: stageTokenOpts.Value.Parse,
+            MaxTokens: stageTokenOpts.Value.Parse.ToMaxTokens(),
             ImageBase64: imageBase64,
             ImageMediaType: imageMediaType);
 

@@ -36,6 +36,11 @@ public sealed class SynthesizeStage(
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+    private static readonly JsonSerializerOptions DeserializeOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private static readonly HashSet<string> AllowedGroupKeys = new(StringComparer.OrdinalIgnoreCase)
     {
         "storage_shared_key",
@@ -52,7 +57,11 @@ public sealed class SynthesizeStage(
         "cross_tenant_isolation_flaw",
         "supply_chain_ci_cd",
         "storage_prefix_isolation",
-        "no_bulk_export_approval"
+        "no_bulk_export_approval",
+        "file_content_attack",
+        "ssrf_imds",
+        "xss_token_theft",
+        "federated_claim_manipulation"
     };
 
     public async Task<FinalOutput> ExecuteAsync(SynthesizeInput input, CancellationToken ct)
@@ -160,7 +169,7 @@ public sealed class SynthesizeStage(
             UserPrompt: userPrompt,
             Model: model,
             Temperature: 0.0f,
-            MaxTokens: opts.MaxOutputTokens);
+            MaxTokens: opts.MaxOutputTokens.ToMaxTokens());
 
         var (output, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<FinalOutput>(
             llmClient, request, Validate, "SYNTHESIZE_FAILED", MaxAttempts, logger, ct);
@@ -171,8 +180,18 @@ public sealed class SynthesizeStage(
         // Deterministically fix any findingType mismatches the LLM may have introduced.
         output = EnforceFindingTypeConsistency(output);
 
+        // Warn if any confirmed threat merged candidates from different group keys (should not happen).
+        WarnIfCrossGroupKeyMerge(input.AllCandidateSets, output);
+
+        // Warn if critical/high gaps have no matching threat.
+        CheckGapCoverage(input.CanonicalModel, output);
+
         // Soft check: warn if confirmed group keys outnumber confirmed threats (possible over-merge signal)
         WarnIfOverMerged(input.AllCandidateSets, output);
+
+        // Adversarial review sub-step: ask cheap model what was missed (runs before framework mapping
+        // so new conditional threats also receive framework references).
+        output = await RunAdversarialReviewSubStepAsync(output, input.CanonicalModel, ct);
 
         // Framework mapping sub-step: cheap model call after synthesis (spec §4 Stage 6, §7)
         output = await RunFrameworkMappingSubStepAsync(output, model, ct);
@@ -351,7 +370,7 @@ public sealed class SynthesizeStage(
             UserPrompt: userPrompt,
             Model: cheapModel,
             Temperature: 0f,
-            MaxTokens: synthesisOptions.Value.FrameworkMappingMaxOutputTokens);
+            MaxTokens: synthesisOptions.Value.FrameworkMappingMaxOutputTokens.ToMaxTokens());
 
         List<FrameworkMappingItem>? mappings = null;
         try
@@ -362,10 +381,16 @@ public sealed class SynthesizeStage(
             else if (cleaned.StartsWith("```")) cleaned = cleaned[3..];
             if (cleaned.EndsWith("```")) cleaned = cleaned[..^3];
 
-            mappings = JsonSerializer.Deserialize<List<FrameworkMappingItem>>(cleaned.Trim(), new JsonSerializerOptions
+            var trimmed = cleaned.Trim();
+            if (string.IsNullOrEmpty(trimmed))
             {
-                PropertyNameCaseInsensitive = true
-            });
+                logger.LogInformation(
+                    "Framework mapping returned empty content (possible MaxTokens hit at {OutputTokens}). Mappings skipped.",
+                    response.OutputTokens);
+                return output;
+            }
+
+            mappings = JsonSerializer.Deserialize<List<FrameworkMappingItem>>(trimmed, DeserializeOptions);
 
             logger.LogInformation(
                 "Framework mapping sub-step complete. Model={Model} Mappings={Count} " +
@@ -487,6 +512,250 @@ public sealed class SynthesizeStage(
                 confirmedGroupKeyCount, output.ConfirmedThreats.Length);
     }
 
+    // Warns when a confirmed threat traces back to candidates with 2–5 distinct group keys
+    // whose elements are fully contained in the threat's element set — a signal that MERGE_GROUPS
+    // was violated for a specific pair of attack vectors. Threats with > 5 distinct keys indicate
+    // massive over-merging already captured by WarnIfOverMerged; those are suppressed here to
+    // keep this signal actionable rather than noisy. Emits a single summary log line.
+    private void WarnIfCrossGroupKeyMerge(ThreatCandidateSet[] sets, FinalOutput output)
+    {
+        var candidatesByMethod = sets.ToDictionary(
+            s => s.Method,
+            s => s.Candidates,
+            StringComparer.OrdinalIgnoreCase);
+
+        var violations = new List<string>();
+
+        foreach (var threat in output.ConfirmedThreats)
+        {
+            if (threat.SourceMethods is null or []) continue;
+
+            var affectedSet = threat.AffectedElementLabels.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var groupKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var method in threat.SourceMethods)
+            {
+                if (!candidatesByMethod.TryGetValue(method, out var candidates)) continue;
+                foreach (var c in candidates)
+                {
+                    if (c.GroupKey is null || !AllowedGroupKeys.Contains(c.GroupKey)) continue;
+                    // Require ALL candidate elements to sit within the threat's element set.
+                    // Using All (not Any) avoids false positives from incidental one-element overlaps.
+                    if (c.AffectedElementLabels.Length > 0 &&
+                        c.AffectedElementLabels.All(l => affectedSet.Contains(l)))
+                        groupKeys.Add(c.GroupKey);
+                }
+            }
+
+            // 1 key  → fine (no merge).
+            // 2–5    → specific accidental merge; worth flagging.
+            // > 5    → massive over-merge; already surfaced by WarnIfOverMerged.
+            if (groupKeys.Count is >= 2 and <= 5)
+            {
+                var label = threat.Title.Length > 50 ? threat.Title[..50] + "…" : threat.Title;
+                violations.Add($"{threat.Identifier} ({label}): [{string.Join(", ", groupKeys.OrderBy(k => k))}]");
+            }
+        }
+
+        if (violations.Count > 0 && logger.IsEnabled(LogLevel.Warning))
+            logger.LogWarning(
+                "SYNTHESIZE: {Count} confirmed threat(s) show possible cross-group-key merge (2–5 distinct keys). {Threats}",
+                violations.Count, string.Join(" | ", violations));
+    }
+
+    // Checks whether each critical/high canonical gap is referenced by at least one
+    // confirmed or conditional threat using keyword matching on the gap area.
+    private void CheckGapCoverage(CanonicalModel model, FinalOutput output)
+    {
+        var gaps = model.Gaps
+            .Where(g => string.Equals(g.SecurityRelevance, "critical", StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(g.SecurityRelevance, "high", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (gaps.Length == 0) return;
+
+        var allThreats = output.ConfirmedThreats.Concat(output.ConditionalThreats).ToArray();
+
+        foreach (var gap in gaps)
+        {
+            var gapWords = gap.Area
+                .Split([' ', '_', '-', '.'], StringSplitOptions.RemoveEmptyEntries)
+                .Where(w => w.Length > 3)
+                .ToArray();
+
+            var covered = gapWords.Length > 0 && allThreats.Any(t =>
+            {
+                var threatText = $"{t.Title} {t.Description} {t.ControlGaps}";
+                return gapWords.Any(w => threatText.Contains(w, StringComparison.OrdinalIgnoreCase));
+            });
+
+            if (!covered)
+                logger.LogWarning(
+                    "SYNTHESIZE: {Relevance} gap [{Area}] has no matching confirmed or conditional threat. Gap: {Description}",
+                    gap.SecurityRelevance, gap.Area, gap.Description);
+        }
+    }
+
+    // ── Adversarial review sub-step ───────────────────────────────────────────
+
+    private sealed record ReviewMissedThreat(
+        string Title,
+        string[] AffectedElementLabels,
+        string Description,
+        string AttackScenario);
+
+    /// <summary>
+    /// Asks the cheap model what attack paths the primary analysis may have missed.
+    /// Appends findings as low-confidence conditional threats (T-NNN, continuing the sequence).
+    /// Runs before framework mapping so adversarial threats also receive references.
+    /// Non-fatal: if the call fails or produces nothing valid, the output is unchanged.
+    /// </summary>
+    private async Task<FinalOutput> RunAdversarialReviewSubStepAsync(
+        FinalOutput output, CanonicalModel canonicalModel, CancellationToken ct)
+    {
+        var allThreats = output.ConfirmedThreats.Concat(output.ConditionalThreats).ToArray();
+
+        var threatSummaries = allThreats.Select(t => new
+        {
+            identifier = t.Identifier,
+            title = t.Title,
+            description = t.Description,
+            affectedElementLabels = t.AffectedElementLabels
+        });
+        var threatsJson = JsonSerializer.Serialize(threatSummaries, SerializeOptions);
+
+        // Send a stripped canonical model — structure and gaps only, no large text blobs.
+        var canonicalSummary = new
+        {
+            systemPurpose = canonicalModel.SystemPurpose,
+            components = canonicalModel.Components.Select(c => new { c.Label, c.Type }),
+            actors = canonicalModel.Actors.Select(a => new { a.Label, a.Type }),
+            externalSystems = canonicalModel.ExternalSystems.Select(e => new { e.Label }),
+            dataStores = canonicalModel.DataStores.Select(d => new { d.Label, d.StoreType }),
+            trustBoundaries = canonicalModel.TrustBoundaries.Select(b => new { b.Label, b.ContainedComponentLabels }),
+            gaps = canonicalModel.Gaps.Select(g => new { g.Area, g.SecurityRelevance }),
+            untrustedContentProcessors = canonicalModel.UntrustedContentProcessors,
+            outboundInternetComponents = canonicalModel.OutboundInternetComponents,
+            federatedIdentityProviders = canonicalModel.FederatedIdentityProviders
+        };
+        var canonicalJson = JsonSerializer.Serialize(canonicalSummary, SerializeOptions);
+
+        var cheapModel = llmFactory.GetLowCostModel();
+        var llmClient = llmFactory.GetForModel(cheapModel);
+        var userPrompt = PromptTemplates.BuildReviewUser(canonicalJson, threatsJson);
+
+        var opts = synthesisOptions.Value;
+        var estimated = TokenEstimator.EstimatePrompt(PromptTemplates.ReviewSystem, userPrompt);
+        if (estimated > (int)(opts.ReviewInputBudget * 0.9))
+        {
+            logger.LogWarning(
+                "Adversarial review sub-step skipped — estimated tokens ({Estimated}) exceed budget ({Budget}).",
+                estimated, opts.ReviewInputBudget);
+            return output;
+        }
+
+        var request = new LlmRequest(
+            SystemPrompt: PromptTemplates.ReviewSystem,
+            UserPrompt: userPrompt,
+            Model: cheapModel,
+            Temperature: 0f,
+            MaxTokens: opts.ReviewMaxOutputTokens.ToMaxTokens());
+
+        List<ReviewMissedThreat>? missed = null;
+        try
+        {
+            var response = await llmClient.CompleteAsync(request, ct);
+            var cleaned = response.Content.Trim();
+            if (cleaned.StartsWith("```json", StringComparison.OrdinalIgnoreCase)) cleaned = cleaned[7..];
+            else if (cleaned.StartsWith("```")) cleaned = cleaned[3..];
+            if (cleaned.EndsWith("```")) cleaned = cleaned[..^3];
+
+            var trimmed = cleaned.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                logger.LogInformation(
+                    "Adversarial review returned empty content (possible MaxTokens hit at {OutputTokens}). No missed threats added.",
+                    response.OutputTokens);
+                return output;
+            }
+
+            missed = JsonSerializer.Deserialize<List<ReviewMissedThreat>>(trimmed, DeserializeOptions);
+
+            logger.LogInformation(
+                "Adversarial review sub-step complete. Model={Model} MissedThreats={Count} " +
+                "InputTokens={InputTokens} OutputTokens={OutputTokens}",
+                cheapModel, missed?.Count ?? 0, response.InputTokens, response.OutputTokens);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Adversarial review sub-step failed; synthesis output is unaffected.");
+            return output;
+        }
+
+        if (missed is null or []) return output;
+
+        // Only accept threats with labels that exist in the canonical model.
+        var knownLabels = canonicalModel.Components.Select(c => c.Label)
+            .Concat(canonicalModel.Actors.Select(a => a.Label))
+            .Concat(canonicalModel.ExternalSystems.Select(e => e.Label))
+            .Concat(canonicalModel.DataStores.Select(d => d.Label))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Continue the T-NNN sequence from the highest existing identifier so adversarial
+        // threats use the same format as synthesis threats and pass Threat.ValidateIdentifier.
+        var existingMax = output.ConfirmedThreats.Concat(output.ConditionalThreats)
+            .Select(t => System.Text.RegularExpressions.Regex.Match(t.Identifier, @"^T-(\d+)$"))
+            .Where(m => m.Success)
+            .Select(m => int.Parse(m.Groups[1].Value))
+            .DefaultIfEmpty(0)
+            .Max();
+
+        var newConditional = new List<FinalThreat>();
+        var idx = existingMax + 1;
+        foreach (var m in missed.Take(5))
+        {
+            if (string.IsNullOrWhiteSpace(m.Title) || string.IsNullOrWhiteSpace(m.Description)) continue;
+
+            var validLabels = (m.AffectedElementLabels ?? [])
+                .Where(l => knownLabels.Contains(l))
+                .ToArray();
+
+            // Skip if labels were provided but none are recognized (prevents hallucinated elements).
+            if ((m.AffectedElementLabels?.Length ?? 0) > 0 && validLabels.Length == 0) continue;
+
+            newConditional.Add(new FinalThreat(
+                Identifier: $"T-{idx:D3}",
+                Title: m.Title.Trim(),
+                MethodCategory: "AdversarialReview",
+                AffectedElementLabels: validLabels,
+                Description: m.Description.Trim(),
+                AttackScenario: (m.AttackScenario ?? string.Empty).Trim(),
+                Preconditions: null,
+                ImpactedAssets: [],
+                SecurityImpact: null,
+                PrivacyImpact: null,
+                ExistingControls: null,
+                ControlGaps: null,
+                Confidence: "low",
+                EvidenceStrength: "inferred",
+                FindingType: "conditional",
+                Mitigations: [],
+                FrameworkMappings: [],
+                SourceMethods: ["adversarial_review"],
+                RiskRating: null));
+            idx++;
+        }
+
+        if (newConditional.Count == 0) return output;
+
+        logger.LogInformation("SYNTHESIZE: adversarial review added {Count} conditional threat(s).", newConditional.Count);
+
+        return output with
+        {
+            ConditionalThreats = output.ConditionalThreats.Concat(newConditional).ToArray()
+        };
+    }
+
     // Computes severity-weighted hotspots: elements flagged by ≥2 methods, ordered by weighted score.
     // Weight: critical=3, high=2, medium=1, low/unknown=0. Score reflects true risk concentration,
     // not just method count, so synthesis prioritizes genuinely dangerous elements.
@@ -538,19 +807,31 @@ public sealed class SynthesizeStage(
             : model;
     }
 
-    private static FinalOutput EnforcePartialStatus(FinalOutput output, CanonicalModel model)
+    private FinalOutput EnforcePartialStatus(FinalOutput output, CanonicalModel model)
     {
-        var hasCriticalGap = model.Gaps.Any(g =>
-            string.Equals(g.SecurityRelevance, "critical", StringComparison.OrdinalIgnoreCase));
+        var criticalGaps = model.Gaps
+            .Where(g => string.Equals(g.SecurityRelevance, "critical", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
 
-        if (hasCriticalGap && output.AnalysisStatus != "partial")
+        if (criticalGaps.Length > 0)
         {
-            return output with
+            var areas = string.Join(", ", criticalGaps.Select(g => g.Area));
+            if (output.AnalysisStatus != "partial")
             {
-                AnalysisStatus = "partial",
-                PartialReason = output.PartialReason
-                    ?? "One or more critical architectural gaps were unresolved before analysis."
-            };
+                logger.LogInformation(
+                    "SYNTHESIZE: forcing partial status due to {Count} unresolved critical gap(s): {Areas}",
+                    criticalGaps.Length, areas);
+
+                return output with
+                {
+                    AnalysisStatus = "partial",
+                    PartialReason = output.PartialReason
+                        ?? "One or more critical architectural gaps were unresolved before analysis."
+                };
+            }
+
+            logger.LogInformation(
+                "SYNTHESIZE: status already partial (LLM-declared). Critical gap(s) also present: {Areas}", areas);
         }
 
         return output;
@@ -617,6 +898,7 @@ public sealed class SynthesisOptions
     /// Maximum tokens reserved for synthesis output (max_tokens on the LLM request).
     /// Default: 12,000 — sufficient for 15–20 threats with full mitigations.
     /// With a large-context model, 24,000–30,000 produces more detailed output.
+    /// Set to 0 to omit the ceiling and let the model use its own default.
     /// </summary>
     public int MaxOutputTokens { get; init; } = 12_000;
 
@@ -631,6 +913,19 @@ public sealed class SynthesisOptions
     /// max_completion_tokens for the framework-mapping sub-step.
     /// Reasoning models consume tokens internally before output; set higher than the
     /// expected output size to leave headroom for the reasoning phase.
+    /// Set to 0 to omit the ceiling and let the model use its own default.
     /// </summary>
     public int FrameworkMappingMaxOutputTokens { get; init; } = 8_192;
+
+    /// <summary>
+    /// Maximum estimated input tokens for the adversarial review sub-step.
+    /// Sub-step is skipped (non-fatal) when the prompt exceeds this.
+    /// </summary>
+    public int ReviewInputBudget { get; init; } = 20_000;
+
+    /// <summary>
+    /// max_completion_tokens for the adversarial review sub-step.
+    /// Set to 0 to omit the ceiling and let the model use its own default.
+    /// </summary>
+    public int ReviewMaxOutputTokens { get; init; } = 16_000;
 }

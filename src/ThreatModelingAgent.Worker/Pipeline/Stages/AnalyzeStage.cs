@@ -97,7 +97,7 @@ public sealed class AnalyzeStage(
             UserPrompt: userPrompt,
             Model: model,
             Temperature: 0.3f,
-            MaxTokens: _opts.MaxOutputTokens);
+            MaxTokens: _opts.MaxOutputTokens.ToMaxTokens());
 
         var (output, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<ThreatCandidateSet>(
             llmClient, request, Validate, "ANALYZE_FAILED", MaxAttempts, logger, ct);
@@ -343,6 +343,7 @@ public sealed class AnalyzeThrottlingOptions
     /// max_completion_tokens per analyze method call. Reasoning models consume tokens
     /// internally before output; set higher than expected output to leave headroom.
     /// Default: 8,192. Raise to 16,000+ for GPT-5/o-series models.
+    /// Set to 0 to omit the ceiling and let the model use its own default.
     /// </summary>
     public int MaxOutputTokens { get; init; } = 8_192;
 }

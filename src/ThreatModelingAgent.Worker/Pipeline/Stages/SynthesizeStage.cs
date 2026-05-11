@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 using ThreatModelingAgent.Domain.Interfaces;
 using ThreatModelingAgent.Worker.Llm;
@@ -41,28 +42,8 @@ public sealed class SynthesizeStage(
         PropertyNameCaseInsensitive = true
     };
 
-    private static readonly HashSet<string> AllowedGroupKeys = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "storage_shared_key",
-        "sas_token_access",
-        "cicd_platform_permissions",
-        "cicd_external_api_token",
-        "bola_request_parameter",
-        "no_database_rls",
-        "break_glass_no_ca",
-        "standing_operational_access",
-        "managed_identity_overpriv",
-        "api_bypass_edge",
-        "sensitive_data_in_logs",
-        "cross_tenant_isolation_flaw",
-        "supply_chain_ci_cd",
-        "storage_prefix_isolation",
-        "no_bulk_export_approval",
-        "file_content_attack",
-        "ssrf_imds",
-        "xss_token_theft",
-        "federated_claim_manipulation"
-    };
+    // Group keys are defined in GroupKeyRegistry — single source of truth.
+    private static readonly HashSet<string> AllowedGroupKeys = GroupKeyRegistry.AllowedKeys;
 
     public async Task<FinalOutput> ExecuteAsync(SynthesizeInput input, CancellationToken ct)
     {
@@ -101,12 +82,17 @@ public sealed class SynthesizeStage(
             BackgroundJobs            = [],
         };
 
+        // Drop confirmed+direct candidates that carry no evidenceBasis — they violate Rule 18 and
+        // would reach synthesis as evidence-free "confirmed" claims, corrupting risk ratings and
+        // group key coverage accounting. Filtering here avoids spurious GROUP_KEY_COVERAGE failures.
+        var filteredSets = FilterEmptyEvidenceCandidates(input.AllCandidateSets);
+
         // Flatten all candidates, sort by importance, serialize for synthesis.
         // statedFact (explicit_user_provided_fact) candidates are always prioritized.
         // RiskRating justification text is dropped — synthesis only needs severity/likelihood/impact
         // for prioritization decisions; justifications are regenerated in the final output.
         // All other fields are sent in full so synthesis can produce high-fidelity output.
-        var allCandidates = input.AllCandidateSets
+        var allCandidates = filteredSets
             .SelectMany(set => set.Candidates.Select(c => new
             {
                 sourceMethod = set.Method,
@@ -127,11 +113,13 @@ public sealed class SynthesizeStage(
                     c.RiskRating.Likelihood,
                     c.RiskRating.Impact
                 },
+                c.EvidenceBasis,
                 c.Confidence,
                 c.EvidenceStrength,
                 c.FindingType,
-                statedFact = c.EvidenceBasis.Any(e =>
-                    string.Equals(e, "explicit_user_provided_fact", StringComparison.OrdinalIgnoreCase))
+                c.CoversGapArea,
+                statedFact = string.Equals(c.FindingType, "confirmed", StringComparison.OrdinalIgnoreCase)
+                          && string.Equals(c.EvidenceStrength, "direct", StringComparison.OrdinalIgnoreCase)
             }))
             .OrderByDescending(c => c.statedFact)
             .ThenByDescending(c => SeverityOrder(c.riskRating?.Severity))
@@ -141,8 +129,8 @@ public sealed class SynthesizeStage(
         var allCandidatesJson = JsonSerializer.Serialize(allCandidates, SerializeOptions);
         var canonicalJson = JsonSerializer.Serialize(modelForJson, SerializeOptions);
         var classificationJson = JsonSerializer.Serialize(input.ClassificationResult, SerializeOptions);
-        var hotspotSummary = ComputeHotspots(input.AllCandidateSets);
-        var mergeGroupsSummary = ComputeMergeGroups(input.AllCandidateSets);
+        var hotspotSummary = ComputeHotspots(filteredSets);
+        var mergeGroupsSummary = ComputeMergeGroups(filteredSets);
 
         logger.LogInformation(
             "SYNTHESIZE payload. TotalCandidates={TotalCandidates} CandidateChars={CandidateChars} CanonicalChars={CanonicalChars}",
@@ -171,8 +159,37 @@ public sealed class SynthesizeStage(
             Temperature: 0.0f,
             MaxTokens: opts.MaxOutputTokens.ToMaxTokens());
 
+        // Group key coverage is a hard synthesis constraint: every confirmed+direct-evidence group key
+        // in the candidate pool must appear on at least one confirmed threat in the output.
+        // Embedding this in the validator means a coverage failure triggers an automatic retry
+        // (up to MaxAttempts) rather than silently passing through to post-hoc patching.
+        // coverageGaps is updated on every attempt; its final value (empty on success) is passed to
+        // the adversarial review so it can focus on any remaining blind spots.
+        var coverageGaps = new List<string>();
+        string? ValidateOutput(FinalOutput o)
+        {
+            var baseError = Validate(o);
+            if (baseError is not null) return baseError;
+
+            var uncovered = ComputeUncoveredGroupKeys(filteredSets, o);
+            coverageGaps = uncovered;
+
+            if (uncovered.Count == 0)
+            {
+                logger.LogInformation("SYNTHESIZE: group key coverage check passed.");
+                return null;
+            }
+
+            logger.LogWarning(
+                "SYNTHESIZE: GROUP_KEY_COVERAGE failure — {Count} direct-evidence group key(s) have no confirmed threat. " +
+                "Keys: [{Keys}]. Retrying synthesis.",
+                uncovered.Count, string.Join(", ", uncovered));
+            return $"GROUP_KEY_COVERAGE: {uncovered.Count} direct-evidence group key(s) produced no confirmed threat — " +
+                   $"[{string.Join(", ", uncovered)}]. Each must appear as a standalone confirmed threat with that groupKey.";
+        }
+
         var (output, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<FinalOutput>(
-            llmClient, request, Validate, "SYNTHESIZE_FAILED", MaxAttempts, logger, ct);
+            llmClient, request, ValidateOutput, "SYNTHESIZE_FAILED", MaxAttempts, logger, ct);
 
         // Enforce: analysisStatus=partial if any critical gap was unresolved (spec §6 Stage 6 Rule 5)
         output = EnforcePartialStatus(output, input.CanonicalModel);
@@ -181,17 +198,22 @@ public sealed class SynthesizeStage(
         output = EnforceFindingTypeConsistency(output);
 
         // Warn if any confirmed threat merged candidates from different group keys (should not happen).
-        WarnIfCrossGroupKeyMerge(input.AllCandidateSets, output);
+        WarnIfCrossGroupKeyMerge(filteredSets, output);
 
         // Warn if critical/high gaps have no matching threat.
         CheckGapCoverage(input.CanonicalModel, output);
 
         // Soft check: warn if confirmed group keys outnumber confirmed threats (possible over-merge signal)
-        WarnIfOverMerged(input.AllCandidateSets, output);
+        WarnIfOverMerged(filteredSets, output);
 
-        // Adversarial review sub-step: ask cheap model what was missed (runs before framework mapping
-        // so new conditional threats also receive framework references).
-        output = await RunAdversarialReviewSubStepAsync(output, input.CanonicalModel, ct);
+        // Soft check: warn if severity distribution is heavily skewed toward Critical.
+        WarnSeverityDistribution(output);
+
+        // Adversarial review sub-step: ask model what was missed — guided by coverage gaps so it
+        // focuses on attack vectors that had direct evidence but produced no confirmed threat.
+        // coverageGaps is set by ValidateOutput during the retry loop — empty if synthesis passed cleanly.
+        // Runs before framework mapping so new conditional threats also receive framework references.
+        output = await RunAdversarialReviewSubStepAsync(output, input.CanonicalModel, coverageGaps, ct);
 
         // Framework mapping sub-step: cheap model call after synthesis (spec §4 Stage 6, §7)
         output = await RunFrameworkMappingSubStepAsync(output, model, ct);
@@ -205,7 +227,11 @@ public sealed class SynthesizeStage(
         // Ensure UserAddedThreats is always an empty array at synthesis time (spec §4 Stage 6)
         // Populated later via POST /threats API — never by the LLM.
         // Clear any LLM-produced value, whether null or non-empty.
-        output = output with { UserAddedThreats = [] };
+        output = output with
+        {
+            UserAddedThreats = [],
+            PromptVersions = ExtractPromptVersions()
+        };
 
         logger.LogInformation(
             "SYNTHESIZE complete. Confirmed={Confirmed} Conditional={Conditional} Status={Status} " +
@@ -426,7 +452,7 @@ public sealed class SynthesizeStage(
         {
             if (!mappingsByIdentifier.TryGetValue(threat.Identifier, out var newMappings)) return threat;
             // Combine with any mappings the synthesis model already produced, deduplicated by framework+reference
-            var combined = threat.FrameworkMappings
+            var combined = (threat.FrameworkMappings ?? [])
                 .Concat(newMappings)
                 .GroupBy(fm => $"{fm.Framework}:{fm.Reference}", StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.First())
@@ -564,7 +590,8 @@ public sealed class SynthesizeStage(
     }
 
     // Checks whether each critical/high canonical gap is referenced by at least one
-    // confirmed or conditional threat using keyword matching on the gap area.
+    // confirmed or conditional threat. Uses AffectedElementLabels linkage when available;
+    // falls back to keyword matching on gap.Area for legacy gaps without element linkage.
     private void CheckGapCoverage(CanonicalModel model, FinalOutput output)
     {
         var gaps = model.Gaps
@@ -578,16 +605,29 @@ public sealed class SynthesizeStage(
 
         foreach (var gap in gaps)
         {
-            var gapWords = gap.Area
-                .Split([' ', '_', '-', '.'], StringSplitOptions.RemoveEmptyEntries)
-                .Where(w => w.Length > 3)
-                .ToArray();
+            bool covered;
 
-            var covered = gapWords.Length > 0 && allThreats.Any(t =>
+            // Prefer deterministic element-label matching when the gap carries element refs.
+            if (gap.AffectedElementLabels is { Length: > 0 })
             {
-                var threatText = $"{t.Title} {t.Description} {t.ControlGaps}";
-                return gapWords.Any(w => threatText.Contains(w, StringComparison.OrdinalIgnoreCase));
-            });
+                var gapLabels = gap.AffectedElementLabels.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                covered = allThreats.Any(t =>
+                    t.AffectedElementLabels.Any(l => gapLabels.Contains(l)));
+            }
+            else
+            {
+                // Fallback: keyword matching on gap area string.
+                var gapWords = gap.Area
+                    .Split([' ', '_', '-', '.'], StringSplitOptions.RemoveEmptyEntries)
+                    .Where(w => w.Length > 3)
+                    .ToArray();
+
+                covered = gapWords.Length > 0 && allThreats.Any(t =>
+                {
+                    var threatText = $"{t.Title} {t.Description} {t.ControlGaps}";
+                    return gapWords.Any(w => threatText.Contains(w, StringComparison.OrdinalIgnoreCase));
+                });
+            }
 
             if (!covered)
                 logger.LogWarning(
@@ -596,22 +636,110 @@ public sealed class SynthesizeStage(
         }
     }
 
+    // ── Group key coverage enforcement ───────────────────────────────────────
+
+    /// <summary>
+    /// Pure computation: returns every confirmed+direct-evidence group key in the candidate pool
+    /// that has no matching confirmed threat in the output.  No side effects — callers log as needed.
+    /// Used by the ValidateOutput closure (retry path) and can be called post-retry for diagnostics.
+    /// </summary>
+    private static List<string> ComputeUncoveredGroupKeys(ThreatCandidateSet[] sets, FinalOutput output)
+    {
+        var directGroupKeys = sets
+            .SelectMany(s => s.Candidates)
+            .Where(c => c.GroupKey is not null
+                     && AllowedGroupKeys.Contains(c.GroupKey!)
+                     && string.Equals(c.FindingType, "confirmed", StringComparison.OrdinalIgnoreCase)
+                     && string.Equals(c.EvidenceStrength, "direct", StringComparison.OrdinalIgnoreCase))
+            .Select(c => c.GroupKey!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var coveredGroupKeys = output.ConfirmedThreats
+            .Where(t => t.GroupKey is not null)
+            .Select(t => t.GroupKey!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return directGroupKeys
+            .Where(k => !coveredGroupKeys.Contains(k))
+            .OrderBy(k => k)
+            .ToList();
+    }
+
+    // ── Evidence basis pre-filter ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Removes confirmed+direct candidates whose evidenceBasis is null or empty.
+    /// These violate analyze Rule 18 ("evidenceBasis MUST be populated for every candidate").
+    /// Filtering before synthesis prevents evidence-free claims from entering the confirmed pool,
+    /// corrupting risk ratings, and causing spurious GROUP_KEY_COVERAGE failures.
+    /// </summary>
+    private ThreatCandidateSet[] FilterEmptyEvidenceCandidates(ThreatCandidateSet[] sets)
+    {
+        return sets.Select(set =>
+        {
+            var valid   = new List<ThreatCandidate>();
+            var dropped = new List<ThreatCandidate>();
+
+            foreach (var c in set.Candidates)
+            {
+                if (string.Equals(c.FindingType, "confirmed", StringComparison.OrdinalIgnoreCase)
+                 && string.Equals(c.EvidenceStrength, "direct", StringComparison.OrdinalIgnoreCase)
+                 && (c.EvidenceBasis is null or { Length: 0 }))
+                    dropped.Add(c);
+                else
+                    valid.Add(c);
+            }
+
+            if (dropped.Count == 0) return set;
+
+            foreach (var d in dropped)
+                logger.LogWarning(
+                    "SYNTHESIZE: dropping confirmed/direct candidate '{Title}' [{Method}] — empty evidenceBasis (Rule 18 violation). GroupKey={GroupKey}",
+                    d.Title, set.Method, d.GroupKey ?? "null");
+
+            return set with { Candidates = [.. valid] };
+        }).ToArray();
+    }
+
+    // Soft check: warns when the confirmed threat distribution is heavily skewed toward Critical.
+    private void WarnSeverityDistribution(FinalOutput output)
+    {
+        var total = output.ConfirmedThreats.Length;
+        if (total < 5) return;
+
+        var criticalCount = output.ConfirmedThreats
+            .Count(t => string.Equals(t.RiskRating?.Severity, "critical", StringComparison.OrdinalIgnoreCase));
+
+        if (criticalCount * 100 / total > 60)
+            logger.LogWarning(
+                "SYNTHESIZE: severity distribution skewed — {Critical}/{Total} confirmed threats are Critical. " +
+                "Possible likelihood inflation. Review OWASP Risk Rating justifications.",
+                criticalCount, total);
+    }
+
     // ── Adversarial review sub-step ───────────────────────────────────────────
 
     private sealed record ReviewMissedThreat(
         string Title,
         string[] AffectedElementLabels,
         string Description,
-        string AttackScenario);
+        string AttackScenario,
+        string? Likelihood,          // high | medium | low
+        string? Impact,              // high | medium | low
+        string[]? EvidenceBasis,
+        string[]? MitigationHints);  // 1-2 short mitigation titles
 
     /// <summary>
-    /// Asks the cheap model what attack paths the primary analysis may have missed.
+    /// Asks the strong (or cheap, if configured) model what attack paths the primary
+    /// analysis may have missed.  Guided by coverage gaps — group keys with direct evidence
+    /// but no confirmed threat — so the review focuses on the most important blind spots.
     /// Appends findings as low-confidence conditional threats (T-NNN, continuing the sequence).
     /// Runs before framework mapping so adversarial threats also receive references.
     /// Non-fatal: if the call fails or produces nothing valid, the output is unchanged.
     /// </summary>
     private async Task<FinalOutput> RunAdversarialReviewSubStepAsync(
-        FinalOutput output, CanonicalModel canonicalModel, CancellationToken ct)
+        FinalOutput output, CanonicalModel canonicalModel, List<string> coverageGaps, CancellationToken ct)
     {
         var allThreats = output.ConfirmedThreats.Concat(output.ConditionalThreats).ToArray();
 
@@ -640,11 +768,16 @@ public sealed class SynthesizeStage(
         };
         var canonicalJson = JsonSerializer.Serialize(canonicalSummary, SerializeOptions);
 
-        var cheapModel = llmFactory.GetLowCostModel();
-        var llmClient = llmFactory.GetForModel(cheapModel);
-        var userPrompt = PromptTemplates.BuildReviewUser(canonicalJson, threatsJson);
+        // Build coverage gap summary to guide the reviewer toward known blind spots.
+        string? coverageGapsSummary = coverageGaps.Count == 0 ? null : BuildCoverageGapSummary(coverageGaps);
 
         var opts = synthesisOptions.Value;
+        var reviewModel = opts.UseStrongModelForAdversarialReview
+            ? llmFactory.GetStrongModel()
+            : llmFactory.GetLowCostModel();
+        var llmClient = llmFactory.GetForModel(reviewModel);
+        var userPrompt = PromptTemplates.BuildReviewUser(canonicalJson, threatsJson, coverageGapsSummary);
+
         var estimated = TokenEstimator.EstimatePrompt(PromptTemplates.ReviewSystem, userPrompt);
         if (estimated > (int)(opts.ReviewInputBudget * 0.9))
         {
@@ -657,7 +790,7 @@ public sealed class SynthesizeStage(
         var request = new LlmRequest(
             SystemPrompt: PromptTemplates.ReviewSystem,
             UserPrompt: userPrompt,
-            Model: cheapModel,
+            Model: reviewModel,
             Temperature: 0f,
             MaxTokens: opts.ReviewMaxOutputTokens.ToMaxTokens());
 
@@ -682,9 +815,9 @@ public sealed class SynthesizeStage(
             missed = JsonSerializer.Deserialize<List<ReviewMissedThreat>>(trimmed, DeserializeOptions);
 
             logger.LogInformation(
-                "Adversarial review sub-step complete. Model={Model} MissedThreats={Count} " +
+                "Adversarial review sub-step complete. Model={Model} MissedThreats={Count} CoverageGapsProvided={Gaps} " +
                 "InputTokens={InputTokens} OutputTokens={OutputTokens}",
-                cheapModel, missed?.Count ?? 0, response.InputTokens, response.OutputTokens);
+                reviewModel, missed?.Count ?? 0, coverageGaps.Count, response.InputTokens, response.OutputTokens);
         }
         catch (Exception ex)
         {
@@ -704,7 +837,7 @@ public sealed class SynthesizeStage(
         // Continue the T-NNN sequence from the highest existing identifier so adversarial
         // threats use the same format as synthesis threats and pass Threat.ValidateIdentifier.
         var existingMax = output.ConfirmedThreats.Concat(output.ConditionalThreats)
-            .Select(t => System.Text.RegularExpressions.Regex.Match(t.Identifier, @"^T-(\d+)$"))
+            .Select(t => Regex.Match(t.Identifier, @"^T-(\d+)$"))
             .Where(m => m.Success)
             .Select(m => int.Parse(m.Groups[1].Value))
             .DefaultIfEmpty(0)
@@ -723,6 +856,20 @@ public sealed class SynthesizeStage(
             // Skip if labels were provided but none are recognized (prevents hallucinated elements).
             if ((m.AffectedElementLabels?.Length ?? 0) > 0 && validLabels.Length == 0) continue;
 
+            // Derive risk rating from the structured likelihood/impact provided by the reviewer.
+            var riskRating = (m.Likelihood, m.Impact) switch
+            {
+                (not null, not null) => NormalizeRiskRating(new OwaspRiskRating(
+                    m.Likelihood!, m.Impact!, "medium", null, null)),
+                _ => null
+            };
+
+            // Convert MitigationHints to stub Mitigation objects.
+            var mitigations = (m.MitigationHints ?? [])
+                .Where(h => !string.IsNullOrWhiteSpace(h))
+                .Select(h => new Mitigation(h.Trim(), h.Trim(), "medium", []))
+                .ToArray();
+
             newConditional.Add(new FinalThreat(
                 Identifier: $"T-{idx:D3}",
                 Title: m.Title.Trim(),
@@ -739,10 +886,11 @@ public sealed class SynthesizeStage(
                 Confidence: "low",
                 EvidenceStrength: "inferred",
                 FindingType: "conditional",
-                Mitigations: [],
+                Mitigations: mitigations,
                 FrameworkMappings: [],
                 SourceMethods: ["adversarial_review"],
-                RiskRating: null));
+                RiskRating: riskRating,
+                EvidenceBasis: m.EvidenceBasis));
             idx++;
         }
 
@@ -754,6 +902,24 @@ public sealed class SynthesizeStage(
         {
             ConditionalThreats = output.ConditionalThreats.Concat(newConditional).ToArray()
         };
+    }
+
+    private static string BuildCoverageGapSummary(List<string> gaps)
+    {
+        var lines = new List<string>
+        {
+            "The following attack-vector group keys had direct architecture evidence in the candidate pool",
+            "but produced NO confirmed threat (likely merged away). Prioritize finding missed threats in these areas:"
+        };
+        foreach (var key in gaps)
+        {
+            var def = GroupKeyRegistry.All.FirstOrDefault(d =>
+                string.Equals(d.Key, key, StringComparison.OrdinalIgnoreCase));
+            lines.Add(def is not null
+                ? $"- {key}: {def.Description}"
+                : $"- {key}");
+        }
+        return string.Join("\n", lines);
     }
 
     // Computes severity-weighted hotspots: elements flagged by ≥2 methods, ordered by weighted score.
@@ -875,6 +1041,28 @@ public sealed class SynthesizeStage(
 
         return null;
     }
+
+    // Extracts "prompt-version: X" strings from all known prompt templates.
+    private static Dictionary<string, string> ExtractPromptVersions()
+    {
+        static string Extract(string promptText)
+        {
+            var m = Regex.Match(promptText, @"prompt-version:\s*(.+)");
+            return m.Success ? m.Groups[1].Value.Trim() : "unknown";
+        }
+
+        return new Dictionary<string, string>
+        {
+            ["parse"]            = Extract(PromptTemplates.ParseSystem),
+            ["normalize"]        = Extract(PromptTemplates.NormalizeSystem),
+            ["normalizeEnrich"]  = Extract(PromptTemplates.NormalizeEnrichSystem),
+            ["classify"]         = Extract(PromptTemplates.ClassifySystem),
+            ["analyze"]          = Extract(PromptTemplates.BuildAnalyzeSystem("stride")),
+            ["synthesize"]       = Extract(PromptTemplates.SynthesizeSystem),
+            ["review"]           = Extract(PromptTemplates.ReviewSystem),
+            ["frameworkMapping"] = Extract(PromptTemplates.FrameworkMappingSystem),
+        };
+    }
 }
 
 /// <summary>
@@ -928,4 +1116,11 @@ public sealed class SynthesisOptions
     /// Set to 0 to omit the ceiling and let the model use its own default.
     /// </summary>
     public int ReviewMaxOutputTokens { get; init; } = 16_000;
+
+    /// <summary>
+    /// When true (default), the adversarial review sub-step uses the strong model instead of the
+    /// cheap model.  Security review requires judgment; the cheap model is reserved for pattern-matching
+    /// tasks like framework mapping.  Set to false to reduce cost at the expense of review quality.
+    /// </summary>
+    public bool UseStrongModelForAdversarialReview { get; init; } = true;
 }

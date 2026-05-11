@@ -138,6 +138,8 @@ public sealed class SynthesizeStageTests
     [Fact]
     public async Task SynthesizeStage_AlwaysUsesStrongModel()
     {
+        // Synthesis uses the strong model for both the main synthesis call and the
+        // adversarial review sub-step (UseStrongModelForAdversarialReview defaults to true).
         var (stage, factory, strongClient, cheapClient, blob) = BuildStage(strongModel: "gpt-4o");
         strongClient.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
             .Returns(ResponseFor(MinimalFinalOutput()));
@@ -146,8 +148,9 @@ public sealed class SynthesizeStageTests
 
         await stage.ExecuteAsync(MinimalInput(), None);
 
-        factory.Received(1).GetStrongModel();
-        factory.Received(1).GetForModel("gpt-4o");
+        // GetStrongModel is called twice: once for main synthesis, once for adversarial review.
+        factory.Received(2).GetStrongModel();
+        factory.Received(2).GetForModel("gpt-4o");
     }
 
     // ── Happy path ────────────────────────────────────────────────────────────
@@ -508,13 +511,15 @@ public sealed class SynthesizeStageTests
     {
         var (stage, _, strongClient, _, _) = BuildStage();
 
-        // Build a set of candidate sets large enough to exceed 16,384 token budget
+        // Build a set of candidate sets large enough to exceed 16,384 token budget.
+        // evidenceBasis is non-empty so FilterEmptyEvidenceCandidates does not strip them before
+        // the token budget check — the test must reach AssertWithinBudget, not the LLM.
         var hugeCandidates = Enumerable.Range(0, 2000)
             .Select(i => new ThreatCandidate(
                 $"Threat {i}", "stride_spoofing", ["API"],
-                new string('x', 200),  // large description
+                new string('x', 200),  // large description to exceed token budget
                 "scenario", null, [], null, null, null, null,
-                "high", [], "direct", null, "confirmed"))
+                "high", ["explicit statement from architecture"], "direct", null, "confirmed"))
             .ToArray();
 
         var bigInput = new SynthesizeInput(

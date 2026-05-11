@@ -90,9 +90,20 @@ public sealed record CanonicalModel(
     string[]? FederatedIdentityProviders = null);  // external IdPs / federated tenant patterns trusted by the system
 
 public sealed record CanonicalComponent(string Label, string Type, string? Description, string[] Tags);
-public sealed record CanonicalActor(string Label, string Type, bool IsExternal);
+public sealed record CanonicalActor(
+    string Label,
+    string Type,
+    bool IsExternal,
+    // "human" | "machine_identity" | "privileged_account" | null (null = legacy blob / not enriched)
+    string? ActorCategory = null);
 public sealed record CanonicalExternalSystem(string Label, string? Protocol, string? TrustLevel);
-public sealed record CanonicalDataStore(string Label, string StoreType, bool ContainsSensitiveData, bool Encrypted);
+public sealed record CanonicalDataStore(
+    string Label,
+    string StoreType,
+    bool ContainsSensitiveData,
+    bool Encrypted,
+    // "explicit_enabled" | "explicit_disabled" | "not_stated" (null = legacy blob, treat as not_stated)
+    string? EncryptionEvidence = null);
 public sealed record CanonicalDataFlow(string From, string To, string? Label, string? Protocol, bool ContainsSensitiveData, bool Authenticated);
 public sealed record CanonicalTrustBoundary(string Label, string[] ContainedComponentLabels, string BoundaryType);
 public sealed record PrivilegedPath(string Description, string[] InvolvedComponentLabels, string ImpactIfCompromised);
@@ -112,7 +123,11 @@ public sealed record DeploymentContext(
     bool Serverless,
     string[] InfraControls);    // detected controls: waf, cdn, api_gateway, load_balancer, ddos_protection
 public sealed record Assumption(string Description, string ImpactIfWrong);
-public sealed record Gap(string Area, string Description, string SecurityRelevance);  // critical | high | medium
+public sealed record Gap(
+    string Area,
+    string Description,
+    string SecurityRelevance,                  // critical | high | medium
+    string[]? AffectedElementLabels = null);   // canonical element labels that exhibit this gap
 public sealed record ClarificationQuestion(string Question, string Priority, string Topic, string Reason);
 
 // ── Stage 4 — CLASSIFY ───────────────────────────────────────────────────────
@@ -187,7 +202,8 @@ public sealed record ThreatCandidate(
     string? Assumptions,
     string FindingType,            // confirmed | conditional
     OwaspRiskRating? RiskRating = null,
-    string? GroupKey = null);      // allow-listed attack-vector classifier; null = unconstrained
+    string? GroupKey = null,       // allow-listed attack-vector classifier; null = unconstrained
+    string? CoversGapArea = null); // area string of the canonical Gap this candidate directly addresses; null if not gap-driven
 
 public sealed record RejectedCandidate(
     string Title,
@@ -212,8 +228,9 @@ public sealed record FinalOutput(
     DesignRecommendation[] SecureDesignRecommendations,
     RemediationItem[] PrioritizedRemediationList,
     string[] ReviewQuestions,
-    string AnalysisStatus,             // complete | partial
-    string? PartialReason);
+    string AnalysisStatus,                          // complete | partial
+    string? PartialReason,
+    Dictionary<string, string>? PromptVersions = null);  // prompt-version strings keyed by stage name
 
 public sealed record FinalThreat(
     string Identifier,
@@ -234,7 +251,9 @@ public sealed record FinalThreat(
     Mitigation[] Mitigations,
     FrameworkMapping[] FrameworkMappings,
     string[]? SourceMethods = null,
-    OwaspRiskRating? RiskRating = null);
+    OwaspRiskRating? RiskRating = null,
+    string[]? EvidenceBasis = null,
+    string? GroupKey = null);              // primary attack-vector group key; null for unconstrained threats
 
 public sealed record Mitigation(
     string Title,

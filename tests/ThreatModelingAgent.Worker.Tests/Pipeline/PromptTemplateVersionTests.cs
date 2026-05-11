@@ -40,9 +40,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void NormalizeSystem_VersionIs_normalize_2_0_0()
+    public void NormalizeSystem_VersionIs_normalize_2_1_0()
     {
-        PromptTemplates.NormalizeSystem.Should().Contain("prompt-version: normalize-2.0.0");
+        PromptTemplates.NormalizeSystem.Should().Contain("prompt-version: normalize-2.1.0");
     }
 
     [Fact]
@@ -53,9 +53,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void NormalizeEnrichSystem_VersionIs_normalize_enrich_4_0_0()
+    public void NormalizeEnrichSystem_VersionIs_normalize_enrich_4_2_0()
     {
-        PromptTemplates.NormalizeEnrichSystem.Should().Contain("prompt-version: normalize-enrich-4.0.0");
+        PromptTemplates.NormalizeEnrichSystem.Should().Contain("prompt-version: normalize-enrich-4.2.0");
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class PromptTemplateVersionTests
         var system = PromptTemplates.BuildAnalyzeSystem(method);
         system.Should().Contain(VersionPrefix,
             because: $"ANALYZE system prompt for method {method} must carry a prompt-version");
-        system.Should().Contain("prompt-version: analyze-6.0.0");
+        system.Should().Contain("prompt-version: analyze-6.3.0");
     }
 
     [Fact]
@@ -92,9 +92,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void SynthesizeSystem_VersionIs_synthesize_3_1_0()
+    public void SynthesizeSystem_VersionIs_synthesize_3_3_0()
     {
-        PromptTemplates.SynthesizeSystem.Should().Contain("prompt-version: synthesize-3.1.0");
+        PromptTemplates.SynthesizeSystem.Should().Contain("prompt-version: synthesize-3.3.0");
     }
 
     [Fact]
@@ -118,9 +118,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void ReviewSystem_VersionIs_review_1_0_0()
+    public void ReviewSystem_VersionIs_review_1_1_0()
     {
-        PromptTemplates.ReviewSystem.Should().Contain("prompt-version: review-1.0.0");
+        PromptTemplates.ReviewSystem.Should().Contain("prompt-version: review-1.1.0");
     }
 
     // ── No secrets or credentials in any template ─────────────────────────────

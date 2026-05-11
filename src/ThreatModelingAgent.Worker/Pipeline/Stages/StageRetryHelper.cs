@@ -27,6 +27,12 @@ public static class StageRetryHelper
         PropertyNameCaseInsensitive = true
     };
 
+    /// <param name="buildRetryRequest">
+    /// Optional: given the previous validation error message, returns a modified LlmRequest to use
+    /// on the next attempt. When null, the original request is reused unchanged — which is only
+    /// appropriate for non-deterministic calls (temperature &gt; 0). For temperature=0 calls, always
+    /// supply this so the model sees the specific constraint it violated and can correct it.
+    /// </param>
     public static async Task<(T Output, int TotalInputTokens, int TotalOutputTokens)> ExecuteWithRetryAsync<T>(
         ILlmClient llmClient,
         LlmRequest request,
@@ -34,10 +40,12 @@ public static class StageRetryHelper
         string stageErrorCode,
         int maxAttempts,
         ILogger logger,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<string, LlmRequest>? buildRetryRequest = null)
     {
         int totalInput = 0, totalOutput = 0;
         Exception? lastException = null;
+        var currentRequest = request;
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -46,7 +54,7 @@ public static class StageRetryHelper
             LlmResponse? llmResponse = null;
             try
             {
-                llmResponse = await llmClient.CompleteAsync(request, ct);
+                llmResponse = await llmClient.CompleteAsync(currentRequest, ct);
                 totalInput += llmResponse.InputTokens;
                 totalOutput += llmResponse.OutputTokens;
 
@@ -62,6 +70,12 @@ public static class StageRetryHelper
                     "Stage output validation failed on attempt {Attempt}/{Max}. Error={Error} Stage={StageErrorCode}",
                     attempt, maxAttempts, validationError, stageErrorCode);
                 lastException = new PipelineStageException(stageErrorCode, validationError);
+
+                // If a retry-request builder is supplied, update the request so the next attempt
+                // carries the specific constraint violation as context. Without this, temperature=0
+                // calls are fully deterministic and would produce the same invalid output every time.
+                if (buildRetryRequest is not null && attempt < maxAttempts)
+                    currentRequest = buildRetryRequest(validationError);
             }
             catch (JsonException ex)
             {

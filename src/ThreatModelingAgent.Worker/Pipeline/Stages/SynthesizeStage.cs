@@ -131,10 +131,12 @@ public sealed class SynthesizeStage(
         var classificationJson = JsonSerializer.Serialize(input.ClassificationResult, SerializeOptions);
         var hotspotSummary = ComputeHotspots(filteredSets);
         var mergeGroupsSummary = ComputeMergeGroups(filteredSets);
+        var requiredGroupKeysSummary = BuildRequiredGroupKeysSummary(filteredSets);
 
         logger.LogInformation(
-            "SYNTHESIZE payload. TotalCandidates={TotalCandidates} CandidateChars={CandidateChars} CanonicalChars={CanonicalChars}",
-            allCandidates.Count, allCandidatesJson.Length, canonicalJson.Length);
+            "SYNTHESIZE payload. TotalCandidates={TotalCandidates} CandidateChars={CandidateChars} CanonicalChars={CanonicalChars} RequiredGroupKeys={RequiredKeys}",
+            allCandidates.Count, allCandidatesJson.Length, canonicalJson.Length,
+            requiredGroupKeysSummary ?? "(none)");
 
         var userPrompt = PromptTemplates.BuildSynthesizeUser(
             allCandidatesJson, canonicalJson, classificationJson, modelRoutingSummary,
@@ -142,7 +144,8 @@ public sealed class SynthesizeStage(
             modelForPrompt.ArchitectureDescription,
             modelForPrompt.CorrectionsContext,
             hotspotSummary,
-            mergeGroupsSummary);
+            mergeGroupsSummary,
+            requiredGroupKeysSummary);
 
         // Token budget: driven by config so the ceiling can be raised when using models with larger
         // context windows (e.g. claude-sonnet-4-6 at 200K or gpt-4.1 at 1M).
@@ -188,8 +191,26 @@ public sealed class SynthesizeStage(
                    $"[{string.Join(", ", uncovered)}]. Each must appear as a standalone confirmed threat with that groupKey.";
         }
 
+        // On retry, rebuild the user prompt to include the specific constraint violation so that
+        // a temperature=0 model sees different input and can correct its output. Without this,
+        // deterministic models produce identical output on every attempt and exhaust all retries.
+        LlmRequest BuildRetryRequest(string validationError) =>
+            request with
+            {
+                UserPrompt = PromptTemplates.BuildSynthesizeUser(
+                    allCandidatesJson, canonicalJson, classificationJson, modelRoutingSummary,
+                    modelForPrompt.ApplicationDescription,
+                    modelForPrompt.ArchitectureDescription,
+                    modelForPrompt.CorrectionsContext,
+                    hotspotSummary,
+                    mergeGroupsSummary,
+                    requiredGroupKeysSummary,
+                    constraintViolation: validationError)
+            };
+
         var (output, inputTokens, outputTokens) = await StageRetryHelper.ExecuteWithRetryAsync<FinalOutput>(
-            llmClient, request, ValidateOutput, "SYNTHESIZE_FAILED", MaxAttempts, logger, ct);
+            llmClient, request, ValidateOutput, "SYNTHESIZE_FAILED", MaxAttempts, logger, ct,
+            buildRetryRequest: BuildRetryRequest);
 
         // Enforce: analysisStatus=partial if any critical gap was unresolved (spec §6 Stage 6 Rule 5)
         output = EnforcePartialStatus(output, input.CanonicalModel);
@@ -906,6 +927,33 @@ public sealed class SynthesizeStage(
         {
             ConditionalThreats = output.ConditionalThreats.Concat(newConditional).ToArray()
         };
+    }
+
+    // Builds the [REQUIRED_CONFIRMED_THREATS] block: every group key that has at least one
+    // confirmed+direct candidate in the pool MUST produce a standalone confirmed threat.
+    // Sending this proactively avoids synthesis having to guess what's required, which is
+    // the root cause of GROUP_KEY_COVERAGE failures on attempt 1.
+    private static string? BuildRequiredGroupKeysSummary(ThreatCandidateSet[] sets)
+    {
+        var keys = sets
+            .SelectMany(s => s.Candidates)
+            .Where(c => c.GroupKey is not null
+                     && AllowedGroupKeys.Contains(c.GroupKey!)
+                     && string.Equals(c.FindingType, "confirmed", StringComparison.OrdinalIgnoreCase)
+                     && string.Equals(c.EvidenceStrength, "direct", StringComparison.OrdinalIgnoreCase))
+            .Select(c => c.GroupKey!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(k => k)
+            .ToList();
+
+        if (keys.Count == 0) return null;
+
+        return string.Join("\n", keys.Select(k =>
+        {
+            var def = GroupKeyRegistry.All.FirstOrDefault(d =>
+                string.Equals(d.Key, k, StringComparison.OrdinalIgnoreCase));
+            return def is not null ? $"- {k}: {def.Description}" : $"- {k}";
+        }));
     }
 
     private static string BuildCoverageGapSummary(List<string> gaps)

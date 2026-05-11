@@ -196,9 +196,9 @@ public static class PromptTemplates
         """;
 
     // A5: Enrichment-only prompt for deterministic normalize path
-    // prompt-version: normalize-enrich-4.2.0
+    // prompt-version: normalize-enrich-4.3.0
     public const string NormalizeEnrichSystem = """
-        prompt-version: normalize-enrich-4.2.0
+        prompt-version: normalize-enrich-4.3.0
         You are a security architect. Given a structurally-extracted architecture model (elements and
         flows already parsed from a diagram), fill in the security enrichment fields that require
         security expertise to infer. Do NOT repeat or modify the structural fields.
@@ -360,6 +360,33 @@ public static class PromptTemplates
             can reach the data service directly over the internet without traversing any application-layer
             control, WAF rule, or network-layer boundary. Do NOT emit this gap for services where the
             architecture explicitly describes private endpoints, VNet integration, or strict IP firewall rules.
+        22. Manual configuration drift: if the architecture explicitly states that any security-relevant
+            component, policy, or configuration is managed manually (through a portal, ad hoc, not through
+            IaC/code), has not yet been migrated to infrastructure-as-code, is configured per-customer during
+            onboarding by a human operator, or is described as "planned to be moved to IaC" or "still manually
+            managed" — emit a MEDIUM gap with area="manual_config_drift". Populate affectedElementLabels with
+            the component(s) whose configuration is manual. State the security risk: manual configuration
+            bypasses version control, peer review, and automated policy enforcement; security-critical settings
+            such as WAF rules, firewall policies, routing transforms, API gateway policies, or diagnostic
+            settings may differ between environments or customer tenants, and unauthorized or accidental
+            misconfigurations may persist undetected without automated drift detection. Do NOT emit this gap
+            for components where IaC management is confirmed or implied by the use of Terraform, Bicep,
+            Pulumi, or equivalent tooling with no stated exception.
+        23. Integration client onboarding governance: if the architecture describes external systems or
+            customer-controlled processes that use OAuth2 client credentials (machine-to-machine,
+            client_credentials grant) to call platform APIs, AND the onboarding or registration of those
+            clients involves a manual approval step, human reviewer, or process-only control (rather than
+            automated enforcement by code), emit a HIGH gap with area="integration_client_governance".
+            State the risks: (a) a process-only approval can be bypassed through social engineering,
+            insider threat, or approval fatigue — there is no cryptographic or code-enforced barrier
+            preventing a malicious actor from obtaining a client credential for a scope it should not have;
+            (b) if customer admins can configure integration endpoints that are subsequently called
+            server-side by the platform, those endpoints are attacker-controlled SSRF targets;
+            (c) client credentials (client_id + client_secret) are long-lived by default and may not be
+            rotated or revoked when a customer relationship changes. Populate affectedElementLabels with
+            the external system actors and the API or integration component they connect to.
+            Do NOT emit this gap if the architecture explicitly describes automated scope enforcement,
+            code-level approval gates, or short-lived credential issuance for integration clients.
         """;
 
     public static string BuildNormalizeEnrichUser(
@@ -730,9 +757,9 @@ public static class PromptTemplates
 
     // ── SYNTHESIZE ────────────────────────────────────────────────────────────
 
-    // prompt-version: synthesize-3.3.0
+    // prompt-version: synthesize-3.4.0
     public const string SynthesizeSystem = """
-        prompt-version: synthesize-3.3.0
+        prompt-version: synthesize-3.4.0
         You are a senior security architect. Synthesize the threat analysis results into a
         final, deduplicated, prioritized threat model output suitable for engineering action.
 
@@ -903,6 +930,15 @@ public static class PromptTemplates
             findings (rarely high unless the precondition is near-certain from the architecture). Impact
             should reflect the worst case if the precondition holds. A conditional threat with no riskRating
             cannot be prioritized by the recipient — it is incomplete.
+        25. If [REQUIRED_CONFIRMED_THREATS] is present: every group key listed there MUST produce at least
+            one entry in confirmedThreats with that exact groupKey value set on the threat object.
+            These are confirmed+direct-evidence findings — they represent real, evidenced threats that
+            the architecture explicitly states or implies. They MUST NOT be:
+            - placed only in conditionalThreats
+            - merged into a threat with a different groupKey
+            - left with groupKey=null
+            If [CONSTRAINT_VIOLATION] is present: a previous synthesis attempt violated this rule.
+            Read it carefully and correct the specific issue before producing output.
         """;
 
     // ── FRAMEWORK MAPPING ─────────────────────────────────────────────────────
@@ -1023,7 +1059,9 @@ public static class PromptTemplates
         string? architectureDescription = null,
         string? correctionsContext = null,
         string? hotspotSummary = null,
-        string? mergeGroupsSummary = null)
+        string? mergeGroupsSummary = null,
+        string? requiredGroupKeysSummary = null,
+        string? constraintViolation = null)
     {
         var routingSummary = string.Join(", ", modelRoutingSummary.Select(kv => $"{kv.Key}={kv.Value}"));
         var contextHeader = BuildSystemContextHeader(applicationDescription, architectureDescription, correctionsContext);
@@ -1032,6 +1070,8 @@ public static class PromptTemplates
             Model routing used: {routingSummary}
             {(string.IsNullOrWhiteSpace(hotspotSummary) ? "" : $"\n[THREAT_HOTSPOTS]\n{hotspotSummary}\n[/THREAT_HOTSPOTS]\n")}
             {(string.IsNullOrWhiteSpace(mergeGroupsSummary) ? "" : $"\n[MERGE_GROUPS]\n{mergeGroupsSummary}\n[/MERGE_GROUPS]\n")}
+            {(string.IsNullOrWhiteSpace(requiredGroupKeysSummary) ? "" : $"\n[REQUIRED_CONFIRMED_THREATS]\nEach of the following group keys has confirmed+direct-evidence candidates and MUST produce at least one entry in confirmedThreats with that exact groupKey set. Output will be rejected if any key is absent from confirmedThreats (Rule 25).\n{requiredGroupKeysSummary}\n[/REQUIRED_CONFIRMED_THREATS]\n")}
+            {(string.IsNullOrWhiteSpace(constraintViolation) ? "" : $"\n[CONSTRAINT_VIOLATION]\nYour previous output was rejected for the following reason. Correct this before producing output:\n{constraintViolation}\n[/CONSTRAINT_VIOLATION]\n")}
             [THREAT_CANDIDATES]
             {allCandidatesJson}
             [/THREAT_CANDIDATES]

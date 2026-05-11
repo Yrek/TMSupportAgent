@@ -53,9 +53,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void NormalizeEnrichSystem_VersionIs_normalize_enrich_4_2_0()
+    public void NormalizeEnrichSystem_VersionIs_normalize_enrich_4_3_0()
     {
-        PromptTemplates.NormalizeEnrichSystem.Should().Contain("prompt-version: normalize-enrich-4.2.0");
+        PromptTemplates.NormalizeEnrichSystem.Should().Contain("prompt-version: normalize-enrich-4.3.0");
     }
 
     [Fact]
@@ -92,9 +92,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void SynthesizeSystem_VersionIs_synthesize_3_3_0()
+    public void SynthesizeSystem_VersionIs_synthesize_3_4_0()
     {
-        PromptTemplates.SynthesizeSystem.Should().Contain("prompt-version: synthesize-3.3.0");
+        PromptTemplates.SynthesizeSystem.Should().Contain("prompt-version: synthesize-3.4.0");
     }
 
     [Fact]

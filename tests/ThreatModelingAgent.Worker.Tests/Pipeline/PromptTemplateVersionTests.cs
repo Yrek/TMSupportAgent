@@ -40,9 +40,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void NormalizeSystem_VersionIs_normalize_2_1_0()
+    public void NormalizeSystem_VersionIs_normalize_2_2_0()
     {
-        PromptTemplates.NormalizeSystem.Should().Contain("prompt-version: normalize-2.1.0");
+        PromptTemplates.NormalizeSystem.Should().Contain("prompt-version: normalize-2.2.0");
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class PromptTemplateVersionTests
         var system = PromptTemplates.BuildAnalyzeSystem(method);
         system.Should().Contain(VersionPrefix,
             because: $"ANALYZE system prompt for method {method} must carry a prompt-version");
-        system.Should().Contain("prompt-version: analyze-6.3.0");
+        system.Should().Contain("prompt-version: analyze-6.4.0");
     }
 
     [Fact]
@@ -118,9 +118,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void ReviewSystem_VersionIs_review_1_1_0()
+    public void ReviewSystem_VersionIs_review_1_2_0()
     {
-        PromptTemplates.ReviewSystem.Should().Contain("prompt-version: review-1.1.0");
+        PromptTemplates.ReviewSystem.Should().Contain("prompt-version: review-1.2.0");
     }
 
     // ── No secrets or credentials in any template ─────────────────────────────

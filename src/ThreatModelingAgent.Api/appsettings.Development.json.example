@@ -11,11 +11,31 @@
     "DefaultConnection": "Host=localhost;Port=5432;Database=threatmodeling_dev;Username=postgres;Password=localdev"
   },
 
+  // ── Auth mode ────────────────────────────────────────────────────────────────
+  // Dev auth is the default for local development — no WorkOS or Entra account needed.
+  // Disable it and configure WorkOS or EntraId below to test real auth flows.
+  "DevAuth": {
+    "Enabled": true,
+    "SigningKey": "dev-local-signing-key-change-me-at-least-32-chars!!"
+  },
+
+  // WorkOS auth — required when DevAuth:Enabled=false and EntraId:Enabled=false.
   "WorkOS": {
     "ClientId": "YOUR_WORKOS_CLIENT_ID",
     "ApiKey": "YOUR_WORKOS_API_KEY",
     "Issuer": "https://api.workos.com",
     "JwksUri": "https://api.workos.com/.well-known/jwks.json"
+  },
+
+  // Entra ID auth — alternative to WorkOS for self-hosted deployments with Azure AD.
+  // Set Enabled=true and DevAuth:Enabled=false to activate.
+  // See docs/deployment/local.md for App Registration setup.
+  "EntraId": {
+    "Enabled": false,
+    "TenantId": "",
+    "ClientId": "",
+    "DefaultOrgId": "",
+    "AdminOids": ""
   },
 
   "AzureStorage": {

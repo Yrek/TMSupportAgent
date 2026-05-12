@@ -39,7 +39,7 @@ Estimated cost: ~€100–140/month at near-zero usage (spec §5.1).
 
 You also need:
 - An Azure subscription with Contributor access
-- A WorkOS account with an application configured
+- A WorkOS account **or** an Azure App Registration (Entra ID mode — see [Entra ID auth mode](#entra-id-auth-mode))
 - An Anthropic API key
 - An Azure OpenAI resource pre-provisioned in a supported EU region (`swedencentral` preferred; use `westeurope` if required by quota/availability) with `gpt-4o` and `gpt-4o-mini` deployments
 
@@ -365,6 +365,56 @@ ON CONFLICT (org_id, user_id) DO UPDATE SET
 ```
 
 Use any valid UUID for `id` (the value above is only a placeholder).
+
+---
+
+## Entra ID auth mode
+
+If your organisation uses Azure AD / Microsoft 365 and you want users to sign in with their Microsoft accounts instead of WorkOS, deploy in Entra ID mode.
+
+### App Registration
+
+Follow the [local setup guide](local.md#entra-id-auth-mode) steps 1–2 to create the App Registration and org row. For production, add the production redirect URI to the App Registration:
+
+- Under **Authentication → Redirect URIs (SPA)**: add `https://<your-frontend-domain>/auth/callback`
+
+### GitHub Actions secrets (Entra ID mode)
+
+Replace the `WORKOS_*` secrets with:
+
+| Secret | Value |
+|---|---|
+| `ENTRA_TENANT_ID` | Directory (tenant) ID from the App Registration |
+| `ENTRA_CLIENT_ID` | Application (client) ID from the App Registration |
+| `ENTRA_DEFAULT_ORG_ID` | UUID of the org all users are provisioned into |
+| `ENTRA_ADMIN_OIDS` | Comma-separated Entra Object IDs that receive Owner role |
+
+### GitHub Actions variables (Entra ID mode)
+
+Replace the `VITE_WORKOS_*` variables with:
+
+| Variable | Value |
+|---|---|
+| `VITE_AUTH_MODE` | `entra` |
+| `VITE_ENTRA_TENANT_ID` | Directory (tenant) ID |
+| `VITE_ENTRA_CLIENT_ID` | Application (client) ID |
+
+Remove `VITE_WORKOS_CLIENT_ID` and `VITE_WORKOS_REDIRECT_URI` — they are not used in Entra mode.
+
+### Container App environment variables (Entra ID mode)
+
+Set these on the API Container App (via Key Vault references or directly):
+
+```
+EntraId__Enabled=true
+EntraId__TenantId=<tenant-id>
+EntraId__ClientId=<client-id>
+EntraId__DefaultOrgId=<org-uuid>
+EntraId__AdminOids=<oid1>,<oid2>
+DevAuth__Enabled=false
+```
+
+The WorkOS variables (`WorkOS__ClientId`, `WorkOS__ApiKey`) are not required and can be left empty or omitted.
 
 ---
 

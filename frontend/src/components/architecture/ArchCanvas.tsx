@@ -1,8 +1,9 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import ReactFlow, {
   Background,
   Controls,
   MiniMap,
+  useNodesState,
   type Connection,
   type NodeTypes,
   type NodeMouseHandler,
@@ -10,9 +11,10 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import type { ArchitectureElement } from "@/api/architecture";
 import { ElementNode, type ElementNodeData } from "./ElementNode";
+import { TrustBoundaryNode } from "./TrustBoundaryNode";
 import { buildNodesAndEdges } from "./canvasLayout";
 
-const NODE_TYPES: NodeTypes = { elementNode: ElementNode };
+const NODE_TYPES: NodeTypes = { elementNode: ElementNode, trustBoundary: TrustBoundaryNode };
 
 interface ThreatInfo {
   count: number;
@@ -48,42 +50,44 @@ export function ArchCanvas({
   onDeleteElement,
   onCreateDataFlow,
 }: ArchCanvasProps) {
-  // Rebuild layout when elements change (new elements added)
-  const nodesWithSelection = useMemo(() => {
-    const updated = buildNodesAndEdges(elements, threatCountByElement, threatCountByEdge);
-    return updated.nodes.map((n) => ({
-      ...n,
-      data: { ...n.data, drawFlowMode: !readOnly && drawFlowMode },
-      selected: n.id === selectedElementId,
-    }));
-  }, [elements, selectedElementId, threatCountByElement, threatCountByEdge, readOnly, drawFlowMode]);
-
-  const edgesFromElements = useMemo(
-    () => buildNodesAndEdges(elements, threatCountByElement, threatCountByEdge).edges,
+  // Compute full layout (nodes + edges) whenever elements or threat info changes.
+  // Memoised so we don't call dagre on every render.
+  const layout = useMemo(
+    () => buildNodesAndEdges(elements, threatCountByElement, threatCountByEdge),
     [elements, threatCountByElement, threatCountByEdge],
+  );
+
+  // useNodesState gives us drag-position tracking for free.
+  // Initialised once; synced via useEffect when the layout changes (new elements added, etc.).
+  const [nodes, setNodes, onNodesChange] = useNodesState<ElementNodeData>(layout.nodes);
+
+  useEffect(() => {
+    setNodes(layout.nodes);
+  }, [layout.nodes, setNodes]);
+
+  // Overlay selection and drawFlowMode without touching stored positions.
+  const nodesWithSelection = useMemo(
+    () =>
+      nodes.map((n) => ({
+        ...n,
+        data: { ...n.data, drawFlowMode: !readOnly && drawFlowMode },
+        selected: n.id === selectedElementId,
+      })),
+    [nodes, selectedElementId, readOnly, drawFlowMode],
   );
 
   const edgesWithSelection = useMemo(
     () =>
-      edgesFromElements.map((e) => {
+      layout.edges.map((e) => {
         if (e.id !== selectedElementId) return e;
-
         return {
           ...e,
           animated: true,
-          style: {
-            ...(e.style ?? {}),
-            stroke: "#2563eb",
-            strokeWidth: 3,
-          },
-          labelStyle: {
-            ...(e.labelStyle ?? {}),
-            fill: "#1d4ed8",
-            fontWeight: 700,
-          },
+          style: { ...(e.style ?? {}), stroke: "#2563eb", strokeWidth: 3 },
+          labelStyle: { ...(e.labelStyle ?? {}), fill: "#1d4ed8", fontWeight: 700 },
         };
       }),
-    [edgesFromElements, selectedElementId],
+    [layout.edges, selectedElementId],
   );
 
   const handleEdgeClick = useCallback(
@@ -145,10 +149,8 @@ export function ArchCanvas({
       } else if (e.key === "Enter") {
         e.preventDefault();
         if (currentIdx < 0 && navigableElements.length > 0) {
-          // Nothing selected — select first
           onElementSelect?.(navigableElements[0] ?? null);
         }
-        // If already selected, detail panel is already open — no-op
       } else if (e.key === "Delete" && !readOnly && currentIdx >= 0) {
         const el = navigableElements[currentIdx];
         if (el && onDeleteElement) {
@@ -171,7 +173,7 @@ export function ArchCanvas({
       <ReactFlow
         nodes={nodesWithSelection}
         edges={edgesWithSelection}
-        onNodesChange={undefined}
+        onNodesChange={onNodesChange}
         onEdgesChange={undefined}
         onNodeClick={handleNodeClick}
         onEdgeClick={handleEdgeClick}

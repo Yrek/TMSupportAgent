@@ -6,15 +6,16 @@ This guide gets the API and Worker running on your machine.
 
 ## Auth modes
 
-There are two ways to authenticate locally:
+There are three ways to authenticate:
 
 | Mode | When to use | What's needed |
 |---|---|---|
-| **Dev auth** (recommended for local dev) | Running locally without a WorkOS account | Nothing — self-contained HMAC JWT |
-| **WorkOS** | Testing real auth flows, invitations, or multi-tenant features | A WorkOS account and app |
+| **Dev auth** (recommended for local dev) | Running locally without a WorkOS or Entra account | Nothing — self-contained HMAC JWT |
+| **WorkOS** | Testing real auth flows, invitations, or multi-tenant SaaS features | A WorkOS account and app |
+| **Entra ID** | Self-hosting with an existing Azure AD / Microsoft 365 tenant | Azure App Registration |
 
 The default `appsettings.Development.json` and `frontend/.env.local` ship with dev auth enabled.
-See [Dev auth mode](#dev-auth-mode-no-workos-required) for details and [WorkOS auth mode](#workos-auth-mode) for how to switch.
+See [Dev auth mode](#dev-auth-mode-no-workos-required), [WorkOS auth mode](#workos-auth-mode), or [Entra ID auth mode](#entra-id-auth-mode) for details.
 
 ---
 
@@ -122,6 +123,105 @@ A new email creates a new user. The same email always maps to the same user acro
 - The API refuses to start if `DevAuth:Enabled=true` **and** `ASPNETCORE_ENVIRONMENT=Production`.
 - Dev JWTs are signed with a local HMAC key and are valid for 8 hours.
 - The `POST /v1/auth/dev-login` endpoint returns 404 when DevAuth is disabled.
+
+---
+
+## Entra ID auth mode
+
+Entra ID lets you self-host the app using your organisation's Azure Active Directory (Microsoft 365) tenant. All users sign in with their existing Microsoft accounts — no WorkOS account is needed.
+
+### 1. Create an Azure App Registration
+
+1. Go to [Azure Portal](https://portal.azure.com) → **Azure Active Directory** → **App registrations** → **New registration**
+2. **Name**: e.g. `Threat Modeling Agent`
+3. **Supported account types**: *Accounts in this organizational directory only* (single tenant)
+4. **Redirect URI**: Platform = **Single-page application (SPA)** → `http://localhost:5173/auth/callback`
+5. Click **Register** and copy:
+   - **Application (client) ID** → your `ClientId` / `VITE_ENTRA_CLIENT_ID`
+   - **Directory (tenant) ID** → your `TenantId` / `VITE_ENTRA_TENANT_ID`
+
+6. Under **Expose an API**:
+   - Set **Application ID URI** to `api://<your-client-id>` (click *Set* and accept the default)
+   - Click **Add a scope** → name it `access_as_user`, consent: Admins and users, fill display names, save
+
+7. Under **Authentication**, confirm the redirect URI is listed as a SPA redirect. No implicit grant tokens needed.
+
+### 2. Create the organisation in the database
+
+Before the first sign-in, create an org row and note its UUID:
+
+```sql
+INSERT INTO organizations (id, name, slug, is_suspended, created_at, updated_at)
+VALUES (
+  gen_random_uuid(),   -- or supply a fixed UUID; note it down for DefaultOrgId
+  'My Company',
+  'my-company',
+  false,
+  NOW(),
+  NOW()
+);
+
+-- Find the UUID you just inserted:
+SELECT id FROM organizations WHERE slug = 'my-company';
+```
+
+### 3. Configure the API
+
+In `appsettings.Development.json`, disable DevAuth and enable Entra ID:
+
+```json
+"DevAuth": {
+  "Enabled": false
+},
+"EntraId": {
+  "Enabled": true,
+  "TenantId": "<directory-tenant-id>",
+  "ClientId": "<application-client-id>",
+  "DefaultOrgId": "<org-uuid-from-step-2>",
+  "AdminOids": "<oid-of-first-admin>"
+}
+```
+
+**`DefaultOrgId`** — the UUID of the org all Entra users are provisioned into (self-hosted single-org mode).
+
+**`AdminOids`** — comma-separated list of Entra Object IDs that receive `Owner` role on first sign-in. Find a user's Object ID in Azure Portal → Users → select the user → Object ID. Leave empty to provision everyone as `Member`.
+
+### 4. Configure the frontend
+
+In `.env.local`:
+
+```
+VITE_AUTH_MODE=entra
+VITE_ENTRA_TENANT_ID=<directory-tenant-id>
+VITE_ENTRA_CLIENT_ID=<application-client-id>
+VITE_API_BASE_URL=http://localhost:5240/v1
+```
+
+`VITE_DEV_AUTH`, `VITE_WORKOS_CLIENT_ID`, and `VITE_WORKOS_REDIRECT_URI` are not required.
+
+### 5. First sign-in
+
+1. Start the API and run migrations (steps 3–5 in the main guide).
+2. Open `http://localhost:5173` → you are redirected to `/login`.
+3. Click **Sign in with Microsoft** → authenticate with your Azure AD account.
+4. On first sign-in, the API creates a user and membership automatically (JIT provisioning).
+5. You are redirected to the app.
+
+Users listed in `AdminOids` receive `Owner` role. All other users receive `Member`.
+
+### Troubleshooting Entra ID
+
+**`AADSTS50011: The redirect URI ... was not expected`**
+The redirect URI in the App Registration must exactly match `http://localhost:5173/auth/callback` (for local) including the `/auth/callback` path. Check under Authentication → Redirect URIs; the type must be **SPA**, not Web.
+
+**`AADSTS65001: The user or administrator has not consented to use the application`**
+Open the app once as an admin and grant tenant-wide admin consent, or grant consent for the `access_as_user` scope under API permissions in the App Registration.
+
+**API returns `403 MISSING_ORG_CONTEXT: No organization is configured for this Entra tenant`**
+`DefaultOrgId` is missing or the UUID does not match an existing org. Verify the org row exists and the UUID matches exactly.
+
+**`Entra ID token is missing the required 'oid' claim`**
+The token is not a user token (e.g., a client credentials machine-to-machine token). Entra ID auth mode only supports interactive user sign-in.
 
 ---
 

@@ -10,6 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { AxiosError } from "axios";
 import { requiredParam } from "@/lib/requiredParam";
 
@@ -19,26 +27,81 @@ interface FormValues {
   architectureDescription: string;
 }
 
+type DiagramFormat = "mermaid" | "plantuml" | "drawio" | "text";
+
+const FORMAT_META: Record<DiagramFormat, { label: string; ext: string; placeholder: string }> = {
+  mermaid: {
+    label: "Mermaid",
+    ext: ".mmd",
+    placeholder: `graph TD
+  User -->|HTTPS| LoadBalancer
+  LoadBalancer --> API
+  API --> Database`,
+  },
+  plantuml: {
+    label: "PlantUML",
+    ext: ".puml",
+    placeholder: `@startuml
+actor User
+User -> LoadBalancer : HTTPS
+LoadBalancer -> API
+API -> Database
+@enduml`,
+  },
+  drawio: {
+    label: "Draw.io XML",
+    ext: ".xml",
+    placeholder: `<mxfile><diagram>...</diagram></mxfile>`,
+  },
+  text: {
+    label: "Plain text",
+    ext: ".txt",
+    placeholder: "Describe your architecture as free-form text.",
+  },
+};
+
+function codeToFile(code: string, format: DiagramFormat): File {
+  const { ext } = FORMAT_META[format];
+  return new File([code], `diagram${ext}`, { type: "text/plain" });
+}
+
 export function UploadJobPage() {
   const params = useParams<{ orgId: string }>();
   const orgId = requiredParam(params.orgId, "orgId");
   const navigate = useNavigate();
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | undefined>();
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  const submitJob = useSubmitJob(orgId);
 
+  const [inputMode, setInputMode] = useState<"file" | "code">("file");
+  const [diagramCode, setDiagramCode] = useState("");
+  const [diagramFormat, setDiagramFormat] = useState<DiagramFormat>("mermaid");
+
+  const submitJob = useSubmitJob(orgId);
   const { register, handleSubmit } = useForm<FormValues>();
 
   async function onSubmit(values: FormValues) {
-    if (!selectedFile) {
-      setFileError("Please select a file to upload.");
-      return;
+    let artifact: File | null = null;
+
+    if (inputMode === "file") {
+      if (!selectedFile) {
+        setFileError("Please select a file to upload.");
+        return;
+      }
+      artifact = selectedFile;
+    } else {
+      const trimmed = diagramCode.trim();
+      if (!trimmed) {
+        setFileError("Please paste your diagram code.");
+        return;
+      }
+      artifact = codeToFile(trimmed, diagramFormat);
     }
 
     setFileError(undefined);
     const formData = new FormData();
-    formData.append("Artifact", selectedFile, selectedFile.name);
+    formData.append("Artifact", artifact, artifact.name);
     if (values.title.trim()) formData.append("Title", values.title.trim());
     if (values.applicationDescription.trim()) {
       formData.append("ApplicationDescription", values.applicationDescription.trim());
@@ -85,16 +148,6 @@ export function UploadJobPage() {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <UploadDropzone
-            onFileSelected={(f) => {
-              setSelectedFile(f);
-              setFileError(undefined);
-            }}
-            selectedFile={selectedFile}
-            onFileClear={() => setSelectedFile(null)}
-            error={fileError}
-          />
-
           <div className="space-y-1.5">
             <Label htmlFor="title">Title (optional)</Label>
             <Input
@@ -125,6 +178,76 @@ export function UploadJobPage() {
               rows={4}
               maxLength={20000}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Architecture diagram</Label>
+            <Tabs
+              value={inputMode}
+              onValueChange={(v) => {
+                setInputMode(v as "file" | "code");
+                setFileError(undefined);
+              }}
+            >
+              <TabsList>
+                <TabsTrigger value="file">Upload file</TabsTrigger>
+                <TabsTrigger value="code">Paste code</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="file">
+                <UploadDropzone
+                  onFileSelected={(f) => {
+                    setSelectedFile(f);
+                    setFileError(undefined);
+                  }}
+                  selectedFile={selectedFile}
+                  onFileClear={() => setSelectedFile(null)}
+                  error={fileError}
+                />
+              </TabsContent>
+
+              <TabsContent value="code" className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="diagram-format" className="shrink-0 text-sm">
+                    Format
+                  </Label>
+                  <Select
+                    value={diagramFormat}
+                    onValueChange={(v) => setDiagramFormat(v as DiagramFormat)}
+                  >
+                    <SelectTrigger id="diagram-format" className="w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(FORMAT_META) as DiagramFormat[]).map((fmt) => (
+                        <SelectItem key={fmt} value={fmt}>
+                          {FORMAT_META[fmt].label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Textarea
+                  value={diagramCode}
+                  onChange={(e) => {
+                    setDiagramCode(e.target.value);
+                    setFileError(undefined);
+                  }}
+                  placeholder={FORMAT_META[diagramFormat].placeholder}
+                  rows={10}
+                  className="font-mono text-sm"
+                  maxLength={500_000}
+                  aria-label="Diagram code"
+                />
+
+                {fileError && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {fileError}
+                  </p>
+                )}
+              </TabsContent>
+            </Tabs>
           </div>
 
           {uploadProgress !== null && (

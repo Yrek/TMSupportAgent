@@ -366,6 +366,13 @@ internal sealed class PipelineDbPersistence(
             }
         }
 
+        // Deserialize user-edited deployment context (set to null when empty "{}").
+        // For upload jobs this comes from the normalize stage; for manual jobs the user
+        // edits it during review, and it must be carried through to Phase 2 analysis.
+        var deploymentContext = arch.DeploymentContextJson == "{}"
+            ? null
+            : TryDeserialize<DeploymentContext>(arch.DeploymentContextJson);
+
         return new CanonicalModel(
             SystemPurpose: arch.SystemPurpose,
             Components: components.ToArray(),
@@ -389,7 +396,8 @@ internal sealed class PipelineDbPersistence(
             AiLlmBoundaries: llmBoundaries.ToArray(),
             Assumptions: TryDeserialize<Assumption[]>(arch.AssumptionsJson) ?? [],
             Gaps: TryDeserialize<Gap[]>(arch.GapsJson) ?? [],
-            ClarificationQuestions: TryDeserialize<ClarificationQuestion[]>(arch.ClarificationQuestionsJson) ?? []);
+            ClarificationQuestions: TryDeserialize<ClarificationQuestion[]>(arch.ClarificationQuestionsJson) ?? [],
+            DeploymentContext: deploymentContext);
     }
 
     // ── Re-analysis helpers ───────────────────────────────────────────────────

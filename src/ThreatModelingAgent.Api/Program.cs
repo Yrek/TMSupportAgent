@@ -147,14 +147,17 @@ try
                 .AddJwtBearer(options =>
                 {
                     options.Authority = authority;
-                    options.Audience = clientId;
                     options.RequireHttpsMetadata = true; // MUST NOT disable (CLAUDE.md §11.4)
                     options.TokenValidationParameters = new()
                     {
                         ValidateIssuer = true,
                         ValidIssuer = authority,
                         ValidateAudience = true,
-                        ValidAudience = clientId,
+                        // Accept both the plain GUID and "api://{guid}" Application ID URI forms.
+                        // Azure AD v2 tokens carry whichever form is set as the App Registration's
+                        // Application ID URI; accepting both avoids auth failures if the URI form
+                        // differs from the raw GUID.
+                        ValidAudiences = [clientId, $"api://{clientId}"],
                         ValidateLifetime = true,
                         ValidateIssuerSigningKey = true,
                     };

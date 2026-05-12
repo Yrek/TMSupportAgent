@@ -136,45 +136,4 @@ public static class GroupKeyRegistry
             $"{g.Key.PadRight(maxLen)}  — {g.Description}"));
     }
 
-    /// <summary>
-    /// Builds the no-merge pair summary for Synthesis Rule 1 entries (e) onward.
-    /// Only pairs where NeverMergeWith is non-empty AND the pair hasn't been emitted yet.
-    /// Returns null if no additional pairs exist beyond the hardcoded (a)-(d) in the prompt.
-    /// </summary>
-    public static string? BuildNoMergeClusterSection()
-    {
-        // Deduplicate: emit each unordered pair only once
-        var emitted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var lines = new List<string>();
-
-        // The known never-merge clusters beyond the hardcoded (a)-(d) pairs.
-        // (a)-(d) cover: storage_shared_key/sas_token_access, cicd_platform_permissions/cicd_external_api_token,
-        // break_glass_no_ca/standing_operational_access — these are hardcoded in Rule 1 text.
-        // The registry-derived section adds bola/no-rls/cross-tenant and api_bypass/public_dataplane.
-        var registryClusters = new[]
-        {
-            new[] { "bola_request_parameter", "no_database_rls", "cross_tenant_isolation_flaw" },
-            new[] { "api_bypass_edge", "public_dataplane_endpoint" },
-            new[] { "cicd_platform_permissions", "cicd_external_api_token", "supply_chain_ci_cd" },
-            new[] { "file_content_attack", "ssrf_imds" },
-        };
-
-        foreach (var cluster in registryClusters)
-        {
-            var key = string.Join("|", cluster.OrderBy(k => k));
-            if (!emitted.Add(key)) continue;
-
-            var keyList = string.Join(", ", cluster);
-            var descs = cluster
-                .Select(k => All.FirstOrDefault(d => d.Key == k))
-                .Where(d => d is not null)
-                .Select(d => $"  - {d!.Key}: {d.Description.Split('.')[0]}")
-                .ToArray();
-
-            lines.Add($"Group [{keyList}] — always distinct, NEVER merge across these keys:");
-            lines.AddRange(descs);
-        }
-
-        return lines.Count == 0 ? null : string.Join("\n", lines);
-    }
 }

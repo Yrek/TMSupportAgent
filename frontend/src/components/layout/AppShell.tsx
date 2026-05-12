@@ -1,5 +1,5 @@
 import { Link, NavLink, useParams } from "react-router-dom";
-import { LayoutDashboard, Settings, User, LogOut, ShieldCheck, Menu, X, Shield } from "lucide-react";
+import { LayoutDashboard, Settings, User, LogOut, ShieldCheck, Menu, X, Shield, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { useSignOut, useSession } from "@/api/auth";
 import { useOrgContext } from "@/hooks/useOrgContext";
@@ -32,38 +32,52 @@ export function AppShell({ children }: AppShellProps) {
   const { data: session } = useSession();
   const navItems = useNavItems(orgId);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const isPlatformAdmin = session?.isPlatformAdmin ?? false;
 
   function handleSignOut() {
     signOut.mutate();
   }
 
+  const navLinkClass = (isActive: boolean) =>
+    cn(
+      "flex items-center rounded-md px-3 py-2 text-sm transition-colors",
+      collapsed ? "justify-center px-0" : "gap-3",
+      isActive
+        ? "bg-primary/10 text-primary font-medium"
+        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+    );
+
   const sidebar = (
     <nav className="flex h-full flex-col gap-1 p-3">
-      <div className="mb-4 flex items-center gap-2 px-2 py-1">
-        <ShieldCheck className="h-5 w-5 text-primary" />
-        <span className="text-sm font-semibold">Threat Modeling</span>
+      {/* Logo + collapse toggle */}
+      <div className={cn("mb-4 flex items-center px-2 py-1", collapsed ? "justify-center" : "justify-between")}>
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-5 w-5 shrink-0 text-primary" />
+          {!collapsed && <span className="text-sm font-semibold">Threat Modeling</span>}
+        </div>
+        <button
+          onClick={() => setCollapsed((c) => !c)}
+          title={collapsed ? "Expand menu" : "Collapse menu"}
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </button>
       </div>
 
-      {currentOrg && <OrgSwitcher />}
+      {currentOrg && !collapsed && <OrgSwitcher />}
 
       <div className="mt-2 flex-1 space-y-1">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                isActive
-                  ? "bg-primary/10 text-primary font-medium"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )
-            }
+            title={collapsed ? item.label : undefined}
+            className={({ isActive }) => navLinkClass(isActive)}
             onClick={() => setMobileOpen(false)}
           >
             {item.icon}
-            {item.label}
+            {!collapsed && item.label}
           </NavLink>
         ))}
       </div>
@@ -72,43 +86,36 @@ export function AppShell({ children }: AppShellProps) {
         {isPlatformAdmin && (
           <NavLink
             to="/admin"
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                isActive
-                  ? "bg-destructive/10 text-destructive font-medium"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )
-            }
+            title={collapsed ? "Admin console" : undefined}
+            className={({ isActive }) => navLinkClass(isActive)}
             onClick={() => setMobileOpen(false)}
           >
-            <Shield className="h-4 w-4" />
-            Admin console
+            <Shield className="h-4 w-4 shrink-0" />
+            {!collapsed && "Admin console"}
           </NavLink>
         )}
         <NavLink
           to="/me"
-          className={({ isActive }) =>
-            cn(
-              "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-              isActive
-                ? "bg-primary/10 text-primary font-medium"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )
-          }
+          title={collapsed ? "Profile" : undefined}
+          className={({ isActive }) => navLinkClass(isActive)}
           onClick={() => setMobileOpen(false)}
         >
-          <User className="h-4 w-4" />
-          Profile
+          <User className="h-4 w-4 shrink-0" />
+          {!collapsed && "Profile"}
         </NavLink>
 
         <button
           onClick={handleSignOut}
-          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          title={collapsed ? "Sign out" : undefined}
+          className={cn(
+            "flex w-full items-center rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+            collapsed ? "justify-center px-0" : "gap-3",
+          )}
         >
-          <LogOut className="h-4 w-4" />
-          Sign out
+          <LogOut className="h-4 w-4 shrink-0" />
+          {!collapsed && "Sign out"}
         </button>
+
       </div>
     </nav>
   );
@@ -116,7 +123,10 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <div className="flex min-h-screen">
       {/* Desktop sidebar */}
-      <aside className="hidden w-56 shrink-0 border-r bg-background lg:flex lg:flex-col">
+      <aside
+        className="hidden shrink-0 border-r bg-background lg:flex lg:flex-col transition-[width] duration-200"
+        style={{ width: collapsed ? "3.5rem" : "14rem" }}
+      >
         {sidebar}
       </aside>
 

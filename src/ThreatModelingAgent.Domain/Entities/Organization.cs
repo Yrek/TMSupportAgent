@@ -8,6 +8,9 @@ public class Organization
     public string Name { get; private set; } = string.Empty;
     public string Slug { get; private set; } = string.Empty;
     public string? WorkOsOrgId { get; private set; }
+    // Nullable — only set when this org is linked to an Entra ID tenant.
+    // Used for per-org Entra lookups (SaaS path). Null in WorkOS-managed orgs.
+    public string? EntraTenantId { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public DateTimeOffset? DeletedAt { get; private set; }
@@ -41,6 +44,13 @@ public class Organization
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         if (name.Length > 255) throw new ArgumentException("Name exceeds maximum length.", nameof(name));
         Name = name;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void SetEntraTenantId(string tenantId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tenantId);
+        EntraTenantId = tenantId;
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 

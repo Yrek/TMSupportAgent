@@ -81,7 +81,7 @@ public sealed class PromptTemplateVersionTests
         var system = PromptTemplates.BuildAnalyzeSystem(method);
         system.Should().Contain(VersionPrefix,
             because: $"ANALYZE system prompt for method {method} must carry a prompt-version");
-        system.Should().Contain("prompt-version: analyze-6.4.0");
+        system.Should().Contain("prompt-version: analyze-6.5.0");
     }
 
     [Fact]

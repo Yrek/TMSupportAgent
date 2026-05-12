@@ -170,6 +170,56 @@ Every finding is traceable back to a specific architecture element. Nothing is i
 
 ---
 
+## Screenshots
+
+### Architecture review — inspect and correct the extracted model
+
+![Architecture review](docs/images/architectureReview.png)
+
+After uploading your diagram or description, the pipeline extracts a structured architecture model and displays it as an interactive graph. Actors, components, data stores, and trust boundaries are laid out visually. Before any threats are generated, you review this extraction — correct misclassified elements, fill in missing context, and confirm that the model reflects reality. This step is what keeps the threat model grounded in your actual system rather than a generic template.
+
+---
+
+### Framework selection — choose your analysis methods
+
+![Framework and threat method selection](docs/images/architectureReviewFrameworkSelection.png)
+
+Once you are happy with the extracted architecture, a confirmation dialog lets you select which threat modeling methods to run. The system pre-selects methods that match your architecture type (for example, LINDDUN is pre-selected for systems with significant personal data flows). You can add or remove methods and leave an optional note before triggering the analysis. Selections include STRIDE, LINDDUN, Abuse Cases, Tenant Isolation, AI/LLM Threats, MITRE ATT&CK, PASTA, MAESTRO, and more.
+
+---
+
+### Pipeline progress — real-time stage tracking
+
+![Pipeline stages in progress](docs/images/threatModelingStages.png)
+
+A live progress indicator shows which pipeline stage is running. Completed stages are marked with a green checkmark. The current stage shows an "In progress" label. Stages run in order: Pending → Parsing → Normalizing → Awaiting Review → Classifying → Analyzing → Synthesizing → Complete. The Analyzing stage runs multiple passes in parallel (one per selected method) before synthesis merges the results.
+
+---
+
+### Threats — detailed findings with evidence and mitigations
+
+![Threat findings](docs/images/threats.png)
+
+The Threats tab shows every confirmed and conditional finding. Each threat card includes the threat title, severity rating, affected components, attack scenario, evidence basis (a direct quote from the architecture), preconditions, mitigations, and framework mappings (OWASP, ASVS, NCSC). Conditional threats are clearly flagged — they are plausible but depend on assumptions not confirmed in the architecture. A sidebar lets you filter by severity, method, or affected element.
+
+---
+
+### Recommendations — secure design patterns to adopt
+
+![Secure design recommendations](docs/images/recommendations.png)
+
+The Recommendations tab surfaces architectural patterns and controls that address clusters of related threats. Each recommendation is written as an actionable design change (not a generic checklist item) and tagged with the security principles it applies — Least Privilege, Defence in Depth, Blast-Radius Reduction, Secure by Default, or Fail Secure. Recommendations are generated at the synthesis step and grouped thematically so teams can plan work around coherent design improvements.
+
+---
+
+### Remediation — prioritised backlog ready for your sprint
+
+![Prioritised remediation list](docs/images/remidiations.png)
+
+The Remediation tab presents every confirmed threat ranked by severity (Critical → High → Medium → Low). Each entry shows the threat ID, a short remediation title, and a one-sentence description of what to do — written to be pasted directly into a backlog ticket. The list is meant to be the starting point for your sprint planning: work through Critical items first, then High, and so on. Every item links back to the full threat detail so the developer implementing the fix has the complete context.
+
+---
+
 ## Project Structure
 
 ```

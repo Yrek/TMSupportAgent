@@ -1,3 +1,5 @@
+using ThreatModelingAgent.Worker.Pipeline;
+
 namespace ThreatModelingAgent.Worker.Pipeline.Prompts;
 
 /// <summary>
@@ -478,10 +480,10 @@ public static class PromptTemplates
 
     // ── ANALYZE ──────────────────────────────────────────────────────────────
 
-    // prompt-version: analyze-6.4.0
+    // prompt-version: analyze-6.5.0
     public static string BuildAnalyzeSystem(string method) =>
         $$"""
-        prompt-version: analyze-6.4.0
+        prompt-version: analyze-6.5.0
         You are a senior threat analyst applying the {{method.ToUpperInvariant()}} lens to an architecture.
         Identify credible, evidence-grounded threats with concrete attacker paths.
 
@@ -709,29 +711,7 @@ public static class PromptTemplates
             - Indefinite data retention → Medium (no active exploit path; amplifies breach impact only)
 
         ALLOWED GROUP KEY VALUES:
-        storage_shared_key          — permanent account-level storage credential (no expiry, bypasses token controls)
-        sas_token_access            — delegated time-limited storage/resource token (SAS, presigned URL)
-        cicd_platform_permissions   — CI/CD identity holds broad cloud platform roles (Contributor, Owner) allowing infra/config modification
-        cicd_external_api_token     — CI/CD secret token for an external service (Cloudflare, DNS, WAF, CDN routing) — distinct from cloud platform roles
-        bola_request_parameter      — BOLA/IDOR via attacker-controlled request parameter (customerId, tenantId)
-        no_database_rls             — missing row-level security at database layer (application code as sole guard)
-        break_glass_no_ca           — emergency/break-glass account excluded from Conditional Access or MFA
-        standing_operational_access — operational roles (support/analyst/admin) without JIT/PIM
-        managed_identity_overpriv   — workload identity with excessive cross-component permissions
-        api_bypass_edge             — application tier (App Service, API, web backend) reachable without passing through edge security layer (WAF, CDN, bot protection, rate limiting); scope: the application server itself, NOT data services — use public_dataplane_endpoint for SQL/Storage/KeyVault
-        sensitive_data_in_logs      — credentials, tokens, or SAS URLs written to log or telemetry storage
-        cross_tenant_isolation_flaw — application-code-only tenant isolation (no database-layer enforcement)
-        supply_chain_ci_cd          — CI/CD pipeline compromise via dependency poisoning, artifact tampering, or build-step injection (NOT for overprivileged CI/CD identity or stolen external API tokens — use cicd_platform_permissions or cicd_external_api_token for those)
-        storage_prefix_isolation    — storage tenant isolation enforced by folder/prefix only within a shared container (no container or account per tenant)
-        no_bulk_export_approval     — bulk data export or cross-customer data access without approval/four-eyes workflow
-        file_content_attack         — malicious payload embedded in an uploaded file targeting the parser/processor (archive bomb, XXE, formula injection, polyglot)
-        ssrf_imds                   — SSRF to cloud instance metadata endpoint (169.254.169.254) via a component with unrestricted outbound internet access
-        xss_token_theft             — XSS via stored or reflected content stealing bearer tokens, SAS URLs, or session cookies from the browser
-        federated_claim_manipulation — malicious federated-tenant administrator issuing tokens with another tenant's claims, exploiting platforms that trust without enrollment-record verification
-        data_retention_indefinite   — customer or system data retained without an automated expiry policy, increasing breach impact and privacy/compliance risk over time
-        cdn_cache_leakage           — CDN/edge layer caches authenticated responses, generated download URLs, or dynamic content, leaking data across user sessions
-        per_tenant_quota_exhaustion — one tenant's unconstrained resource use (uploads, API calls, processing jobs, storage) exhausts shared capacity, degrading availability for all tenants
-        public_dataplane_endpoint   — cloud data service (SQL DB, Key Vault, Blob Storage, or equivalent) reachable over public internet with no private endpoint or strict firewall, enabling direct credential-based access that bypasses application-layer controls
+        {{GroupKeyRegistry.BuildPromptSection()}}
         """;
 
     public static string BuildAnalyzeUser(

@@ -3,7 +3,7 @@ import { AuthKitProvider } from "@workos-inc/authkit-react";
 import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
 import { RouterProvider } from "react-router-dom";
 import { Toaster } from "sonner";
-import { env, isDevAuth } from "@/lib/env";
+import { env, isDevAuth, isEntraAuth } from "@/lib/env";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { generateCorrelationId, logError } from "@/lib/logger";
 import { initSentry } from "@/lib/sentry";
@@ -73,12 +73,23 @@ const app = (
   </ErrorBoundary>
 );
 
-createRoot(rootEl).render(
-  isDevAuth ? (
-    app
-  ) : (
-    <AuthKitProvider clientId={env.VITE_WORKOS_CLIENT_ID!} redirectUri={env.VITE_WORKOS_REDIRECT_URI!}>
-      {app}
-    </AuthKitProvider>
-  ),
-);
+async function bootstrap() {
+  if (isEntraAuth) {
+    const { msalInstance } = await import("@/lib/msal");
+    await msalInstance.initialize();
+    // Process any redirect response (e.g., after loginRedirect completes).
+    await msalInstance.handleRedirectPromise();
+    // No MsalProvider needed — all components use the msalInstance singleton directly.
+    createRoot(rootEl!).render(app);
+  } else if (isDevAuth) {
+    createRoot(rootEl!).render(app);
+  } else {
+    createRoot(rootEl!).render(
+      <AuthKitProvider clientId={env.VITE_WORKOS_CLIENT_ID!} redirectUri={env.VITE_WORKOS_REDIRECT_URI!}>
+        {app}
+      </AuthKitProvider>,
+    );
+  }
+}
+
+void bootstrap();

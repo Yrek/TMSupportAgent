@@ -1,7 +1,7 @@
 import { useAuth } from "@workos-inc/authkit-react";
 import { Navigate, useLocation } from "react-router-dom";
 import { setAccessToken, registerSilentRefresh, hasAccessToken } from "@/api/client";
-import { isDevAuth } from "@/lib/env";
+import { isDevAuth, isEntraAuth } from "@/lib/env";
 import { useEffect, useState } from "react";
 
 interface RequireAuthProps {
@@ -76,7 +76,7 @@ function RequireAuthDev({ children }: RequireAuthProps) {
 
   useEffect(() => {
     setReady(hasAccessToken());
-  });
+  }, []);
 
   if (!ready) {
     const returnTo = location.pathname + location.search;
@@ -92,8 +92,71 @@ function RequireAuthDev({ children }: RequireAuthProps) {
   return <>{children}</>;
 }
 
+// Entra ID variant — uses MSAL to acquire tokens silently.
+function RequireAuthEntra({ children }: RequireAuthProps) {
+  const location = useLocation();
+  const [tokenReady, setTokenReady] = useState(false);
+  const [noAccount, setNoAccount] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const { msalInstance, entraLoginRequest } = await import("@/lib/msal");
+      const accounts = msalInstance.getAllAccounts();
+      if (accounts.length === 0) {
+        if (!cancelled) setNoAccount(true);
+        return;
+      }
+
+      const account = accounts[0];
+      if (!account) { if (!cancelled) setNoAccount(true); return; }
+
+      try {
+        const result = await msalInstance.acquireTokenSilent({ ...entraLoginRequest, account });
+        if (cancelled) return;
+        setAccessToken(result.accessToken);
+        setTokenReady(true);
+
+        registerSilentRefresh(async () => {
+          const accs = msalInstance.getAllAccounts();
+          const acc = accs[0];
+          if (!acc) return null;
+          const r = await msalInstance.acquireTokenSilent({ ...entraLoginRequest, account: acc });
+          return r.accessToken;
+        });
+      } catch {
+        if (!cancelled) setNoAccount(true);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, []);
+
+  if (noAccount) {
+    const returnTo = location.pathname + location.search;
+    const isInternal = returnTo.startsWith("/") && !returnTo.startsWith("//");
+    return (
+      <Navigate
+        to={`/login${isInternal ? `?return_to=${encodeURIComponent(returnTo)}` : ""}`}
+        replace
+      />
+    );
+  }
+
+  if (!tokenReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
 export function RequireAuth({ children }: RequireAuthProps) {
-  return isDevAuth
-    ? <RequireAuthDev>{children}</RequireAuthDev>
-    : <RequireAuthWorkOS>{children}</RequireAuthWorkOS>;
+  if (isDevAuth) return <RequireAuthDev>{children}</RequireAuthDev>;
+  if (isEntraAuth) return <RequireAuthEntra>{children}</RequireAuthEntra>;
+  return <RequireAuthWorkOS>{children}</RequireAuthWorkOS>;
 }

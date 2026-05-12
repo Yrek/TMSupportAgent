@@ -19,6 +19,7 @@ interface ThreatDetailPanelProps {
   onClose: () => void;
   onUpdateStatus: (threatId: string, status: ThreatStatus) => Promise<void>;
   onAddNote: (threatId: string, body: string) => Promise<void>;
+  onShowInArchitecture?: (threat: Threat) => void;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -35,6 +36,7 @@ export function ThreatDetailPanel({
   onClose,
   onUpdateStatus,
   onAddNote,
+  onShowInArchitecture,
 }: ThreatDetailPanelProps) {
   const impactedAssets = Array.isArray(threat.impactedAssets) ? threat.impactedAssets : [];
   const mitigations = Array.isArray(threat.mitigations) ? threat.mitigations : [];
@@ -87,9 +89,22 @@ export function ThreatDetailPanel({
           </div>
           <h3 className="mt-1 font-semibold leading-snug">{threat.title}</h3>
         </div>
-        <button onClick={onClose} className="shrink-0 text-muted-foreground hover:text-foreground" aria-label="Close">
-          <X className="h-5 w-5" />
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          {onShowInArchitecture && threat.affectedElementIds.length > 0 && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => onShowInArchitecture(threat)}
+            >
+              Show in architecture
+            </Button>
+          )}
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label="Close">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
       {/* Scrollable content */}

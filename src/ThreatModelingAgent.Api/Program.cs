@@ -55,6 +55,8 @@ try
     if (devAuthEnabled && builder.Environment.IsProduction())
         throw new InvalidOperationException("DevAuth:Enabled must not be true in Production.");
 
+    var entraEnabled = builder.Configuration.GetValue<bool>("EntraId:Enabled");
+
     // ── Validate required config at startup — fail closed (CLAUDE.md §4.3) ──
     static string NormalizeNoTrailingSlash(string value) => value.Trim().TrimEnd('/');
 
@@ -62,11 +64,26 @@ try
     builder.Services.AddInfrastructure(builder.Configuration);
     builder.Services.AddHttpContextAccessor();
 
-    // In dev auth mode override WorkOsHttpClient (which requires WorkOS:ApiKey) with a no-op
-    // so controllers that inject IWorkOsClient start up without WorkOS credentials.
+    // In dev auth or Entra mode override WorkOsHttpClient with a no-op so controllers that
+    // inject IWorkOsClient start up without WorkOS credentials.
     // Must come after AddInfrastructure — last registration wins in MS DI.
-    if (devAuthEnabled)
+    if (devAuthEnabled || entraEnabled)
         builder.Services.AddScoped<IWorkOsClient, NoOpWorkOsClient>();
+
+    // ── Register Entra ID options (singleton) ────────────────────────────────
+    {
+        var adminOids = (builder.Configuration["EntraId:AdminOids"] ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var defaultOrgIdStr = builder.Configuration["EntraId:DefaultOrgId"];
+        builder.Services.AddSingleton(new EntraIdOptions
+        {
+            Enabled = entraEnabled,
+            TenantId = builder.Configuration["EntraId:TenantId"] ?? string.Empty,
+            ClientId = builder.Configuration["EntraId:ClientId"] ?? string.Empty,
+            DefaultOrgId = Guid.TryParse(defaultOrgIdStr, out var g) ? g : null,
+            AdminOids = new HashSet<string>(adminOids, StringComparer.OrdinalIgnoreCase),
+        });
+    }
 
     // ── Tenant context — scoped, populated from JWT by middleware ───────────
     builder.Services.AddScoped<TenantContext>();
@@ -74,7 +91,7 @@ try
 
     if (devAuthEnabled)
     {
-        // ── Dev auth: local HMAC JWT, no WorkOS required ─────────────────────
+        // ── Dev auth: local HMAC JWT, no WorkOS or Entra required ────────────
         var devSigningKey = builder.Configuration["DevAuth:SigningKey"]
             ?? throw new InvalidOperationException("DevAuth:SigningKey is required when DevAuth:Enabled is true.");
         if (devSigningKey.Length < 32)
@@ -115,6 +132,48 @@ try
     {
         // Registered with null so DI resolves; controller checks IsEnabled before use.
         builder.Services.AddSingleton(new DevAuthSigningKeyHolder(null));
+
+        if (entraEnabled)
+        {
+            // ── Entra ID JWT authentication — OIDC JWKS from Azure AD ────────
+            var tenantId = builder.Configuration["EntraId:TenantId"]
+                ?? throw new InvalidOperationException("EntraId:TenantId is required when EntraId:Enabled is true.");
+            var clientId = builder.Configuration["EntraId:ClientId"]
+                ?? throw new InvalidOperationException("EntraId:ClientId is required when EntraId:Enabled is true.");
+            var authority = $"https://login.microsoftonline.com/{tenantId}/v2.0";
+
+            builder.Services
+                .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                .AddJwtBearer(options =>
+                {
+                    options.Authority = authority;
+                    options.Audience = clientId;
+                    options.RequireHttpsMetadata = true; // MUST NOT disable (CLAUDE.md §11.4)
+                    options.TokenValidationParameters = new()
+                    {
+                        ValidateIssuer = true,
+                        ValidIssuer = authority,
+                        ValidateAudience = true,
+                        ValidAudience = clientId,
+                        ValidateLifetime = true,
+                        ValidateIssuerSigningKey = true,
+                    };
+                    options.Events = new JwtBearerEvents
+                    {
+                        OnAuthenticationFailed = ctx =>
+                        {
+                            var correlationId = ctx.HttpContext.Items["CorrelationId"];
+                            Log.Warning(
+                                "Entra ID JWT authentication failed. CorrelationId={CorrelationId} ErrorType={ErrorType}",
+                                correlationId,
+                                ctx.Exception.GetType().Name);
+                            return Task.CompletedTask;
+                        }
+                    };
+                });
+        }
+        else
+        {
         // ── WorkOS JWT authentication — JWKS (CLAUDE.md §8.1) ────────────────
         var workosClientId = builder.Configuration["WorkOS:ClientId"]
             ?? throw new InvalidOperationException("WorkOS:ClientId is required.");
@@ -184,6 +243,7 @@ try
                     }
                 };
             });
+        } // end else (WorkOS)
     }
 
     builder.Services.AddAuthorization(options =>

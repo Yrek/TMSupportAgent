@@ -124,12 +124,20 @@ export function AnalysisPage() {
     return map;
   }, [analysis]);
 
+  const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, note: 4 };
+
   const displayedThreats = useMemo(
     () =>
-      threats.map((t) => ({
-        ...t,
-        sourceMethods: sourceMethodsByIdentifier.get(t.identifier) ?? t.sourceMethods ?? [],
-      })),
+      threats
+        .map((t) => ({
+          ...t,
+          sourceMethods: sourceMethodsByIdentifier.get(t.identifier) ?? t.sourceMethods ?? [],
+        }))
+        .sort((a, b) => {
+          const sa = SEVERITY_ORDER[a.riskRating?.severity ?? "note"] ?? 99;
+          const sb = SEVERITY_ORDER[b.riskRating?.severity ?? "note"] ?? 99;
+          return sa - sb;
+        }),
     [sourceMethodsByIdentifier, threats],
   );
 
@@ -387,8 +395,7 @@ export function AnalysisPage() {
             {activeTab === "threats" && (
             <TabsContent value="threats" className="mt-0 flex h-full min-h-0 flex-1 flex-col overflow-hidden md:flex-row md:items-stretch">
               {/* Left: filter + list */}
-              <div className="flex w-full shrink-0 flex-col gap-3 border-b p-3 md:h-full md:w-[24rem] md:border-b-0 md:border-r">
-                {/* GAP-TH3: pass element filter info to filter bar */}
+              <div className="flex w-full shrink-0 flex-col gap-3 border-b p-3 md:h-full md:w-[52rem] md:border-b-0 md:border-r">
                 <ThreatFilterBar
                   methodCategories={methodCategories}
                   frameworks={frameworks}
@@ -407,13 +414,13 @@ export function AnalysisPage() {
                 </Button>
                 <div className="min-h-0 flex-1 overflow-y-auto">
                   {threatsLoading ? (
-                    <div className="space-y-2">
-                      {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 w-full" />)}
+                    <div className="space-y-1">
+                      {[1, 2, 3].map((i) => <Skeleton key={i} className="h-9 w-full" />)}
                     </div>
                   ) : threats.length === 0 ? (
                     <p className="py-6 text-center text-sm text-muted-foreground">No threats match your filters.</p>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       {displayedThreats.map((t) => (
                         <ThreatCard
                           key={t.id}
@@ -440,6 +447,7 @@ export function AnalysisPage() {
                     onAddNote={async (id, body) => {
                       await addNote.mutateAsync({ threatId: id, body });
                     }}
+                    onShowInArchitecture={handleShowThreatInArchitecture}
                   />
                 </div>
               )}

@@ -3,7 +3,7 @@ import { useAuth } from "@workos-inc/authkit-react";
 import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { isDevAuth } from "@/lib/env";
+import { isDevAuth, isEntraAuth } from "@/lib/env";
 import { setAccessToken } from "@/api/client";
 import { apiClient } from "@/api/client";
 import { useState } from "react";
@@ -101,6 +101,41 @@ function LoginPageDev() {
   );
 }
 
+function LoginPageEntra() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSignIn() {
+    setLoading(true);
+    setError(null);
+    try {
+      const { msalInstance, entraLoginRequest } = await import("@/lib/msal");
+      await msalInstance.loginRedirect(entraLoginRequest);
+    } catch {
+      setError("Sign-in failed. Please try again.");
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-8 p-8">
+      <div className="flex flex-col items-center gap-4">
+        <ShieldCheck className="h-12 w-12 text-primary" />
+        <h1 className="text-3xl font-bold">Threat Modeling Agent</h1>
+        <p className="max-w-sm text-center text-muted-foreground">
+          Sign in with your Microsoft account to get started.
+        </p>
+        {error ? <p className="max-w-md text-center text-sm text-destructive">{error}</p> : null}
+      </div>
+      <Button size="lg" onClick={() => { void handleSignIn(); }} disabled={loading}>
+        {loading ? "Redirecting…" : "Sign in with Microsoft"}
+      </Button>
+    </main>
+  );
+}
+
 export function LoginPage() {
-  return isDevAuth ? <LoginPageDev /> : <LoginPageWorkOS />;
+  if (isDevAuth) return <LoginPageDev />;
+  if (isEntraAuth) return <LoginPageEntra />;
+  return <LoginPageWorkOS />;
 }

@@ -30,6 +30,10 @@ internal sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organ
             .HasColumnName("workos_org_id")
             .HasMaxLength(255);
 
+        builder.Property(o => o.EntraTenantId)
+            .HasColumnName("entra_tenant_id")
+            .HasMaxLength(36); // GUID format
+
         builder.Property(o => o.CreatedAt).HasColumnName("created_at");
         builder.Property(o => o.UpdatedAt).HasColumnName("updated_at");
         builder.Property(o => o.DeletedAt).HasColumnName("deleted_at");
@@ -41,6 +45,10 @@ internal sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organ
             .HasFilter("deleted_at IS NULL");
 
         builder.HasIndex(o => o.WorkOsOrgId).IsUnique();
+
+        builder.HasIndex(o => o.EntraTenantId)
+            .IsUnique()
+            .HasFilter("entra_tenant_id IS NOT NULL");
 
         // Global query filter excludes soft-deleted orgs from all queries
         builder.HasQueryFilter(o => o.DeletedAt == null);

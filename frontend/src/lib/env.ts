@@ -11,17 +11,27 @@ const optionalString = z.preprocess(
 );
 
 const devAuth = import.meta.env.VITE_DEV_AUTH === "true";
+const authMode = import.meta.env.VITE_AUTH_MODE ?? "workos"; // "workos" | "entra"
+const entraAuth = !devAuth && authMode === "entra";
 
 const envSchema = z.object({
   VITE_API_BASE_URL: z.string().url("VITE_API_BASE_URL must be a valid URL"),
-  // WorkOS vars are optional when VITE_DEV_AUTH=true
-  VITE_WORKOS_CLIENT_ID: devAuth
+  // WorkOS vars are optional when VITE_DEV_AUTH=true or VITE_AUTH_MODE=entra
+  VITE_WORKOS_CLIENT_ID: devAuth || entraAuth
     ? optionalString
     : z.string().min(1, "VITE_WORKOS_CLIENT_ID is required"),
-  VITE_WORKOS_REDIRECT_URI: devAuth
+  VITE_WORKOS_REDIRECT_URI: devAuth || entraAuth
     ? optionalUrl
     : z.string().url("VITE_WORKOS_REDIRECT_URI must be a valid URL"),
   VITE_DEV_AUTH: z.string().optional(),
+  VITE_AUTH_MODE: z.string().optional(),
+  // Entra ID vars — required when VITE_AUTH_MODE=entra
+  VITE_ENTRA_TENANT_ID: entraAuth
+    ? z.string().min(1, "VITE_ENTRA_TENANT_ID is required when VITE_AUTH_MODE=entra")
+    : optionalString,
+  VITE_ENTRA_CLIENT_ID: entraAuth
+    ? z.string().min(1, "VITE_ENTRA_CLIENT_ID is required when VITE_AUTH_MODE=entra")
+    : optionalString,
   // Optional — when set, errors are forwarded to Sentry with full stack traces
   VITE_SENTRY_DSN: optionalUrl,
   // Optional — when set, telemetry is sent to Azure Application Insights
@@ -39,5 +49,6 @@ if (!parsed.success) {
 
 export const env = parsed.data;
 
-// Convenience flag — true when VITE_DEV_AUTH=true
+// Convenience flags
 export const isDevAuth = devAuth;
+export const isEntraAuth = entraAuth;

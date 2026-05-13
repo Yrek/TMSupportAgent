@@ -278,7 +278,7 @@ TMSupportAgent/
 | Local development | [docs/deployment/local.md](docs/deployment/local.md) |
 | Azure (production/staging) | [docs/deployment/azure.md](docs/deployment/azure.md) |
 
-CI runs on every pull request. Deployment to staging runs automatically on merge to `main`.
+CI runs on every pull request. Deployment is triggered manually via **Actions → Deploy** — choose `staging` or `prod`.
 
 ---
 

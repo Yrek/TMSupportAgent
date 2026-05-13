@@ -1,8 +1,6 @@
 name: Deploy
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -27,12 +25,7 @@ jobs:
       environment: ${{ steps.env.outputs.environment }}
     steps:
       - id: env
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
-          else
-            echo "environment=staging" >> $GITHUB_OUTPUT
-          fi
+        run: echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
 
   # ── Build and push images ───────────────────────────────────────────────────
 

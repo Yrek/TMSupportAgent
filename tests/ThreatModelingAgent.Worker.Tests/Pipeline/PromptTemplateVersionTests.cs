@@ -118,9 +118,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void ReviewSystem_VersionIs_review_1_2_0()
+    public void ReviewSystem_VersionIs_review_1_3_0()
     {
-        PromptTemplates.ReviewSystem.Should().Contain("prompt-version: review-1.2.0");
+        PromptTemplates.ReviewSystem.Should().Contain("prompt-version: review-1.3.0");
     }
 
     // ── No secrets or credentials in any template ─────────────────────────────

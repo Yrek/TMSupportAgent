@@ -5,7 +5,7 @@ import type { ElementNodeData } from "./ElementNode";
 
 const NODE_WIDTH = 180;
 const NODE_HEIGHT = 80;
-const TB_PADDING = 32; // space around contained elements inside a trust boundary box
+const TB_PADDING = 40; // space around contained elements inside a trust boundary box
 const TB_LABEL_HEIGHT = 26; // vertical room reserved for the boundary label at the top
 
 export function buildNodesAndEdges(
@@ -25,13 +25,35 @@ export function buildNodesAndEdges(
   const nameToId = new Map<string, string>();
   layoutElements.forEach((e) => nameToId.set(e.name.toLowerCase(), e.id));
 
-  // Auto-layout with dagre (TrustBoundaries excluded — positioned as bounding boxes later)
-  const g = new dagre.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: "LR", ranksep: 80, nodesep: 40 });
+  // Build name→TB id map so we can assign dagre parent relationships
+  const nameLowerToTbId = new Map<string, string>();
+  trustBoundaryElements.forEach((tb) => {
+    const containedLabels = tb.properties?.["containedComponents"];
+    const labels: string[] = Array.isArray(containedLabels)
+      ? containedLabels.filter((v): v is string => typeof v === "string")
+      : [];
+    labels.forEach((l) => nameLowerToTbId.set(l.toLowerCase(), tb.id));
+  });
 
+  // Use a compound graph so dagre keeps each trust boundary's members clustered
+  // together — prevents different boundaries' bounding boxes from overlapping.
+  const g = new dagre.graphlib.Graph({ compound: true });
+  g.setDefaultEdgeLabel(() => ({}));
+  // ranksep/nodesep must absorb the visual TB_PADDING added after layout.
+  // Vertical gap needed: 2*TB_PADDING + TB_LABEL_HEIGHT = 80 + 26 = 106 → use 130.
+  // Horizontal gap needed: 2*TB_PADDING = 80 → use 110.
+  g.setGraph({ rankdir: "LR", ranksep: 110, nodesep: 130 });
+
+  // Add virtual container nodes for each trust boundary (dagre expands them to fit children)
+  trustBoundaryElements.forEach((tb) => {
+    g.setNode(tb.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  });
+
+  // Add layout elements and assign them to their trust boundary parent (if any)
   layoutElements.forEach((e) => {
     g.setNode(e.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+    const tbId = nameLowerToTbId.get(e.name.toLowerCase());
+    if (tbId) g.setParent(e.id, tbId);
   });
 
   dataFlowElements.forEach((df) => {
@@ -72,9 +94,32 @@ export function buildNodesAndEdges(
     };
   });
 
-  // Build trust boundary nodes as bounding-box rectangles behind their contained elements
+  // Build trust boundary nodes.
+  // Prefer the dagre-computed compound bounds when available (they're guaranteed non-overlapping);
+  // fall back to manual bounding box if dagre didn't expand the node (no matched children).
   const trustBoundaryNodes: Node<ElementNodeData>[] = [];
   for (const tb of trustBoundaryElements) {
+    const tbPos = g.node(tb.id);
+
+    // dagre expands the compound node beyond NODE_WIDTH×NODE_HEIGHT when it has children
+    if (tbPos && (tbPos.width > NODE_WIDTH || tbPos.height > NODE_HEIGHT)) {
+      const x = tbPos.x - tbPos.width / 2 - TB_PADDING;
+      const y = tbPos.y - tbPos.height / 2 - TB_PADDING - TB_LABEL_HEIGHT;
+      const width = tbPos.width + 2 * TB_PADDING;
+      const height = tbPos.height + 2 * TB_PADDING + TB_LABEL_HEIGHT;
+      trustBoundaryNodes.push({
+        id: tb.id,
+        type: "trustBoundary",
+        position: { x, y },
+        style: { width, height },
+        data: { element: tb, threatCount: undefined, maxSeverity: null },
+        zIndex: -1,
+        draggable: false,
+      });
+      continue;
+    }
+
+    // Fallback: compute bounding box from matched member positions
     const containedLabels = tb.properties?.["containedComponents"];
     const labels: string[] = Array.isArray(containedLabels)
       ? containedLabels.filter((v): v is string => typeof v === "string")
@@ -108,7 +153,6 @@ export function buildNodesAndEdges(
       position: { x: minX, y: minY },
       style: { width: maxX - minX, height: maxY - minY },
       data: { element: tb, threatCount: undefined, maxSeverity: null },
-      // Render behind contained elements; selectable via the padding area
       zIndex: -1,
       draggable: false,
     });

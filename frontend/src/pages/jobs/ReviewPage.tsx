@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { toast } from "sonner";
-import { PlusCircle, ArrowLeft, Pencil } from "lucide-react";
+import { PlusCircle, ArrowLeft, Pencil, ChevronDown } from "lucide-react";
 import {
   useArchitecture,
   useAddElement,
@@ -366,40 +366,33 @@ export function ReviewPage() {
           </div>
         )}
 
-        {(job?.applicationDescription || job?.architectureDescription) && (() => {
-          const COLLAPSE_CHARS = 300;
-          const archDesc = job.architectureDescription ?? "";
-          const isLong = archDesc.length > COLLAPSE_CHARS;
-          const displayedArch = !descExpanded && isLong
-            ? archDesc.slice(0, COLLAPSE_CHARS) + "…"
-            : archDesc;
-          return (
-            <div className="border-b px-4 py-2 shrink-0">
-              <div className="rounded-md border bg-muted/30 px-3 py-2 space-y-2">
+        {(job?.applicationDescription || job?.architectureDescription) && (
+          <div className="border-b px-4 py-1.5 shrink-0">
+            <button
+              onClick={() => setDescExpanded((v) => !v)}
+              className="flex w-full items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${descExpanded ? "" : "-rotate-90"}`} />
+              <span className="font-semibold uppercase tracking-wide">Descriptions</span>
+            </button>
+            {descExpanded && (
+              <div className="mt-1.5 rounded-md border bg-muted/30 px-3 py-2 space-y-2">
                 {job.applicationDescription && (
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Application Description</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Application</p>
                     <p className="text-sm whitespace-pre-wrap">{job.applicationDescription}</p>
                   </div>
                 )}
-                {archDesc && (
+                {job.architectureDescription && (
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Architecture Description</p>
-                    <p className="text-sm whitespace-pre-wrap">{displayedArch}</p>
-                    {isLong && (
-                      <button
-                        onClick={() => setDescExpanded((v) => !v)}
-                        className="mt-1 text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-                      >
-                        {descExpanded ? "Show less" : "Show more"}
-                      </button>
-                    )}
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Architecture</p>
+                    <p className="text-sm whitespace-pre-wrap">{job.architectureDescription}</p>
                   </div>
                 )}
               </div>
-            </div>
-          );
-        })()}
+            )}
+          </div>
+        )}
 
         {/* Three-panel layout */}
         <div className="flex flex-1 overflow-hidden">

@@ -25,6 +25,20 @@ const SEVERITY_BORDER: Record<string, string> = {
   low: "ring-2 ring-blue-400",
 };
 
+const SEVERITY_BG: Record<string, string> = {
+  critical: "bg-red-600",
+  high: "bg-orange-500",
+  medium: "bg-amber-400",
+  low: "bg-blue-400",
+};
+
+const SEVERITY_ABBR: Record<string, string> = {
+  critical: "CRIT",
+  high: "HIGH",
+  medium: "MED",
+  low: "LOW",
+};
+
 export const ElementNode = memo(function ElementNode({ data, selected }: NodeProps<ElementNodeData>) {
   const { element, threatCount, maxSeverity, drawFlowMode } = data;
   const config = ELEMENT_TYPE_CONFIG[element.elementType];
@@ -73,15 +87,11 @@ export const ElementNode = memo(function ElementNode({ data, selected }: NodePro
         {threatCount !== undefined && threatCount > 0 && (
           <span
             className={cn(
-              "ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white",
-              maxSeverity === "critical" || maxSeverity === "high"
-                ? "bg-red-600"
-                : maxSeverity === "medium"
-                  ? "bg-orange-500"
-                  : "bg-blue-500",
+              "ml-auto rounded px-1.5 py-0.5 text-[10px] font-bold text-white",
+              maxSeverity ? SEVERITY_BG[maxSeverity] : "bg-slate-500",
             )}
           >
-            {threatCount}
+            {maxSeverity ? `${SEVERITY_ABBR[maxSeverity]} · ${threatCount}` : threatCount}
           </span>
         )}
       </div>

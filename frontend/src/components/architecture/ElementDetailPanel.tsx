@@ -12,6 +12,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
+
+const SEVERITY_BG: Record<string, string> = {
+  critical: "bg-red-600",
+  high: "bg-orange-500",
+  medium: "bg-amber-400",
+  low: "bg-blue-400",
+};
+
+const SEVERITY_ABBR: Record<string, string> = {
+  critical: "CRIT",
+  high: "HIGH",
+  medium: "MED",
+  low: "LOW",
+};
 
 const STATUS_VARIANT: Record<string, "secondary" | "destructive" | "outline"> = {
   Open: "destructive",
@@ -305,9 +320,16 @@ export function ElementDetailPanel({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-mono text-muted-foreground shrink-0">{t.identifier}</span>
-                      <Badge variant={STATUS_VARIANT[t.status] ?? "outline"} className="text-xs shrink-0">
-                        {t.status}
-                      </Badge>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {t.riskRating?.severity && (
+                          <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-white", SEVERITY_BG[t.riskRating.severity] ?? "bg-slate-500")}>
+                            {SEVERITY_ABBR[t.riskRating.severity] ?? t.riskRating.severity}
+                          </span>
+                        )}
+                        <Badge variant={STATUS_VARIANT[t.status] ?? "outline"} className="text-xs">
+                          {t.status}
+                        </Badge>
+                      </div>
                     </div>
                     <p className="mt-0.5 font-medium line-clamp-2">{t.title}</p>
                   </button>

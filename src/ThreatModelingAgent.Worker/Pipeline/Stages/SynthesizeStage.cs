@@ -750,6 +750,7 @@ public sealed class SynthesizeStage(
         string? SecurityImpact,
         string? PrivacyImpact,
         string? ControlGaps,
+        string? ExistingControls,    // controls the architecture states are already in place for this area
         string? Likelihood,          // high | medium | low
         string? Impact,              // high | medium | low
         string[]? EvidenceBasis,
@@ -801,7 +802,8 @@ public sealed class SynthesizeStage(
             ? llmFactory.GetStrongModel()
             : llmFactory.GetLowCostModel();
         var llmClient = llmFactory.GetForModel(reviewModel);
-        var userPrompt = PromptTemplates.BuildReviewUser(canonicalJson, threatsJson, coverageGapsSummary);
+        var userPrompt = PromptTemplates.BuildReviewUser(
+            canonicalJson, threatsJson, coverageGapsSummary, canonicalModel.ArchitectureDescription);
 
         var estimated = TokenEstimator.EstimatePrompt(PromptTemplates.ReviewSystem, userPrompt);
         if (estimated > (int)(opts.ReviewInputBudget * 0.9))
@@ -881,13 +883,25 @@ public sealed class SynthesizeStage(
             // Skip if labels were provided but none are recognized (prevents hallucinated elements).
             if ((m.AffectedElementLabels?.Length ?? 0) > 0 && validLabels.Length == 0) continue;
 
-            // Derive risk rating from the structured likelihood/impact provided by the reviewer.
-            var riskRating = (m.Likelihood, m.Impact) switch
+            // Quality gate: skip findings with no likelihood or impact — cannot produce a risk rating
+            // and signals the reviewer did not follow the output schema.
+            if (string.IsNullOrWhiteSpace(m.Likelihood) || string.IsNullOrWhiteSpace(m.Impact))
             {
-                (not null, not null) => NormalizeRiskRating(new OwaspRiskRating(
-                    m.Likelihood!, m.Impact!, "medium", null, null)),
-                _ => null
-            };
+                logger.LogWarning(
+                    "ADVERSARIAL_REVIEW: skipping finding '{Title}' — missing likelihood or impact.",
+                    m.Title);
+                continue;
+            }
+
+            // Quality gate: warn when mitigation hints are absent (outputs used as stub mitigations).
+            if (m.MitigationHints is null or [])
+                logger.LogWarning(
+                    "ADVERSARIAL_REVIEW: finding '{Title}' has no mitigationHints — threat will have no mitigations.",
+                    m.Title);
+
+            // Derive risk rating from the structured likelihood/impact provided by the reviewer.
+            var riskRating = NormalizeRiskRating(new OwaspRiskRating(
+                m.Likelihood!, m.Impact!, "medium", null, null));
 
             // Convert MitigationHints to stub Mitigation objects.
             var mitigations = (m.MitigationHints ?? [])
@@ -906,7 +920,7 @@ public sealed class SynthesizeStage(
                 ImpactedAssets: [],
                 SecurityImpact: m.SecurityImpact,
                 PrivacyImpact: m.PrivacyImpact,
-                ExistingControls: null,
+                ExistingControls: m.ExistingControls,
                 ControlGaps: m.ControlGaps,
                 Confidence: "low",
                 EvidenceStrength: "inferred",

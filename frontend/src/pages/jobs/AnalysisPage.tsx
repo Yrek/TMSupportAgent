@@ -179,10 +179,6 @@ export function AnalysisPage() {
   const threatsForSelectedElement = selectedElement
     ? displayedAllThreats.filter((t) => t.affectedElementIds.includes(selectedElement.id))
     : undefined;
-  const architectureThreats = selectedElement
-    ? displayedAllThreats.filter((t) => t.affectedElementIds.includes(selectedElement.id))
-    : displayedAllThreats;
-
   function handleElementSelect(el: ArchitectureElement | null) {
     setSelectedElement(el);
     if (el) {
@@ -505,50 +501,10 @@ export function AnalysisPage() {
 
             {/* Architecture tab — GAP-TH3/TH4/TH5 */}
             {activeTab === "architecture" && (
-            <TabsContent value="architecture" className="mt-0 flex h-full min-h-0 flex-1 items-stretch overflow-hidden xl:flex-row">
+            <TabsContent value="architecture" className="mt-0 flex h-full min-h-0 flex-1 items-stretch overflow-hidden">
               {architecture ? (
                 <>
-                  <div className="min-h-0 w-full shrink-0 border-b p-3 xl:flex xl:h-full xl:w-[23rem] xl:flex-col xl:border-b-0 xl:border-r">
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-sm font-semibold">
-                        Threats ({architectureThreats.length}{selectedElement ? ` / ${displayedAllThreats.length}` : ""})
-                      </h3>
-                      {selectedElement && (
-                        <Button variant="ghost" size="sm" onClick={handleClearElementFilter}>
-                          Show all
-                        </Button>
-                      )}
-                    </div>
-                    {selectedElement && (
-                      <p className="mb-3 text-xs text-muted-foreground">
-                        Filtered by element: <span className="font-medium text-foreground">{selectedElement.name}</span>
-                      </p>
-                    )}
-                    <div className="min-h-0 max-h-[30vh] space-y-2 overflow-y-auto xl:max-h-none xl:flex-1">
-                      {architectureThreats.length === 0 ? (
-                        <p className="py-6 text-center text-sm text-muted-foreground">
-                          No threats mapped to this element.
-                        </p>
-                      ) : (
-                        architectureThreats.map((t) => (
-                          <ThreatCard
-                            key={t.id}
-                            threat={t}
-                            selected={selectedThreat?.id === t.id}
-                            onClick={(threat) => {
-                              setSelectedThreat(threat);
-                              const firstMatch = threat.affectedElementIds
-                                .map((id) => architecture.elements.find((e) => e.id === id) ?? null)
-                                .find((e): e is ArchitectureElement => e !== null);
-                              if (firstMatch) setSelectedElement(firstMatch);
-                            }}
-                            onShowInArchitecture={handleShowThreatInArchitecture}
-                          />
-                        ))
-                      )}
-                    </div>
-                  </div>
-                  <div className="min-h-0 flex-1 overflow-hidden xl:h-full">
+                  <div className="min-h-0 flex-1 overflow-hidden">
                     <ArchCanvas
                       elements={architecture.elements}
                       readOnly
@@ -559,9 +515,9 @@ export function AnalysisPage() {
                       onEdgeClick={handleEdgeClick}
                     />
                   </div>
-                  {/* GAP-TH5: per-element/threat panel — only rendered when something is selected */}
+                  {/* Right detail panel — element or threat, shown on selection */}
                   {(selectedThreat ?? selectedElement) && (
-                    <div className="min-h-0 w-full shrink-0 overflow-y-auto border-t xl:h-full xl:w-[24rem] xl:border-l xl:border-t-0">
+                    <div className="min-h-0 w-full shrink-0 overflow-y-auto border-l xl:h-full xl:w-[24rem]">
                       {selectedThreat ? (
                         <ThreatDetailPanel
                           threat={selectedThreat}

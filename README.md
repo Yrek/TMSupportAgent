@@ -1,35 +1,111 @@
 # Threat Modeling Agent
 
-**Stop writing threat models by hand.** Upload your architecture diagram — or just describe your system in plain text — and get a structured, evidence-based threat model in minutes, not days.
+Most threat models are written by hand, guided by memory and generic checklists, long after the architecture was designed. The result is a document that reflects what engineers thought the system looked like — not what it actually is.
 
-Built for engineering teams who want security analysis that is actually grounded in *their* architecture, not a generic checklist copy-pasted from a wiki.
+**The Threat Modeling Agent works the other way around.** You give it your architecture — a diagram, a markup file, or a plain-text description — and it reads the system, builds a structured model of it, lets you correct anything it misunderstood, then runs a multi-method security analysis grounded in your actual components, data flows, and trust boundaries. The output is a prioritised list of evidence-based threats, each with a concrete attack scenario, severity rating, mitigations, and framework references, plus a remediation list ready to drop into your backlog.
+
+No templates. No blank forms. No threats that don't apply to your system.
 
 ---
 
 ## What It Does
 
-The Threat Modeling Agent takes your architecture as input and runs it through a multi-stage AI pipeline that:
+The agent runs a multi-stage AI pipeline:
 
-1. **Understands your system** — parses diagrams (images, PlantUML, Mermaid, draw.io) or free-text descriptions into a structured canonical model covering components, data flows, trust boundaries, actors, data stores, auth model, and more
-2. **Lets you correct the model** — before any threats are generated, you review and fix the extracted architecture so analysis is grounded in reality
-3. **Selects the right methods** — dynamically picks STRIDE, LINDDUN, abuse-case analysis, tenant isolation analysis, AI/LLM threat analysis, and more based on what your architecture actually is
-4. **Runs parallel threat analysis** — multiple analysis passes run concurrently, each focused on a different attack lens, then get merged and deduplicated
-5. **Challenges its own findings** — an adversarial review pass looks for missed threats and blind spots before finalising
-6. **Maps to control frameworks** — every finding is mapped to OWASP Top 10, ASVS, CIS Controls, NCSC, and STRIDE categories
-7. **Produces actionable output** — threats with severity ratings, mitigations, secure design recommendations, and a prioritised remediation list ready for your backlog
+1. **Upload your architecture** — accepts images (PNG, JPG), PlantUML, Mermaid, draw.io XML, Markdown, and plain-text descriptions. The AI parses the input and extracts components, data flows, trust boundaries, actors, and data stores into a structured model automatically.
+2. **Or draw it from scratch** — if you don't have an existing diagram, the built-in canvas lets you add elements manually and connect them with data flows. No diagram required to get started.
+3. **You review and correct the model** — before any threats are generated, you see exactly what the AI understood. Fix misclassified elements, add missing context, confirm trust boundaries. This step is what keeps the analysis honest.
+4. **Classifies the architecture** — identifies patterns that determine which methods to run: multi-tenant SaaS, cloud-native, event-driven, identity-complex, privacy-heavy, LLM-enabled, and more.
+5. **Runs parallel threat analysis** — multiple analysis passes execute concurrently, each focused on a different attack lens (STRIDE, LINDDUN, abuse cases, tenant isolation, supply chain, AI/LLM threats…). Methods are pre-selected based on what your architecture actually is.
+6. **Synthesises and challenges its own findings** — passes are merged, deduplicated, and put through an adversarial review that actively looks for missed threats and blind spots.
+7. **Maps to control frameworks** — every finding is mapped to OWASP Top 10, ASVS, CIS Controls, NCSC, and STRIDE categories.
+8. **Produces immediately actionable output** — threats with severity ratings, attack scenarios, mitigations, and acceptance criteria; secure design recommendations; a prioritised remediation list written to be pasted into a sprint backlog.
 
 ### What you get out
 
-- **Confirmed threats** — directly evidenced by your architecture with attack scenarios, preconditions, and affected components
-- **Conditional threats** — plausible threats that depend on unverified assumptions (clearly flagged)
-- **Control gaps** — existing controls identified and gaps explained
-- **Secure design recommendations** — architectural patterns to adopt
-- **Prioritised remediation list** — threats ranked by likelihood × impact so you know where to start
-- **Framework mappings** — OWASP, ASVS, NCSC references on every finding
+- **Confirmed threats** — directly evidenced by your architecture, with attack scenarios, preconditions, and affected components
+- **Conditional threats** — plausible threats that depend on unverified assumptions (clearly labelled separately)
+- **Evidence basis** — every finding quotes the specific architecture fact that supports it; nothing is invented
+- **Control gaps** — existing controls are identified and gaps explained per finding
+- **Secure design recommendations** — architectural patterns to adopt, tagged with security principles (Least Privilege, Defence in Depth, Blast-Radius Reduction…)
+- **Prioritised remediation list** — threats ranked by likelihood × impact, written as backlog-ready action items
+- **Framework mappings** — OWASP, ASVS, NCSC references on every confirmed finding
 
-### Architecture types covered
+### Architecture types supported
 
-Web apps · REST APIs · SPAs · BFFs · Microservices · Event-driven systems · Multi-tenant SaaS · Cloud-native systems · Identity-complex systems · LLM-enabled apps · Agentic / MCP-enabled systems
+Web apps · REST APIs · SPAs · BFFs · Microservices · Event-driven systems · Multi-tenant SaaS · Cloud-native (Azure / AWS / GCP) · Identity-complex systems · LLM-enabled apps · Agentic / MCP-enabled systems
+
+---
+
+## Screenshots
+
+### Starting a new analysis
+
+![New analysis](docs/images/submitNewTMAnalysis.png)
+
+Two paths into the tool: upload an existing architecture file (diagram, markup, document — the AI extracts the structure automatically) or start with a blank canvas and draw elements manually. Both paths lead to the same review step before any analysis runs.
+
+---
+
+### Architecture review — see what the AI understood, correct it before analysis
+
+![Architecture review](docs/images/architectureReview.png)
+
+After the pipeline parses your input it displays the extracted architecture as an interactive graph. Actors, components, data stores, data flows, and trust boundaries are laid out visually with severity overlays showing threat density per node. This is the key step: you inspect the model, correct misclassified elements, fill in gaps, and confirm trust boundaries before committing to analysis. The threat model is only as good as the architecture it is based on — this review step ensures the AI is working from reality, not its best guess.
+
+---
+
+### Framework selection — choose your analysis methods
+
+![Framework and threat method selection](docs/images/architectureReviewFrameworkSelection.png)
+
+When you confirm the architecture, you choose which threat modeling methods to run. The system pre-selects methods that match your detected architecture type — LINDDUN for privacy-heavy systems, Tenant Isolation for multi-tenant SaaS, AI/LLM Threats for LLM-enabled systems, and so on. You can add or remove any combination before triggering analysis.
+
+---
+
+### Pipeline progress — live stage tracking
+
+![Pipeline stages in progress](docs/images/threatModelingStages.png)
+
+A live progress view shows which pipeline stage is running. Completed stages are marked with a green tick. Stages run in sequence — Parsing → Normalizing → Awaiting Review → Classifying → Analyzing → Synthesizing — with the Analyzing stage running all selected method passes in parallel before synthesis merges the results.
+
+---
+
+### Threats — detailed, evidence-based findings
+
+![Threat findings](docs/images/threats.png)
+
+The Threats tab shows every confirmed and conditional finding. Each threat includes a severity rating, the affected components, a step-by-step attack scenario, the architecture evidence that supports it, preconditions, mitigations with acceptance criteria, and OWASP/ASVS/NCSC framework references. Conditional threats are clearly separated from confirmed ones. Filter by severity, method, framework, or click any component in the architecture tab to see only its threats.
+
+---
+
+### Recommendations — actionable secure design patterns
+
+![Secure design recommendations](docs/images/recommendations.png)
+
+The Recommendations tab surfaces architectural patterns that address clusters of related threats. Each recommendation is written as a concrete design change — not a generic checklist item — and tagged with the security principles it applies (Least Privilege, Defence in Depth, Blast-Radius Reduction, Secure by Default, Fail Secure). Recommendations are generated at synthesis time and grouped thematically so teams can plan work around coherent design improvements rather than individual bug fixes.
+
+---
+
+### Remediation — prioritised backlog, ready to use
+
+![Prioritised remediation list](docs/images/remidiations.png)
+
+The Remediation tab presents every confirmed threat ranked by severity (Critical → High → Medium → Low). Each entry shows the threat ID, a short action title, and a one-sentence description of what to implement — written to be pasted directly into a backlog ticket. Work through Critical items first. Every entry links back to the full threat detail so whoever implements the fix has all the context they need.
+
+---
+
+## Export Formats
+
+Every completed threat model can be exported from the **Export** tab in five formats:
+
+| Format | File | Use case |
+|---|---|---|
+| **JSON** | `threat-model-<id>.json` | Full structured analysis blob — all threats, mitigations, evidence, framework mappings, and metadata. Machine-readable, suitable for downstream tooling or archiving. |
+| **Markdown report** | `threat-model-<id>.md` | Human-readable threat model report with all findings, attack scenarios, mitigations, recommendations, and remediation list. Ready to commit to a repo or paste into a wiki. |
+| **Mermaid diagram** | `architecture-<id>.mmd` | The extracted and corrected architecture re-exported as a Mermaid flowchart. Editable, diff-able, and renderable in GitHub, GitLab, and most documentation tools. |
+| **TM-BOM** | `tm-bom-<id>.json` | Portable threat-model Bill of Materials — architecture, methods used, all threats, and control mappings in a structured interchange format. Designed for tool-to-tool transfer. |
+| **Threat Dragon v2** | `threat-dragon-v2-<id>.json` | Architecture and threats projected into OWASP Threat Dragon v2 JSON format, for teams already using Threat Dragon in their workflow. |
 
 ---
 
@@ -78,7 +154,7 @@ Set `LlmRouting:StrongModel` and `LlmRouting:LowCostModel` in `src/ThreatModelin
 
 When both `OpenAI:ApiKey` and `AzureOpenAI` credentials are present, plain OpenAI takes priority for `gpt-*` / `o-series` model names.
 
-> **Tip — token limits:** All `MaxOutputTokens` config values default to `0` in the development config, which tells the agent to use the model's own ceiling. Only set explicit values if you need to cap costs or stay within a TPM limit.
+> **Tip — token limits:** All `MaxOutputTokens` config values default to `0`, which tells the agent to use the model's own ceiling. Only set explicit values if you need to cap costs or stay within a TPM limit.
 
 ---
 
@@ -102,7 +178,7 @@ Then sign in at `http://localhost:5173/login` with any email address. See [docs/
 
 ### Option B — WorkOS (recommended for staging/production)
 
-This app uses [WorkOS](https://workos.com) for authentication — free tier is sufficient for local development.
+This app uses [WorkOS](https://workos.com) for authentication — the free tier is sufficient for local development.
 
 1. Sign up at [workos.com](https://workos.com) → create an application → enable **User Management (AuthKit)**
 2. Copy credentials from **API Keys** in the dashboard:
@@ -162,61 +238,11 @@ Upload diagram or text description
          │   tenant isolation, AI threats, …) — one pass per method
          │
          ▼
-  SYNTHESIZE ─ merge, deduplicate, map to frameworks, adversarial review,
+  SYNTHESIZE ─ merge, deduplicate, adversarial review, map to frameworks,
                produce final output with mitigations and remediation list
 ```
 
-Every finding is traceable back to a specific architecture element. Nothing is invented — if the evidence is weak, the finding is marked conditional.
-
----
-
-## Screenshots
-
-### Architecture review — inspect and correct the extracted model
-
-![Architecture review](docs/images/architectureReview.png)
-
-After uploading your diagram or description, the pipeline extracts a structured architecture model and displays it as an interactive graph. Actors, components, data stores, and trust boundaries are laid out visually. Before any threats are generated, you review this extraction — correct misclassified elements, fill in missing context, and confirm that the model reflects reality. This step is what keeps the threat model grounded in your actual system rather than a generic template.
-
----
-
-### Framework selection — choose your analysis methods
-
-![Framework and threat method selection](docs/images/architectureReviewFrameworkSelection.png)
-
-Once you are happy with the extracted architecture, a confirmation dialog lets you select which threat modeling methods to run. The system pre-selects methods that match your architecture type (for example, LINDDUN is pre-selected for systems with significant personal data flows). You can add or remove methods and leave an optional note before triggering the analysis. Selections include STRIDE, LINDDUN, Abuse Cases, Tenant Isolation, AI/LLM Threats, MITRE ATT&CK, PASTA, MAESTRO, and more.
-
----
-
-### Pipeline progress — real-time stage tracking
-
-![Pipeline stages in progress](docs/images/threatModelingStages.png)
-
-A live progress indicator shows which pipeline stage is running. Completed stages are marked with a green checkmark. The current stage shows an "In progress" label. Stages run in order: Pending → Parsing → Normalizing → Awaiting Review → Classifying → Analyzing → Synthesizing → Complete. The Analyzing stage runs multiple passes in parallel (one per selected method) before synthesis merges the results.
-
----
-
-### Threats — detailed findings with evidence and mitigations
-
-![Threat findings](docs/images/threats.png)
-
-The Threats tab shows every confirmed and conditional finding. Each threat card includes the threat title, severity rating, affected components, attack scenario, evidence basis (a direct quote from the architecture), preconditions, mitigations, and framework mappings (OWASP, ASVS, NCSC). Conditional threats are clearly flagged — they are plausible but depend on assumptions not confirmed in the architecture. A sidebar lets you filter by severity, method, or affected element.
-
----
-
-### Recommendations — secure design patterns to adopt
-
-![Secure design recommendations](docs/images/recommendations.png)
-
-The Recommendations tab surfaces architectural patterns and controls that address clusters of related threats. Each recommendation is written as an actionable design change (not a generic checklist item) and tagged with the security principles it applies — Least Privilege, Defence in Depth, Blast-Radius Reduction, Secure by Default, or Fail Secure. Recommendations are generated at the synthesis step and grouped thematically so teams can plan work around coherent design improvements.
-
----
-
-### Remediation — prioritised backlog ready for your sprint
-
-![Prioritised remediation list](docs/images/remidiations.png)
-
-The Remediation tab presents every confirmed threat ranked by severity (Critical → High → Medium → Low). Each entry shows the threat ID, a short remediation title, and a one-sentence description of what to do — written to be pasted directly into a backlog ticket. The list is meant to be the starting point for your sprint planning: work through Critical items first, then High, and so on. Every item links back to the full threat detail so the developer implementing the fix has the complete context.
+Every finding is traceable back to a specific architecture element and cites the evidence that supports it. If the evidence is weak or depends on an unverified assumption, the finding is marked conditional rather than confirmed.
 
 ---
 

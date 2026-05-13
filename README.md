@@ -89,7 +89,7 @@ The Recommendations tab surfaces architectural patterns that address clusters of
 
 ### Remediation — prioritised backlog, ready to use
 
-![Prioritised remediation list](docs/images/remidiations.png)
+![Prioritised remediation list](docs/images/remediations.png)
 
 The Remediation tab presents every confirmed threat ranked by severity (Critical → High → Medium → Low). Each entry shows the threat ID, a short action title, and a one-sentence description of what to implement — written to be pasted directly into a backlog ticket. Work through Critical items first. Every entry links back to the full threat detail so whoever implements the fix has all the context they need.
 
@@ -290,3 +290,5 @@ CI runs on every pull request. Deployment to staging runs automatically on merge
 4. All PRs must reference the spec they implement.
 
 Security requirements are functional acceptance criteria — a feature is not done if mandatory security controls are missing.
+
+For questions, ideas, or contribution proposals, reach out at **marcus.persson85@gmail.com**.

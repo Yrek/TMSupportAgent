@@ -90,7 +90,7 @@ function LoginPageDev() {
           value={email}
           onChange={(e) => { setEmail(e.target.value); }}
           required
-          autoFocus
+
         />
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <Button type="submit" size="lg" disabled={loading}>

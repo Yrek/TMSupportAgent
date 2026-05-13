@@ -61,8 +61,9 @@ const queryClient = new QueryClient({
   },
 });
 
-const rootEl = document.getElementById("root");
-if (!rootEl) throw new Error("Root element not found");
+const rootElOrNull = document.getElementById("root");
+if (!rootElOrNull) throw new Error("Root element not found");
+const rootEl: HTMLElement = rootElOrNull;
 
 const app = (
   <ErrorBoundary>
@@ -80,12 +81,12 @@ async function bootstrap() {
     // Process any redirect response (e.g., after loginRedirect completes).
     await msalInstance.handleRedirectPromise();
     // No MsalProvider needed — all components use the msalInstance singleton directly.
-    createRoot(rootEl!).render(app);
+    createRoot(rootEl).render(app);
   } else if (isDevAuth) {
-    createRoot(rootEl!).render(app);
+    createRoot(rootEl).render(app);
   } else {
-    createRoot(rootEl!).render(
-      <AuthKitProvider clientId={env.VITE_WORKOS_CLIENT_ID!} redirectUri={env.VITE_WORKOS_REDIRECT_URI!}>
+    createRoot(rootEl).render(
+      <AuthKitProvider clientId={env.VITE_WORKOS_CLIENT_ID ?? ""} redirectUri={env.VITE_WORKOS_REDIRECT_URI ?? ""}>
         {app}
       </AuthKitProvider>,
     );

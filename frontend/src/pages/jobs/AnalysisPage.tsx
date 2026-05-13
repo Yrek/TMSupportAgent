@@ -27,6 +27,8 @@ import type { ArchitectureElement } from "@/api/architecture";
 import type { ThreatStatus } from "@/lib/constants";
 import { requiredParam } from "@/lib/requiredParam";
 
+const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, note: 4 };
+
 function formatDuration(ms: number): string {
   const totalSeconds = Math.round(ms / 1000);
   if (totalSeconds < 60) return `${totalSeconds}s`;
@@ -123,8 +125,6 @@ export function AnalysisPage() {
 
     return map;
   }, [analysis]);
-
-  const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, note: 4 };
 
   const displayedThreats = useMemo(
     () =>

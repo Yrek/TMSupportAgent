@@ -346,11 +346,13 @@ export function ReviewPage() {
                   size="sm"
                   className="h-6 px-2 ml-auto"
                   onClick={() => {
+                    const ctx = architecture?.deploymentContext;
+                    if (!ctx) return;
                     setDeploymentEditForm({
-                      environment: architecture.deploymentContext!.environment,
-                      containerized: architecture.deploymentContext!.containerized,
-                      serverless: architecture.deploymentContext!.serverless,
-                      infraControls: [...architecture.deploymentContext!.infraControls],
+                      environment: ctx.environment,
+                      containerized: ctx.containerized,
+                      serverless: ctx.serverless,
+                      infraControls: [...ctx.infraControls],
                     });
                     setShowDeploymentEdit(true);
                   }}

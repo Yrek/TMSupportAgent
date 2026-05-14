@@ -61,6 +61,14 @@ internal sealed class JobOrchestrator(
             return;
         }
 
+        if (job.IsTerminal)
+        {
+            logger.LogWarning(
+                "Job already in terminal state — discarding redelivered message. JobId={JobId} Status={Status}",
+                jobId, job.Status);
+            return;
+        }
+
         logger.LogInformation(
             "Pipeline starting. JobId={JobId} Phase={Phase} Status={Status}",
             jobId, message.Phase, job.Status);

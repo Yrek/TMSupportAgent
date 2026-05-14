@@ -187,15 +187,25 @@ public sealed class AnalyzeStage(
         return result;
     }
 
-    private static ThreatCandidateSet EnforceTraceability(ThreatCandidateSet set, CanonicalModel model)
+    private ThreatCandidateSet EnforceTraceability(ThreatCandidateSet set, CanonicalModel model)
     {
-        // Build the set of all known element labels from the canonical model
+        // Build the set of all known element labels from the canonical model.
+        // Mermaid multi-line node labels (e.g. "AI agent service\nLLM · tool calls · tasks")
+        // are preserved by the normalizer. We register both the raw label and its normalised
+        // form so the analyze LLM can match with either the full text or just the first line.
         var knownLabels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var c in model.Components)      knownLabels.Add(c.Label);
-        foreach (var a in model.Actors)          knownLabels.Add(a.Label);
-        foreach (var e in model.ExternalSystems) knownLabels.Add(e.Label);
-        foreach (var d in model.DataStores)      knownLabels.Add(d.Label);
-        foreach (var b in model.TrustBoundaries) knownLabels.Add(b.Label);
+        void AddLabel(string label)
+        {
+            knownLabels.Add(label);
+            var norm = NormalizeLabel(label);
+            if (!string.Equals(norm, label, StringComparison.OrdinalIgnoreCase))
+                knownLabels.Add(norm);
+        }
+        foreach (var c in model.Components)      AddLabel(c.Label);
+        foreach (var a in model.Actors)          AddLabel(a.Label);
+        foreach (var e in model.ExternalSystems) AddLabel(e.Label);
+        foreach (var d in model.DataStores)      AddLabel(d.Label);
+        foreach (var b in model.TrustBoundaries) AddLabel(b.Label);
 
         var valid   = new List<ThreatCandidate>();
         var invalid = new List<RejectedCandidate>(set.RejectedCandidates);
@@ -203,7 +213,7 @@ public sealed class AnalyzeStage(
         foreach (var threat in set.Candidates)
         {
             var unknownLabels = threat.AffectedElementLabels
-                .Where(l => !knownLabels.Contains(l))
+                .Where(l => !knownLabels.Contains(l) && !knownLabels.Contains(NormalizeLabel(l)))
                 .ToArray();
 
             if (unknownLabels.Length == 0)
@@ -212,10 +222,30 @@ public sealed class AnalyzeStage(
             }
             else
             {
-                invalid.Add(new RejectedCandidate(
-                    Title: threat.Title,
-                    RejectionReason: "out_of_scope",
-                    RejectionNote: $"AffectedElementLabels not found in canonical model: {string.Join(", ", unknownLabels)}"));
+                var validLabels = threat.AffectedElementLabels
+                    .Where(l => knownLabels.Contains(l) || knownLabels.Contains(NormalizeLabel(l)))
+                    .ToArray();
+
+                if (validLabels.Length > 0)
+                {
+                    // Partial match — strip unknown labels and keep the candidate.
+                    // The finding is still traceable via the remaining valid labels.
+                    logger.LogWarning(
+                        "TRACEABILITY: stripped unmatched labels from '{Title}': {Unknown}",
+                        threat.Title, string.Join(", ", unknownLabels));
+                    valid.Add(threat with { AffectedElementLabels = validLabels });
+                }
+                else
+                {
+                    // Zero valid labels — no traceability at all; reject.
+                    logger.LogWarning(
+                        "TRACEABILITY: rejected '{Title}' — no labels matched canonical model: {Unknown}",
+                        threat.Title, string.Join(", ", unknownLabels));
+                    invalid.Add(new RejectedCandidate(
+                        Title: threat.Title,
+                        RejectionReason: "out_of_scope",
+                        RejectionNote: $"No AffectedElementLabels found in canonical model: {string.Join(", ", unknownLabels)}"));
+                }
             }
         }
 
@@ -286,6 +316,28 @@ public sealed class AnalyzeStage(
 
         return string.Join("\n", model.PrivilegedPaths.Select(p =>
             $"- {p.Description} | blast radius: {p.ImpactIfCompromised}"));
+    }
+
+    // Strips everything from the first line-break onwards and trims whitespace.
+    // Handles both actual control characters and Mermaid's literal two-char \n escape
+    // (backslash + n), which NormalizeDiagramLabel preserves as-is because \s+ regex
+    // only matches real whitespace. Without handling the literal form, canonical labels
+    // like "AI agent service\nLLM · tool calls · tasks" would never match the LLM's
+    // output of "AI agent service".
+    private static string NormalizeLabel(string label)
+    {
+        var literalNl = label.IndexOf("\\n", StringComparison.Ordinal);
+        var controlChar = label.IndexOfAny(['\n', '\r', '\t']);
+
+        var cut = (literalNl, controlChar) switch
+        {
+            (>= 0, >= 0) => Math.Min(literalNl, controlChar),
+            (>= 0, _)    => literalNl,
+            (_, >= 0)    => controlChar,
+            _            => -1
+        };
+
+        return (cut > 0 ? label[..cut] : label).Trim();
     }
 
     private static SemaphoreSlim CreateThrottle(AnalyzeThrottlingOptions options)

@@ -290,7 +290,7 @@ Non-commercial personal use, learning, and experimentation are permitted under t
 
 Commercial or business use requires a separate commercial license agreement.
 
-For commercial licensing, contact: **marcus.persson85@gmail.com**.
+For commercial licensing, contact: **marcus@marcuspe.se**.
 
 ---
 
@@ -303,4 +303,4 @@ For commercial licensing, contact: **marcus.persson85@gmail.com**.
 
 Security requirements are functional acceptance criteria — a feature is not done if mandatory security controls are missing.
 
-For questions, ideas, or contribution proposals, reach out at **marcus.persson85@gmail.com**.
+For questions, ideas, or contribution proposals, reach out at **marcus@marcuspe.se**.

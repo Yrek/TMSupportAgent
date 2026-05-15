@@ -282,6 +282,18 @@ CI runs on every pull request. Deployment is triggered manually via **Actions â†
 
 ---
 
+## License
+
+TMSupportAgent is source-available under the [Business Source License 1.1](LICENSE).
+
+Non-commercial personal use, learning, and experimentation are permitted under the license terms.
+
+Commercial or business use requires a separate commercial license agreement.
+
+For commercial licensing, contact: **marcus.persson85@gmail.com**.
+
+---
+
 ## Contributing
 
 1. Read [CLAUDE.md](CLAUDE.md) before writing any code â€” it is the mandatory security specification.

@@ -1,8 +1,6 @@
 # Threat Modeling Agent
 
-Most threat models are written by hand, guided by memory and generic checklists, long after the architecture was designed. The result is a document that reflects what engineers thought the system looked like — not what it actually is.
-
-**The Threat Modeling Agent works the other way around.** You give it your architecture — a diagram, a markup file, or a plain-text description — and it reads the system, builds a structured model of it, lets you correct anything it misunderstood, then runs a multi-method security analysis grounded in your actual components, data flows, and trust boundaries. The output is a prioritised list of evidence-based threats, each with a concrete attack scenario, severity rating, mitigations, and framework references, plus a remediation list ready to drop into your backlog.
+A threat model is only as good as the architecture it describes. Give the Threat Modeling Agent your diagram, markup file, or plain-text description — it reads the system, builds a structured model, lets you correct anything it misunderstood, then runs a multi-method security analysis grounded in your actual components, data flows, and trust boundaries. The output is a prioritised list of evidence-based threats, each with a concrete attack scenario, severity rating, mitigations, and framework references, plus a remediation list ready to drop into your backlog.
 
 No templates. No blank forms. No threats that don't apply to your system.
 

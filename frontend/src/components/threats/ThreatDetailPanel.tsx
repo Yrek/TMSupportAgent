@@ -161,6 +161,19 @@ export function ThreatDetailPanel({
           </Section>
         )}
 
+        {threat.evidenceBasis && threat.evidenceBasis.length > 0 && (
+          <Section title="Evidence">
+            <ul className="space-y-0.5">
+              {threat.evidenceBasis.map((e, i) => (
+                <li key={i} className="flex items-start gap-1.5 text-sm">
+                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+                  <span className="text-muted-foreground">{e}</span>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
         <Section title="Description">
           <p className="text-sm">{threat.description}</p>
         </Section>
@@ -194,6 +207,12 @@ export function ThreatDetailPanel({
         )}
         {threat.controlGaps && (
           <Section title="Control gaps"><p className="text-sm">{threat.controlGaps}</p></Section>
+        )}
+
+        {threat.findingType === "Conditional" && threat.assumptions && (
+          <Section title="Assumptions">
+            <p className="text-sm text-muted-foreground">{threat.assumptions}</p>
+          </Section>
         )}
 
         {/* Mitigations */}

@@ -1,0 +1,44 @@
+@startuml
+!include <C4/C4_Container>
+
+title Azure Blob Storage — SAS-Based Client Uploads
+
+Person(user, "User", "Authenticated application user")
+System_Ext(entra, "Microsoft Entra ID", "OIDC authentication")
+
+System_Boundary(app, "Document Upload Application") {
+
+    Container(frontend, "Web Frontend", "React", "Azure Static Web Apps")
+
+    Container(api, "REST API", "ASP.NET Core",
+        "Azure App Service\nGenerates SAS URLs for uploads\nSAS tokens valid for 24 hours\nSigned using storage account access key")
+
+    Container(storage, "Azure Blob Storage", "Blob",
+        "SHARED storage account — all users\nSHARED container — all users\nFiles stored at: uploads/{userId}/{filename}\nNo per-user container\nNo malware scanning\nAccount key stored in app config\nKey not rotated on schedule")
+}
+
+Rel(user, frontend, "Uses", "HTTPS")
+Rel(frontend, api, "1. Request SAS upload URL", "HTTPS / REST")
+Rel(api, entra, "Validates user token", "OIDC")
+Rel(api, frontend, "2. Returns SAS URL (24h expiry)", "HTTPS")
+Rel(frontend, storage, "3. Uploads file directly using SAS URL\n(bypasses API)", "HTTPS / SAS token")
+Rel(frontend, api, "4. Requests download URL", "HTTPS / REST")
+Rel(api, frontend, "5. Returns SAS download URL\n(24h expiry)", "HTTPS")
+Rel(frontend, storage, "6. Downloads file using SAS URL", "HTTPS / SAS token")
+
+note right of storage
+  Account key is the root credential
+  used to sign all SAS tokens.
+  Compromise of key = compromise of
+  all user files across all users.
+end note
+
+note right of api
+  SAS tokens grant write access to
+  a specific path but the path is
+  user-controlled. No server-side
+  content validation before or after
+  upload.
+end note
+
+@enduml

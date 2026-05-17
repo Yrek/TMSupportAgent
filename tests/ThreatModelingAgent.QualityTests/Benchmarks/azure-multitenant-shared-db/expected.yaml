@@ -1,0 +1,22 @@
+id: azure-multitenant-shared-db
+title: "Azure multi-tenant SaaS with shared database"
+
+# Must find: the three core multi-tenancy isolation findings are non-negotiable
+# for this architecture. Missing any of them is a regression.
+#
+# must_find group keys are ordered by criticality.
+
+must_find_group_keys:
+  - bola_request_parameter       # external users, API, per-tenant business objects
+  - no_database_rls              # shared SQL DB with no RLS described
+  - cross_tenant_isolation_flaw  # application-only tenant guard, no DB-layer enforcement
+  - storage_prefix_isolation     # shared Blob container, prefix-only tenant separation
+  - file_content_attack          # user file uploads to shared storage
+
+must_not_claim_group_keys: []
+
+scoring:
+  # Accept up to one miss on must_find (e.g. LLM merges two of the above into one finding)
+  # to avoid brittleness from valid threat consolidation.
+  min_must_find_recall: 0.80
+  max_must_not_claim_violations: 0

@@ -229,6 +229,13 @@ public sealed class ArchitecturesController(
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+        // Persist clarification answers before confirming so Phase 2 can incorporate them
+        var answers = (request?.ClarificationAnswers ?? [])
+            .Where(a => !string.IsNullOrWhiteSpace(a.Answer))
+            .ToArray();
+        if (answers.Length > 0)
+            arch.SetClarificationAnswers(JsonSerializer.Serialize(answers));
+
         // Mark as confirmed and load the artifact details needed to enqueue Phase 2
         arch.Confirm(userId);
         await architectures.SaveChangesAsync(ct);

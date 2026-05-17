@@ -1,0 +1,32 @@
+id: static-marketing-site
+title: "Static marketing site (negative control)"
+
+# Negative control: this architecture has no API, no database, no auth, no uploads.
+# The primary risk surface is the build pipeline and third-party scripts.
+#
+# must_find_group_keys: group keys that MUST appear in the output.
+# must_not_claim_group_keys: group keys that MUST NOT appear — their presence means
+#   the pipeline hallucinated a threat that has no basis in this architecture.
+
+must_find_group_keys:
+  - supply_chain_ci_cd       # CI/CD pipeline is the main attack surface
+
+must_not_claim_group_keys:
+  - bola_request_parameter           # no API, no objects
+  - no_database_rls                  # no database
+  - cross_tenant_isolation_flaw      # no multi-tenancy
+  - storage_shared_key               # no blob/storage account described
+  - sas_token_access                 # no blob/storage account described
+  - public_dataplane_endpoint        # no data services (SQL, KeyVault, Blob)
+  - per_tenant_quota_exhaustion      # no tenants
+  - file_content_attack              # no file upload
+  - ssrf_imds                        # no server-side processing with outbound access
+  - xss_token_theft                  # no auth tokens / sessions
+  - federated_claim_manipulation     # no identity federation
+  - standing_operational_access      # no privileged operational accounts described
+  - break_glass_no_ca                # no emergency accounts described
+  - no_bulk_export_approval          # no bulk data export surface
+
+scoring:
+  min_must_find_recall: 1.0
+  max_must_not_claim_violations: 0

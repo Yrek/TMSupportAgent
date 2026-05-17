@@ -3,22 +3,26 @@
     "LogLevel": {
       "Default": "Debug",
       "Microsoft.Hosting.Lifetime": "Information",
-      "Microsoft.EntityFrameworkCore": "Information"
+      "Microsoft.EntityFrameworkCore": "Warning"
     }
   },
 
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=threatmodeling_dev;Username=postgres;Password=localdev"
+    "DefaultConnection": "Host=127.0.0.1;Port=5432;Database=threatmodeling_dev;Username=postgres;Password=localdev"
   },
 
   "AzureServiceBus": {
-    "ConnectionString": "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_FROM_EMULATOR",
+    "ConnectionString": "Endpoint=sb://127.0.0.1;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KbHBXKmv/+Kg==;UseDevelopmentEmulator=true;",
     "QueueName": "analysis-jobs"
   },
 
   "AzureStorage": {
     "ConnectionString": "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KbHBXKmv/+Kg==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;",
     "ContainerName": "architectures"
+  },
+
+  "OpenAI": {
+    "ApiKey": "YOUR_OPENAI_API_KEY"
   },
 
   "AzureOpenAI": {
@@ -30,9 +34,17 @@
     "ApiKey": "YOUR_ANTHROPIC_API_KEY"
   },
 
+  "Google": {
+    "ApiKey": "YOUR_GOOGLE_AI_STUDIO_API_KEY"
+  },
+
   "LlmRouting": {
     "StrongModel": "gpt-5",
-    "LowCostModel": "gpt-4o-mini"
+    "LowCostModel": "gpt-5-mini"
+  },
+
+  "Classify": {
+    "MaxSelectedMethods": 10
   },
 
   "StageMaxOutputTokens": {
@@ -54,7 +66,22 @@
     "TokenCeiling": 200000,
     "MaxOutputTokens": 32000,
     "FrameworkMappingInputBudget": 30000,
-    "FrameworkMappingMaxOutputTokens": 8192
+    "FrameworkMappingMaxOutputTokens": 16000,
+    "ReviewInputBudget": 20000,
+    "ReviewMaxOutputTokens": 16000
+  },
+
+  "ModelPricing": {
+    "Prices": {
+      "gpt-5.1":         { "InputPerMToken": 2.00,  "OutputPerMToken": 8.00  },
+      "gpt-5-mini":      { "InputPerMToken": 0.40,  "OutputPerMToken": 1.60  },
+      "gpt-5":           { "InputPerMToken": 2.00,  "OutputPerMToken": 8.00  },
+      "gpt-4o":          { "InputPerMToken": 2.50,  "OutputPerMToken": 10.00 },
+      "gpt-4o-mini":     { "InputPerMToken": 0.15,  "OutputPerMToken": 0.60  },
+      "claude-opus-4-7":           { "InputPerMToken": 15.00, "OutputPerMToken": 75.00 },
+      "claude-sonnet-4-6":         { "InputPerMToken": 3.00,  "OutputPerMToken": 15.00 },
+      "claude-haiku-4-5-20251001": { "InputPerMToken": 0.80,  "OutputPerMToken": 4.00  }
+    }
   },
 
   "ApplicationInsights": {
@@ -65,7 +92,8 @@
     "MinimumLevel": {
       "Default": "Debug",
       "Override": {
-        "Microsoft": "Information",
+        "Microsoft": "Warning",
+        "Microsoft.Hosting.Lifetime": "Information",
         "System": "Warning"
       }
     }

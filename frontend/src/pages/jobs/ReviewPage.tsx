@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { toast } from "sonner";
-import { PlusCircle, ArrowLeft, Pencil, ChevronDown } from "lucide-react";
+import { PlusCircle, ArrowLeft, Pencil, ChevronDown, HelpCircle, CheckCircle2 } from "lucide-react";
 import {
   useArchitecture,
   useAddElement,
@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -164,6 +165,11 @@ export function ReviewPage() {
   // GAP-TH7: pre-analysis concern modal
   const [showAddThreatModal, setShowAddThreatModal] = useState(false);
   const [showDeploymentEdit, setShowDeploymentEdit] = useState(false);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const questions = architecture?.clarificationQuestions ?? [];
+  const answeredCount = Object.values(answers).filter((a) => a.trim().length > 0).length;
+  const unansweredCount = questions.length - answeredCount;
+  const [activeTab, setActiveTab] = useState<string>("architecture");
   const [deploymentEditForm, setDeploymentEditForm] = useState<{
     environment: string;
     containerized: boolean;
@@ -187,10 +193,29 @@ export function ReviewPage() {
     if (!stillVisible) setSelectedElement(null);
   }, [elements, selectedElement]);
 
-  // Pre-select methods based on detected architecture features (runs once when architecture loads)
+  // Pre-select methods and pre-populate answers once when architecture loads
   useEffect(() => {
-    if (architecture && selectedMethods.length === 0) {
+    if (!architecture) return;
+
+    if (selectedMethods.length === 0)
       setSelectedMethods(computeSuggestedMethods(architecture));
+
+    // Pre-populate answers from previously saved answers, matched by question text
+    const prefilled: Record<number, string> = {};
+    if (architecture.clarificationAnswers.length > 0) {
+      architecture.clarificationQuestions.forEach((q, idx) => {
+        const saved = architecture.clarificationAnswers.find(
+          (a) => a.question === q.question,
+        );
+        if (saved?.answer) prefilled[idx] = saved.answer;
+      });
+      if (Object.keys(prefilled).length > 0) setAnswers(prefilled);
+    }
+
+    // Auto-switch to questions tab only when there are still unanswered questions
+    const unansweredAfterPrefill = architecture.clarificationQuestions.length - Object.keys(prefilled).length;
+    if (unansweredAfterPrefill > 0 && !isReadOnly) {
+      setActiveTab("questions");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [architecture?.id]);
@@ -232,10 +257,15 @@ export function ReviewPage() {
     );
 
     try {
+      const clarificationAnswers = questions
+        .map((q, i) => ({ question: q.question, answer: answers[i] ?? "", priority: q.priority }))
+        .filter((a) => a.answer.trim().length > 0);
+
       await confirmArch.mutateAsync({
         note: confirmNote || undefined,
         selectedMethods,
         rejectedMethods,
+        clarificationAnswers: clarificationAnswers.length > 0 ? clarificationAnswers : undefined,
       });
       toast.success("Analysis started");
       navigate(`/orgs/${orgId}/jobs/${jobId}`);
@@ -330,7 +360,12 @@ export function ReviewPage() {
         </div>
 
         {/* Architecture metadata */}
-        {architecture && <ArchitectureMetaPanel architecture={architecture} />}
+        {architecture && (
+          <ArchitectureMetaPanel
+            architecture={architecture}
+            onGoToQuestions={() => setActiveTab("questions")}
+          />
+        )}
 
         {/* Deployment context — auto-detected from diagram, editable before analysis */}
         {architecture?.deploymentContext && (
@@ -396,97 +431,164 @@ export function ReviewPage() {
           </div>
         )}
 
-        {/* Three-panel layout */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* Left: element list */}
-          <aside className="w-56 shrink-0 border-r overflow-hidden flex flex-col">
-            <ElementListPanel
-              elements={elements}
-              selectedElementId={selectedElement?.id}
-              onElementSelect={setSelectedElement}
-              onAddElement={() => setShowAddModal(true)}
-              readOnly={isReadOnly}
-            />
-          </aside>
-
-          {/* Centre: canvas */}
-          <main className="flex-1 overflow-hidden">
-            {elements.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-                <p className="text-muted-foreground">No elements yet.</p>
-                {!isReadOnly && (
-                  <Button onClick={() => setShowAddModal(true)} variant="outline">
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    Add your first element
-                  </Button>
+        {/* Tabbed layout */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 min-h-0 flex-col overflow-hidden">
+          <TabsList className="mx-4 mt-2 w-auto shrink-0 justify-start">
+            <TabsTrigger value="architecture">Architecture</TabsTrigger>
+            {questions.length > 0 && (
+              <TabsTrigger value="questions" className="gap-1.5">
+                Questions
+                {unansweredCount > 0 ? (
+                  <span className="inline-flex items-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                    {unansweredCount}
+                  </span>
+                ) : (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
                 )}
-              </div>
-            ) : (
-              <ArchCanvas
+              </TabsTrigger>
+            )}
+          </TabsList>
+
+          {/* Architecture tab — three-panel layout */}
+          <TabsContent value="architecture" className="mt-0 flex-1 min-h-0 overflow-hidden">
+            <div className="flex h-full min-h-0 overflow-hidden">
+            <aside className="w-56 shrink-0 border-r overflow-hidden flex flex-col">
+              <ElementListPanel
                 elements={elements}
-                readOnly={isReadOnly}
-                drawFlowMode={drawFlowMode}
                 selectedElementId={selectedElement?.id}
                 onElementSelect={setSelectedElement}
-                onEdgeClick={(edgeElementId) => {
-                  const edgeElement = elements.find((e) => e.id === edgeElementId);
-                  if (edgeElement) setSelectedElement(edgeElement);
-                }}
-                onCreateDataFlow={handleCreateDataFlow}
-                onDeleteElement={(id) => {
-                  const el = elements.find((e) => e.id === id);
-                  if (el) setKeyboardDeleteElement(el);
-                }}
-              />
-            )}
-          </main>
-
-          {/* Right: detail panel */}
-          {selectedElement && (
-            <aside className="w-72 shrink-0 border-l overflow-hidden">
-              <ElementDetailPanel
-                element={selectedElement}
+                onAddElement={() => setShowAddModal(true)}
                 readOnly={isReadOnly}
-                onPatch={async (req) => {
-                  await patchElement.mutateAsync({ elementId: selectedElement.id, req });
-                  toast.success("Element updated");
-                }}
-                onDelete={async () => {
-                  await deleteElement.mutateAsync(selectedElement.id);
-                  setSelectedElement(null);
-                  toast.success("Element deleted");
-                }}
-                onCorrect={async (req) => {
-                  await correctElement.mutateAsync({ elementId: selectedElement.id, req });
-                  toast.success("Correction saved");
-                }}
-                onSoftRemove={
-                  isReadOnly
-                    ? undefined
-                    : async () => {
-                        if (selectedElement.source !== "Extracted") return;
-                        const alreadyRemoved = selectedElement.corrections.some(
-                          (c) => c.correctionType === "MarkIncorrect",
-                        );
-                        if (alreadyRemoved) {
-                          toast.info("Element is already soft-removed.");
-                          return;
-                        }
-                        await correctElement.mutateAsync({
-                          elementId: selectedElement.id,
-                          req: {
-                            correctionType: "MarkIncorrect",
-                            note: "Soft removed by reviewer.",
-                          },
-                        });
-                        setSelectedElement(null);
-                        toast.success("Element soft-removed and excluded from analysis");
-                      }
-                }
               />
             </aside>
+
+            <main className="flex-1 overflow-hidden">
+              {elements.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+                  <p className="text-muted-foreground">No elements yet.</p>
+                  {!isReadOnly && (
+                    <Button onClick={() => setShowAddModal(true)} variant="outline">
+                      <PlusCircle className="mr-2 h-4 w-4" />
+                      Add your first element
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <ArchCanvas
+                  elements={elements}
+                  readOnly={isReadOnly}
+                  drawFlowMode={drawFlowMode}
+                  selectedElementId={selectedElement?.id}
+                  onElementSelect={setSelectedElement}
+                  onEdgeClick={(edgeElementId) => {
+                    const edgeElement = elements.find((e) => e.id === edgeElementId);
+                    if (edgeElement) setSelectedElement(edgeElement);
+                  }}
+                  onCreateDataFlow={handleCreateDataFlow}
+                  onDeleteElement={(id) => {
+                    const el = elements.find((e) => e.id === id);
+                    if (el) setKeyboardDeleteElement(el);
+                  }}
+                />
+              )}
+            </main>
+
+            {selectedElement && (
+              <aside className="w-72 shrink-0 border-l overflow-hidden">
+                <ElementDetailPanel
+                  element={selectedElement}
+                  readOnly={isReadOnly}
+                  onPatch={async (req) => {
+                    await patchElement.mutateAsync({ elementId: selectedElement.id, req });
+                    toast.success("Element updated");
+                  }}
+                  onDelete={async () => {
+                    await deleteElement.mutateAsync(selectedElement.id);
+                    setSelectedElement(null);
+                    toast.success("Element deleted");
+                  }}
+                  onCorrect={async (req) => {
+                    await correctElement.mutateAsync({ elementId: selectedElement.id, req });
+                    toast.success("Correction saved");
+                  }}
+                  onSoftRemove={
+                    isReadOnly
+                      ? undefined
+                      : async () => {
+                          if (selectedElement.source !== "Extracted") return;
+                          const alreadyRemoved = selectedElement.corrections.some(
+                            (c) => c.correctionType === "MarkIncorrect",
+                          );
+                          if (alreadyRemoved) {
+                            toast.info("Element is already soft-removed.");
+                            return;
+                          }
+                          await correctElement.mutateAsync({
+                            elementId: selectedElement.id,
+                            req: {
+                              correctionType: "MarkIncorrect",
+                              note: "Soft removed by reviewer.",
+                            },
+                          });
+                          setSelectedElement(null);
+                          toast.success("Element soft-removed and excluded from analysis");
+                        }
+                  }
+                />
+              </aside>
+            )}
+            </div>
+          </TabsContent>
+
+          {/* Questions tab */}
+          {questions.length > 0 && (
+            <TabsContent value="questions" className="mt-0 flex-1 min-h-0 overflow-y-auto p-4">
+              <div className="mx-auto max-w-2xl space-y-1">
+                <p className="text-sm text-muted-foreground mb-4">
+                  Answer these questions to give the analysis more context.
+                  Unanswered questions are still fine — the analysis will proceed with assumptions noted.
+                </p>
+                {questions.map((q, idx) => (
+                  <div key={idx} className="rounded-lg border bg-card p-4 space-y-2">
+                    <div className="flex items-start gap-2">
+                      {answers[idx]?.trim() ? (
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+                      ) : (
+                        <HelpCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                      )}
+                      <div className="flex-1 space-y-2">
+                        <p className="text-sm font-medium leading-snug">{q.question}</p>
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          q.priority.toLowerCase() === "high"
+                            ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                            : q.priority.toLowerCase() === "medium"
+                              ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                              : "bg-muted text-muted-foreground"
+                        }`}>
+                          {q.priority}
+                        </span>
+                        {!isReadOnly && (
+                          <Textarea
+                            value={answers[idx] ?? ""}
+                            onChange={(e) =>
+                              setAnswers((prev) => ({ ...prev, [idx]: e.target.value }))
+                            }
+                            placeholder="Your answer..."
+                            rows={3}
+                            className="mt-1 resize-none"
+                          />
+                        )}
+                        {isReadOnly && answers[idx] && (
+                          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{answers[idx]}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </TabsContent>
           )}
-        </div>
+        </Tabs>
       </div>
 
       {/* F-904: keyboard Delete confirmation */}
@@ -537,6 +639,11 @@ export function ReviewPage() {
         isLoading={confirmArch.isPending}
       >
         <div className="space-y-3">
+          {unansweredCount > 0 && questions.length > 0 && (
+            <p className="text-sm text-amber-600 dark:text-amber-400">
+              {unansweredCount} clarification question{unansweredCount !== 1 ? "s" : ""} unanswered — answers help improve analysis quality.
+            </p>
+          )}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
               <Label>Threat methods/frameworks — checked methods will run ({selectedMethods.length} selected)</Label>

@@ -15,6 +15,7 @@ public record ArchitectureDto(
     object Assumptions,       // deserialized from jsonb
     object Gaps,
     object ClarificationQuestions,
+    object ClarificationAnswers,  // previously submitted answers; deserialized from jsonb
     object? DeploymentContext,  // deserialized from jsonb; null means not yet detected
     bool IsConfirmed,
     DateTimeOffset? ConfirmedAt,
@@ -42,6 +43,7 @@ public record ArchitectureDto(
             Assumptions: DeserializeJsonb(arch.AssumptionsJson),
             Gaps: DeserializeJsonb(arch.GapsJson),
             ClarificationQuestions: DeserializeJsonb(arch.ClarificationQuestionsJson),
+            ClarificationAnswers: DeserializeJsonb(arch.ClarificationAnswersJson),
             DeploymentContext: arch.DeploymentContextJson == "{}" ? null : DeserializeJsonb(arch.DeploymentContextJson),
             IsConfirmed: arch.IsConfirmed,
             ConfirmedAt: arch.ConfirmedAt,
@@ -128,6 +130,14 @@ public class ConfirmArchitectureRequest
     public string? Note { get; set; }
     public string[]? SelectedMethods { get; set; }
     public string[]? RejectedMethods { get; set; }
+    public ClarificationAnswer[]? ClarificationAnswers { get; set; }
+}
+
+public class ClarificationAnswer
+{
+    public string Question { get; set; } = "";
+    public string Answer { get; set; } = "";
+    public string Priority { get; set; } = "";
 }
 
 /// <summary>

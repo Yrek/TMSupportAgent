@@ -120,7 +120,8 @@ public sealed class SynthesizeStageTests
             EvidenceStrength:      "direct",
             FindingType:           "confirmed",
             Mitigations:           [],
-            FrameworkMappings:     frameworkMappings?.Select(f => new FrameworkMapping(f, "REF-1", null)).ToArray() ?? []);
+            FrameworkMappings:     frameworkMappings?.Select(f => new FrameworkMapping(f, "REF-1", null)).ToArray() ?? [],
+            EvidenceBasis:         ["API is internet-facing per the architecture diagram"]);
 
     private static LlmResponse ResponseFor(FinalOutput output) =>
         new(JsonSerializer.Serialize(output, CamelCase), 2000, 1000, "gpt-4o");
@@ -502,6 +503,48 @@ public sealed class SynthesizeStageTests
 
         result.ConfirmedThreats[0].Mitigations[0].AcceptanceCriteria.Should().NotBeNull();
         result.ConfirmedThreats[0].Mitigations[0].AcceptanceCriteria.Should().BeEmpty();
+    }
+
+    // ── DemoteEmptyEvidenceConfirmed ─────────────────────────────────────────
+
+    [Fact]
+    public async Task ConfirmedThreat_WithNoEvidenceBasis_DemotedToConditional()
+    {
+        var (stage, _, strongClient, cheapClient, _) = BuildStage();
+
+        var threatWithoutEvidence = MakeThreat("T-001") with { EvidenceBasis = null };
+        var output = MinimalFinalOutput(confirmed: [threatWithoutEvidence]) with
+        {
+            PrioritizedRemediationList = []
+        };
+
+        strongClient.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ResponseFor(output));
+        cheapClient.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(CheapResponse(Array.Empty<object>()));
+
+        var result = await stage.ExecuteAsync(MinimalInput(), None);
+
+        result.ConfirmedThreats.Should().BeEmpty(
+            because: "a confirmed threat with no evidenceBasis must be demoted to conditional");
+        result.ConditionalThreats.Should().ContainSingle(t => t.Identifier == "T-001",
+            because: "the demoted threat must appear in conditionalThreats");
+    }
+
+    [Fact]
+    public async Task ConfirmedThreat_WithEvidenceBasis_StaysConfirmed()
+    {
+        var (stage, _, strongClient, cheapClient, _) = BuildStage();
+
+        strongClient.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ResponseFor(MinimalFinalOutput()));
+        cheapClient.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(CheapResponse(Array.Empty<object>()));
+
+        var result = await stage.ExecuteAsync(MinimalInput(), None);
+
+        result.ConfirmedThreats.Should().ContainSingle(t => t.Identifier == "T-001",
+            because: "a confirmed threat with evidenceBasis populated must not be demoted");
     }
 
     // ── Token budget ──────────────────────────────────────────────────────────

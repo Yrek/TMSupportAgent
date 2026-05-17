@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Check, HelpCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, Check, HelpCircle, CheckCircle2 } from "lucide-react";
 import type { ArchitectureModel } from "@/api/architecture";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -12,9 +12,10 @@ const PRIORITY_VARIANT: Record<string, "destructive" | "warning" | "secondary"> 
 
 interface ArchitectureMetaPanelProps {
   architecture: ArchitectureModel;
+  onGoToQuestions?: () => void;
 }
 
-export function ArchitectureMetaPanel({ architecture }: ArchitectureMetaPanelProps) {
+export function ArchitectureMetaPanel({ architecture, onGoToQuestions }: ArchitectureMetaPanelProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -91,28 +92,36 @@ export function ArchitectureMetaPanel({ architecture }: ArchitectureMetaPanelPro
             </div>
           )}
 
-          {/* Clarification questions */}
+          {/* Clarification questions — summary only, full Q&A in Questions tab */}
           {architecture.clarificationQuestions.length > 0 && (
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
                 Clarification questions
               </p>
-              <div className="space-y-2">
-                {architecture.clarificationQuestions.map((q, idx) => (
-                  <div key={idx} className="flex items-start gap-2">
-                    <HelpCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <div className="flex-1">
-                      <p className="text-sm">{q.question}</p>
-                      <Badge
-                        variant={PRIORITY_VARIANT[q.priority.toLowerCase()] ?? "secondary"}
-                        className="mt-0.5 text-[10px]"
-                      >
-                        {q.priority}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {(() => {
+                const answeredCount = architecture.clarificationAnswers.filter(
+                  (a) => a.answer.trim().length > 0,
+                ).length;
+                const total = architecture.clarificationQuestions.length;
+                const allAnswered = answeredCount >= total;
+                return (
+                  <button
+                    onClick={onGoToQuestions}
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {allAnswered ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-500" />
+                    ) : (
+                      <HelpCircle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                    )}
+                    <span>
+                      {allAnswered
+                        ? `${total} question${total !== 1 ? "s" : ""} — all answered`
+                        : `${total} question${total !== 1 ? "s" : ""} — ${total - answeredCount} unanswered`}
+                    </span>
+                  </button>
+                );
+              })()}
             </div>
           )}
         </div>

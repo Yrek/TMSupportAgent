@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { toast } from "sonner";
-import { ArrowLeft, RefreshCw, AlertTriangle, HelpCircle, Clock, DollarSign } from "lucide-react";
+import { ArrowLeft, RefreshCw, AlertTriangle, HelpCircle, Clock, DollarSign, Copy } from "lucide-react";
 import { useJob } from "@/api/jobs";
 import { useThreats, useUpdateThreatStatus, useAddThreatNote, useAddThreat, useAnalysis, useRejectedCandidates, type RejectedCandidate } from "@/api/threats";
 import { useArchitecture, useReanalyzeJob } from "@/api/architecture";
@@ -359,9 +359,22 @@ export function AnalysisPage() {
             {Array.isArray(analysis["reviewQuestions"]) &&
               (analysis["reviewQuestions"] as string[]).length > 0 && (
                 <div className="rounded-md bg-amber-50 border border-amber-200 p-3">
-                  <div className="flex items-center gap-2 text-amber-800 text-xs font-semibold mb-1">
-                    <HelpCircle className="h-3.5 w-3.5" />
-                    Questions requiring your review
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2 text-amber-800 text-xs font-semibold">
+                      <HelpCircle className="h-3.5 w-3.5" />
+                      Questions requiring your review
+                    </div>
+                    <button
+                      onClick={() => {
+                        const text = (analysis["reviewQuestions"] as string[]).join("\n\n");
+                        void navigator.clipboard.writeText(text);
+                        toast.success("Questions copied");
+                      }}
+                      className="flex items-center gap-1 text-amber-700 hover:text-amber-900 text-xs transition-colors"
+                    >
+                      <Copy className="h-3 w-3" />
+                      Copy all
+                    </button>
                   </div>
                   <ul className="space-y-1">
                     {(analysis["reviewQuestions"] as string[]).map((q, i) => (

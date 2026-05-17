@@ -195,9 +195,9 @@ internal sealed class PipelineDbPersistence(
                 existingControls: ft.ExistingControls,
                 controlGaps: ft.ControlGaps,
                 confidence: ClampConfidence(ParseConfidence(ft.Confidence), findingType),
-                evidenceBasis: [],
+                evidenceBasis: ft.EvidenceBasis ?? [],
                 evidenceStrength: ParseEvidenceStrength(ft.EvidenceStrength),
-                assumptions: null,
+                assumptions: ft.Assumptions,
                 findingType: findingType,
                 riskRatingJson: riskRatingJson);
 

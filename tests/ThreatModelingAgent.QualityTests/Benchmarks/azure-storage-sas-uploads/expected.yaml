@@ -1,0 +1,23 @@
+id: azure-storage-sas-uploads
+title: "Azure Blob Storage with SAS-based client uploads"
+
+# Focused storage security scenario. Tests whether the pipeline correctly
+# identifies SAS token risks, shared account key exposure, path-prefix-only
+# isolation, and file upload attack surface.
+
+must_find_group_keys:
+  - sas_token_access         # SAS URLs issued for client-side direct uploads
+  - storage_shared_key       # account key used to generate SAS, stored in config
+  - file_content_attack      # arbitrary file types uploaded, displayed in-app
+  - storage_prefix_isolation # single shared container, user isolation by path prefix only
+
+must_not_claim_group_keys:
+  - cross_tenant_isolation_flaw  # no multi-tenancy described
+  - no_database_rls              # no shared database described
+  - per_tenant_quota_exhaustion  # no tenants
+  - federated_claim_manipulation # no federated identity described
+  - api_bypass_edge              # not the focus; no WAF claim either way
+
+scoring:
+  min_must_find_recall: 0.75
+  max_must_not_claim_violations: 0

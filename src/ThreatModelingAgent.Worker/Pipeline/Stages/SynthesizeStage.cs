@@ -116,6 +116,7 @@ public sealed class SynthesizeStage(
                 c.EvidenceBasis,
                 c.Confidence,
                 c.EvidenceStrength,
+                c.Assumptions,
                 c.FindingType,
                 c.CoversGapArea,
                 statedFact = string.Equals(c.FindingType, "confirmed", StringComparison.OrdinalIgnoreCase)
@@ -217,6 +218,11 @@ public sealed class SynthesizeStage(
 
         // Deterministically fix any findingType mismatches the LLM may have introduced.
         output = EnforceFindingTypeConsistency(output);
+
+        // Deterministically demote confirmed threats with no evidence — prompt rules require evidenceBasis
+        // on every finding but the model can still produce empty arrays. A confirmed finding without
+        // evidence is epistemically equivalent to a conditional finding.
+        output = DemoteEmptyEvidenceConfirmed(output);
 
         // Warn if any confirmed threat merged candidates from different group keys (should not happen).
         WarnIfCrossGroupKeyMerge(filteredSets, output);
@@ -325,6 +331,35 @@ public sealed class SynthesizeStage(
             ConditionalThreats = output.ConditionalThreats
                 .Where(t => !conditionalIds.Contains(t.Identifier))
                 .Concat(demoted)
+                .ToArray()
+        };
+    }
+
+    private FinalOutput DemoteEmptyEvidenceConfirmed(FinalOutput output)
+    {
+        var todemote = output.ConfirmedThreats
+            .Where(t => t.EvidenceBasis is not { Length: > 0 })
+            .ToArray();
+
+        if (todemote.Length == 0) return output;
+
+        foreach (var t in todemote)
+            logger.LogWarning(
+                "SYNTHESIZE: demoting {Id} ({Title}) from confirmed — no evidenceBasis populated.",
+                t.Identifier, t.Title);
+
+        var demotedIds = todemote.Select(t => t.Identifier).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var demotedAsConditional = todemote
+            .Select(t => t with { FindingType = "conditional" })
+            .ToArray();
+
+        return output with
+        {
+            ConfirmedThreats = output.ConfirmedThreats
+                .Where(t => !demotedIds.Contains(t.Identifier))
+                .ToArray(),
+            ConditionalThreats = output.ConditionalThreats
+                .Concat(demotedAsConditional)
                 .ToArray()
         };
     }

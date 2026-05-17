@@ -1,0 +1,52 @@
+@startuml
+!include <C4/C4_Container>
+
+title Azure Multi-Tenant SaaS — Shared Database
+
+Person(tenant_a_user, "Tenant A User", "External user, Tenant A")
+Person(tenant_b_user, "Tenant B User", "External user, Tenant B")
+System_Ext(entra, "Microsoft Entra ID", "OIDC authentication\nAll tenants use same IdP")
+
+System_Boundary(saas, "SaaS Application") {
+
+    Container(frontend, "Web Frontend", "React",
+        "Azure Static Web Apps\nServed to all tenants")
+
+    Container(api, "REST API", "ASP.NET Core",
+        "Azure App Service\nHandles all tenants\nTenant ID resolved from token claim")
+
+    ContainerDb(db, "Azure SQL Database", "SQL",
+        "SHARED across all tenants\nNo row-level security configured\nNo description of centralized tenant filter\nManaged identity access")
+
+    Container(storage, "Azure Blob Storage", "Blob",
+        "SHARED container across all tenants\nFiles stored at: uploads/{tenantId}/{filename}\nPrefix-only isolation — no container per tenant\nManaged identity access")
+}
+
+Rel(tenant_a_user, frontend, "Uses", "HTTPS")
+Rel(tenant_b_user, frontend, "Uses", "HTTPS")
+Rel(frontend, api, "API calls", "HTTPS / REST")
+Rel(api, entra, "Validates tokens", "OIDC")
+Rel(api, db, "Reads and writes tenant business data\n(contracts, invoices, customer records)", "SQL / managed identity")
+Rel(api, storage, "Stores and retrieves uploaded files", "HTTPS / managed identity")
+
+note right of db
+  Tenant filtering applied in
+  application code only.
+  Not described as centralized.
+  No database-level enforcement.
+end note
+
+note right of storage
+  Files from ALL tenants share
+  one container. Isolation relies
+  solely on tenantId path prefix.
+end note
+
+note right of api
+  Audit logging described as enabled.
+  No detail on what events are captured
+  or whether logs are tenant-scoped.
+  Managed identity permissions not described.
+end note
+
+@enduml

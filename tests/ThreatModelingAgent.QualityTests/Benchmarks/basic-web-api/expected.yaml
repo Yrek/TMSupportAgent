@@ -1,0 +1,24 @@
+id: basic-web-api
+title: "Basic single-tenant web API"
+
+# Single-tenant CRUD API with file uploads and no WAF.
+# Covers the most common web API risk surface: object-level access,
+# WAF bypass, file upload attack, and public cloud data endpoints.
+
+must_find_group_keys:
+  - bola_request_parameter       # authenticated users accessing each other's resources
+  - api_bypass_edge              # App Service reachable without WAF/CDN/API gateway
+  - file_content_attack          # user file uploads (profile pictures, documents)
+  - public_dataplane_endpoint    # SQL DB, Blob Storage, Key Vault without private endpoints
+
+must_not_claim_group_keys:
+  - cross_tenant_isolation_flaw  # single-tenant — no tenant isolation concept
+  - no_database_rls              # not applicable in a single-tenant system
+  - per_tenant_quota_exhaustion  # no tenants
+  - federated_claim_manipulation # no federated identity / B2B trust described
+  - storage_prefix_isolation     # not applicable — no multi-tenant prefix scheme
+
+scoring:
+  # Accept one miss to tolerate valid threat consolidation by the LLM
+  min_must_find_recall: 0.75
+  max_must_not_claim_violations: 0

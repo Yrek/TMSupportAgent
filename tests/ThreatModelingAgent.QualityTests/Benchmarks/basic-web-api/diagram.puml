@@ -1,0 +1,44 @@
+@startuml
+!include <C4/C4_Container>
+
+title Basic Single-Tenant Web API
+
+Person(user, "User", "Authenticated application user")
+System_Ext(entra, "Microsoft Entra ID", "OIDC identity provider")
+
+System_Boundary(app, "Web Application — single tenant") {
+
+    Container(spa, "React SPA", "JavaScript", "Served from Azure Static Web Apps")
+
+    Container(api, "REST API", "ASP.NET Core", "Azure App Service\nDirect internet exposure\nNo WAF, no CDN, no API gateway")
+
+    ContainerDb(db, "Azure SQL Database", "SQL",
+        "Single-tenant\nNo row-level security\nNo private endpoint\nManaged identity access")
+
+    Container(storage, "Azure Blob Storage", "Blob",
+        "User file uploads\nNo private endpoint\nManaged identity access")
+
+    Container(kv, "Azure Key Vault", "Secrets",
+        "API keys and secrets\nNo private endpoint\nManaged identity access")
+}
+
+Rel(user, spa, "Uses", "HTTPS")
+Rel(spa, api, "API calls", "HTTPS / REST")
+Rel(api, entra, "Validates tokens", "OIDC")
+Rel(api, db, "Reads and writes user data", "SQL / managed identity")
+Rel(api, storage, "Stores uploaded files", "HTTPS / managed identity")
+Rel(api, kv, "Reads secrets and API keys", "HTTPS / managed identity")
+
+note right of api
+  Managed identity permissions
+  are not described.
+  No rate limiting described.
+end note
+
+note right of storage
+  Users upload profile pictures
+  and documents via the API.
+  No file type restriction described.
+end note
+
+@enduml

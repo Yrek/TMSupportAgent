@@ -17,6 +17,7 @@ public class Architecture
     public string AssumptionsJson { get; private set; } = "[]";       // jsonb — list of {text, confirmed}
     public string GapsJson { get; private set; } = "[]";              // jsonb — material unknowns
     public string ClarificationQuestionsJson { get; private set; } = "[]"; // jsonb — prioritized questions
+    public string ClarificationAnswersJson { get; private set; } = "[]"; // jsonb — user answers to clarification questions
     public string DeploymentContextJson { get; private set; } = "{}"; // jsonb — detected deployment environment
     public DateTimeOffset? ConfirmedAt { get; private set; }
     public UserId? ConfirmedBy { get; private set; }
@@ -111,6 +112,15 @@ public class Architecture
     public void UpdateDeploymentContext(string deploymentContextJson)
     {
         DeploymentContextJson = deploymentContextJson;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>
+    /// Stores user-supplied answers to clarification questions before Phase 2 is enqueued.
+    /// </summary>
+    public void SetClarificationAnswers(string answersJson)
+    {
+        ClarificationAnswersJson = answersJson;
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 }

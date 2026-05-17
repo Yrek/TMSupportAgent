@@ -9,6 +9,7 @@ out/
 .vs/
 .idea/
 *.DotSettings.user
+.claude/
 
 # Local secrets — NEVER commit these (CLAUDE.md §10.1)
 appsettings.Development.json
@@ -28,6 +29,9 @@ TestResults/
 coverage/
 *.trx
 *.coveragexml
+
+# Quality benchmark results — generated locally, never committed
+tests/ThreatModelingAgent.QualityTests/Results/*.json
 
 # OS
 .DS_Store

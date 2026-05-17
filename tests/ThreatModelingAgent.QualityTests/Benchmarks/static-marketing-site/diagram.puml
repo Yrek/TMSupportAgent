@@ -1,0 +1,27 @@
+@startuml
+!include <C4/C4_Context>
+
+title Static Marketing Site
+
+Person(visitor, "Visitor", "Anonymous web visitor, no login")
+
+System(site, "Static Marketing Site", "Azure Static Web Apps\nNo API, no database, no auth")
+
+System_Ext(analytics_cdn, "Analytics CDN", "Third-party JavaScript analytics\nloaded from external CDN")
+
+System_Ext(git, "Git Repository", "GitHub — source code and content")
+
+System_Ext(cicd, "GitHub Actions", "CI/CD pipeline\nBuilds and deploys on push to main")
+
+Rel(visitor, site, "Browses", "HTTPS")
+Rel(site, analytics_cdn, "Loads analytics script", "HTTPS")
+Rel(git, cicd, "Triggers on push to main", "Webhook")
+Rel(cicd, site, "Deploys static files", "Azure CLI / OIDC")
+
+note right of cicd
+  Pipeline has write access to
+  Azure Static Web Apps deployment.
+  No branch protection described.
+end note
+
+@enduml

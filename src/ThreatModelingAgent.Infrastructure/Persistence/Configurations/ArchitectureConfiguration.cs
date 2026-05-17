@@ -49,6 +49,12 @@ internal sealed class ArchitectureConfiguration : IEntityTypeConfiguration<Archi
             .HasColumnType("jsonb")
             .IsRequired();
 
+        builder.Property(a => a.ClarificationAnswersJson)
+            .HasColumnName("clarification_answers")
+            .HasColumnType("jsonb")
+            .IsRequired()
+            .HasDefaultValueSql("'[]'::jsonb");
+
         builder.Property(a => a.DeploymentContextJson)
             .HasColumnName("deployment_context")
             .HasColumnType("jsonb")

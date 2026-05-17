@@ -229,9 +229,13 @@ internal sealed class JobOrchestrator(
 
             // Inject a human-readable corrections summary so downstream stages can reason about
             // what changed since the previous analysis run (re-analysis corrections context)
+            var correctionsSummary = BuildCorrectionsSummary(arch.Value.corrections);
+            var answersSummary = BuildClarificationAnswersSummary(arch.Value.architecture.ClarificationAnswersJson);
             canonicalModel = canonicalModel with
             {
-                CorrectionsContext = BuildCorrectionsSummary(arch.Value.corrections)
+                CorrectionsContext = answersSummary is not null
+                    ? $"{correctionsSummary}\n\n{answersSummary}"
+                    : correctionsSummary
             };
 
             // Re-persist corrected canonical model to blob so all downstream stages use it
@@ -244,6 +248,16 @@ internal sealed class JobOrchestrator(
             logger.LogInformation(
                 "Corrections applied. JobId={JobId} Count={Count} ArchVersion={Version}",
                 job.Id, arch.Value.corrections.Count, arch.Value.architecture.Version);
+        }
+        else if (arch is not null)
+        {
+            // No element corrections, but may still have clarification answers to inject
+            var answersSummary = BuildClarificationAnswersSummary(arch.Value.architecture.ClarificationAnswersJson);
+            if (answersSummary is not null)
+            {
+                canonicalModel = canonicalModel with { CorrectionsContext = answersSummary };
+                await NormalizeStage.PersistAsync(canonicalModel, orgId.Value, job.Id.Value, blobStorage, ct);
+            }
         }
 
         // CLASSIFY
@@ -423,6 +437,32 @@ internal sealed class JobOrchestrator(
             lines.Add($"... and {corrections.Count - 20} more corrections.");
 
         return string.Join("\n", lines);
+    }
+
+    private static string? BuildClarificationAnswersSummary(string answersJson)
+    {
+        if (string.IsNullOrWhiteSpace(answersJson) || answersJson == "[]")
+            return null;
+
+        try
+        {
+            var answers = JsonSerializer.Deserialize<JsonElement[]>(answersJson);
+            if (answers is null || answers.Length == 0) return null;
+
+            var lines = new List<string> { "Clarification questions answered by the user:" };
+            foreach (var a in answers)
+            {
+                var question = a.TryGetProperty("question", out var q) ? q.GetString() : null;
+                var answer   = a.TryGetProperty("answer",   out var v) ? v.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(question) && !string.IsNullOrWhiteSpace(answer))
+                    lines.Add($"Q: {question}\nA: {answer}");
+            }
+            return lines.Count > 1 ? string.Join("\n\n", lines) : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task TransitionAsync(Domain.Entities.Job job, JobStatus newStatus, CancellationToken ct)

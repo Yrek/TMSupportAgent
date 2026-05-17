@@ -41,6 +41,7 @@ export interface ArchitectureModel {
   assumptions: Array<{ text: string; confirmed: boolean }>;
   gaps: string[];
   clarificationQuestions: Array<{ question: string; priority: string; topic?: string }>;
+  clarificationAnswers: Array<{ question: string; answer: string; priority: string }>;
   deploymentContext: DeploymentContext | null;
   isConfirmed: boolean;
   confirmedAt: string | null;
@@ -175,7 +176,7 @@ export function useUpdateDeploymentContext(orgId: string, jobId: string) {
 export function useConfirmArchitecture(orgId: string, jobId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (req?: { note?: string | undefined; selectedMethods?: string[] | undefined; rejectedMethods?: string[] | undefined }) => {
+    mutationFn: async (req?: { note?: string | undefined; selectedMethods?: string[] | undefined; rejectedMethods?: string[] | undefined; clarificationAnswers?: Array<{ question: string; answer: string; priority: string }> | undefined }) => {
       const res = await apiClient.post<ArchitectureModel>(
         `/orgs/${orgId}/jobs/${jobId}/architecture/confirm`,
         req ?? {},

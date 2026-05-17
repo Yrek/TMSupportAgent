@@ -253,7 +253,8 @@ public sealed record FinalThreat(
     string[]? SourceMethods = null,
     OwaspRiskRating? RiskRating = null,
     string[]? EvidenceBasis = null,
-    string? GroupKey = null);              // primary attack-vector group key; null for unconstrained threats
+    string? GroupKey = null,               // primary attack-vector group key; null for unconstrained threats
+    string? Assumptions = null);
 
 public sealed record Mitigation(
     string Title,

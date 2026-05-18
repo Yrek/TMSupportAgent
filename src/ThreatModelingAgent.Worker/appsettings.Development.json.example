@@ -68,7 +68,11 @@
     "FrameworkMappingInputBudget": 30000,
     "FrameworkMappingMaxOutputTokens": 16000,
     "ReviewInputBudget": 20000,
-    "ReviewMaxOutputTokens": 16000
+    "ReviewMaxOutputTokens": 16000,
+    "TestCaseInputBudget": 12000,
+    "TestCaseMaxOutputTokens": 8192,
+    "AttackTreeInputBudget": 10000,
+    "AttackTreeMaxOutputTokens": 6144
   },
 
   "ModelPricing": {

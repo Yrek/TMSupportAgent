@@ -230,7 +230,27 @@ public sealed record FinalOutput(
     string[] ReviewQuestions,
     string AnalysisStatus,                          // complete | partial
     string? PartialReason,
-    Dictionary<string, string>? PromptVersions = null);  // prompt-version strings keyed by stage name
+    Dictionary<string, string>? PromptVersions = null,   // prompt-version strings keyed by stage name
+    SecurityTestCase[]? SecurityTestCases = null,        // Gherkin security test cases (null if sub-step skipped)
+    AttackTree[]? AttackTrees = null);                   // Mermaid attack trees for high/critical threats (null if sub-step skipped)
+
+public sealed record AttackTree(
+    string ThreatIdentifier,
+    string ThreatTitle,
+    string MermaidDiagram,   // valid Mermaid flowchart TD source
+    string TextSummary);     // plain-text version of the same tree
+
+public sealed record SecurityTestCase(
+    string ThreatIdentifier,
+    string ThreatTitle,
+    SecurityTestScenario[] Scenarios);
+
+public sealed record SecurityTestScenario(
+    string ScenarioTitle,
+    string Given,
+    string When,
+    string Then,
+    string? And);
 
 public sealed record FinalThreat(
     string Identifier,
@@ -271,7 +291,8 @@ public sealed record DesignRecommendation(
     string Title,
     string Description,
     string[] Principles,
-    string[] AffectedElementLabels);
+    string[] AffectedElementLabels,
+    string[]? RelatedThreatIdentifiers = null);
 
 public sealed record RemediationItem(
     string ThreatIdentifier,

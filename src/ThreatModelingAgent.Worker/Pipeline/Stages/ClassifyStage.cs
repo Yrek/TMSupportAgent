@@ -54,7 +54,12 @@ public sealed class ClassifyStage(
         ["multi_tenant_saas"]         = ["stride", "abuse_case", "tenant_isolation"],
         ["identity_complex"]          = ["stride", "abuse_case", "identity_session_delegation"],
         ["privacy_heavy"]             = ["stride", "abuse_case", "linddun"],
-        ["llm_enabled"]               = ["stride", "abuse_case", "ai_llm_threat", "maestro", "mitre_attack"],
+        // llm_enabled: LLM used for text generation/RAG but not necessarily agentic.
+        // ai_llm_threat covers prompt injection and model-output trust abuse.
+        // maestro and mitre_attack are optional extras the classifier may add — not mandatory here.
+        ["llm_enabled"]               = ["stride", "abuse_case", "ai_llm_threat"],
+        // agentic_mcp_enabled: full agentic system with MCP tools and multi-step planning.
+        // maestro (agent orchestration red-team) and mitre_attack (TTP coverage) are mandatory.
         ["agentic_mcp_enabled"]       = ["stride", "abuse_case", "ai_llm_threat", "maestro", "mitre_attack"],
         ["microservice_distributed"]  = ["stride", "abuse_case"],
         ["event_driven"]              = ["stride", "abuse_case"],

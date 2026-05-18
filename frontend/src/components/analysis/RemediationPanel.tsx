@@ -1,4 +1,6 @@
 import { Badge } from "@/components/ui/badge";
+import { Copy } from "lucide-react";
+import { toast } from "sonner";
 
 type Priority = "critical" | "high" | "medium" | "low";
 
@@ -48,14 +50,26 @@ export function RemediationPanel({ items, onThreatClick }: RemediationPanelProps
           <div className="space-y-2">
             {group.map((item, idx) => (
               <div key={idx} className="rounded-lg border p-3 space-y-1">
-                <div className="flex items-center gap-2">
+                <div className="flex items-start gap-2">
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => onThreatClick?.(item.threatIdentifier)}
+                      className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono font-bold hover:bg-primary/10 hover:text-primary transition-colors shrink-0"
+                    >
+                      {item.threatIdentifier}
+                    </button>
+                    <span className="text-sm font-medium">{item.title}</span>
+                  </div>
                   <button
-                    onClick={() => onThreatClick?.(item.threatIdentifier)}
-                    className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono font-bold hover:bg-primary/10 hover:text-primary transition-colors"
+                    title="Copy to clipboard"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(`${item.threatIdentifier}: ${item.title}\n${item.mitigationSummary}`);
+                      toast.success("Copied");
+                    }}
+                    className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                   >
-                    {item.threatIdentifier}
+                    <Copy className="h-3.5 w-3.5" />
                   </button>
-                  <span className="text-sm font-medium">{item.title}</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{item.mitigationSummary}</p>
               </div>

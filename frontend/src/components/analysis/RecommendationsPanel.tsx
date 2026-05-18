@@ -5,13 +5,15 @@ interface Recommendation {
   description: string;
   principles?: string[];
   affectedElements?: string[];
+  relatedThreatIdentifiers?: string[];
 }
 
 interface RecommendationsPanelProps {
   recommendations: Recommendation[];
+  onThreatClick?: ((identifier: string) => void) | undefined;
 }
 
-export function RecommendationsPanel({ recommendations }: RecommendationsPanelProps) {
+export function RecommendationsPanel({ recommendations, onThreatClick }: RecommendationsPanelProps) {
   if (!recommendations.length) {
     return (
       <div className="flex items-center justify-center p-12 text-center text-muted-foreground text-sm">
@@ -37,6 +39,20 @@ export function RecommendationsPanel({ recommendations }: RecommendationsPanelPr
             <div className="flex flex-wrap gap-1">
               {rec.affectedElements.map((e) => (
                 <Badge key={e} variant="secondary" className="text-xs">{e}</Badge>
+              ))}
+            </div>
+          )}
+          {rec.relatedThreatIdentifiers && rec.relatedThreatIdentifiers.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-xs text-muted-foreground">Addresses:</span>
+              {rec.relatedThreatIdentifiers.map((id) => (
+                <button
+                  key={id}
+                  onClick={() => onThreatClick?.(id)}
+                  className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono font-bold hover:bg-primary/10 hover:text-primary transition-colors"
+                >
+                  {id}
+                </button>
               ))}
             </div>
           )}

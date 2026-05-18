@@ -43,15 +43,32 @@ export const ElementNode = memo(function ElementNode({ data, selected }: NodePro
   const { element, threatCount, maxSeverity, drawFlowMode } = data;
   const config = ELEMENT_TYPE_CONFIG[element.elementType];
 
+  const showDot = maxSeverity === "critical" || maxSeverity === "high";
+
   return (
     <div
       className={cn(
-        "min-w-[120px] max-w-[180px] rounded-lg border-2 bg-card p-3 shadow-sm transition-all",
+        "relative min-w-[120px] max-w-[180px] rounded-lg border-2 bg-card p-3 shadow-sm transition-all",
         config.borderClass,
         selected && "ring-2 ring-primary ring-offset-1",
         maxSeverity && SEVERITY_BORDER[maxSeverity],
       )}
     >
+      {/* High/critical severity dot */}
+      {showDot && (
+        <span className="absolute -right-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center">
+          {maxSeverity === "critical" && (
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-60" />
+          )}
+          <span
+            className={cn(
+              "relative inline-flex h-3 w-3 rounded-full",
+              maxSeverity === "critical" ? "bg-red-600" : "bg-orange-500",
+            )}
+          />
+        </span>
+      )}
+
       {/* Header row */}
       <div className="flex items-start gap-2">
         <span className="mt-0.5 shrink-0 text-lg">{config.icon}</span>

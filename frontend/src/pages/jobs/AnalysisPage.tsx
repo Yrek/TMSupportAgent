@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { toast } from "sonner";
-import { ArrowLeft, RefreshCw, AlertTriangle, HelpCircle, Clock, DollarSign, Copy } from "lucide-react";
+import { ArrowLeft, RefreshCw, AlertTriangle, HelpCircle, Clock, DollarSign, Copy, Zap, Search, CheckCircle, ChevronsUpDown } from "lucide-react";
 import { useJob } from "@/api/jobs";
 import { useThreats, useUpdateThreatStatus, useAddThreatNote, useAddThreat, useAnalysis, useRejectedCandidates, type RejectedCandidate } from "@/api/threats";
 import { useArchitecture, useReanalyzeJob } from "@/api/architecture";
@@ -16,6 +16,8 @@ import { ArchCanvas } from "@/components/architecture/ArchCanvas";
 import { ElementDetailPanel } from "@/components/architecture/ElementDetailPanel";
 import { RecommendationsPanel } from "@/components/analysis/RecommendationsPanel";
 import { RemediationPanel } from "@/components/analysis/RemediationPanel";
+import { TestCasesPanel } from "@/components/analysis/TestCasesPanel";
+import { AttackTreesPanel } from "@/components/analysis/AttackTreesPanel";
 import { ExportPanel } from "@/components/analysis/ExportPanel";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -26,8 +28,16 @@ import type { Threat } from "@/api/threats";
 import type { ArchitectureElement } from "@/api/architecture";
 import type { ThreatStatus } from "@/lib/constants";
 import { requiredParam } from "@/lib/requiredParam";
+import { cn } from "@/lib/utils";
 
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, note: 4 };
+
+const SEVERITY_STYLE = {
+  critical: { dot: "bg-red-600",    text: "text-red-700",    label: "Critical" },
+  high:     { dot: "bg-orange-500", text: "text-orange-700", label: "High" },
+  medium:   { dot: "bg-amber-400",  text: "text-amber-700",  label: "Medium" },
+  low:      { dot: "bg-blue-400",   text: "text-blue-700",   label: "Low" },
+};
 
 function formatDuration(ms: number): string {
   const totalSeconds = Math.round(ms / 1000);
@@ -35,6 +45,108 @@ function formatDuration(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
+
+// ── Severity + review progress bar ────────────────────────────────────────────
+function SeverityBar({ threats }: { threats: Threat[] }) {
+  const counts = useMemo(() => {
+    const c = { critical: 0, high: 0, medium: 0, low: 0 };
+    threats.forEach((t) => {
+      const s = t.riskRating?.severity as keyof typeof c | undefined;
+      if (s && s in c) c[s]++;
+    });
+    return c;
+  }, [threats]);
+
+  const reviewed = threats.filter((t) => t.status !== "Open").length;
+  const total = threats.length;
+  const reviewPct = total > 0 ? Math.round((reviewed / total) * 100) : 0;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-4 py-2 text-xs">
+      {(["critical", "high", "medium", "low"] as const).map((sev) =>
+        counts[sev] > 0 ? (
+          <span key={sev} className="flex items-center gap-1.5">
+            <span className={cn("h-2 w-2 rounded-full", SEVERITY_STYLE[sev].dot)} />
+            <span className={cn("font-semibold", SEVERITY_STYLE[sev].text)}>
+              {counts[sev]} {SEVERITY_STYLE[sev].label}
+            </span>
+          </span>
+        ) : null,
+      )}
+      <span className="ml-auto flex items-center gap-2 text-muted-foreground">
+        <span>{reviewed}/{total} reviewed</span>
+        <div className="h-1.5 w-20 rounded-full bg-muted overflow-hidden">
+          <div
+            className="h-full rounded-full bg-green-500 transition-all"
+            style={{ width: `${reviewPct}%` }}
+          />
+        </div>
+      </span>
+    </div>
+  );
+}
+
+// ── Top threat drivers panel (shown in right panel when no threat selected) ───
+function TopDriversPanel({
+  threats,
+  elements,
+  onElementClick,
+}: {
+  threats: Threat[];
+  elements: ArchitectureElement[];
+  onElementClick: (el: ArchitectureElement) => void;
+}) {
+  const drivers = useMemo(() => {
+    const map = new Map<string, { el: ArchitectureElement; count: number; maxSev: string }>();
+    threats.forEach((t) => {
+      t.affectedElementIds.forEach((id) => {
+        const el = elements.find((e) => e.id === id);
+        if (!el || el.elementType === "DataFlow") return;
+        const existing = map.get(id);
+        const sev = t.riskRating?.severity ?? "note";
+        if (existing) {
+          existing.count++;
+          if ((SEVERITY_ORDER[sev] ?? 99) < (SEVERITY_ORDER[existing.maxSev] ?? 99))
+            existing.maxSev = sev;
+        } else {
+          map.set(id, { el, count: 1, maxSev: sev });
+        }
+      });
+    });
+    return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 6);
+  }, [threats, elements]);
+
+  if (drivers.length === 0) return null;
+
+  return (
+    <div className="border-l h-full overflow-y-auto p-4 w-64 shrink-0">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+        <Zap className="h-3.5 w-3.5" />
+        Top threat drivers
+      </p>
+      <div className="space-y-1">
+        {drivers.map(({ el, count, maxSev }) => (
+          <button
+            key={el.id}
+            onClick={() => onElementClick(el)}
+            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted transition-colors"
+          >
+            <span className="truncate text-sm">{el.name}</span>
+            <span className={cn(
+              "ml-2 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+              maxSev === "critical" ? "bg-red-100 text-red-700" :
+              maxSev === "high"     ? "bg-orange-100 text-orange-700" :
+              maxSev === "medium"   ? "bg-amber-100 text-amber-700" :
+                                      "bg-blue-100 text-blue-700",
+            )}>
+              {count}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function AnalysisPage() {
@@ -47,7 +159,6 @@ export function AnalysisPage() {
   const [showAddThreat, setShowAddThreat] = useState(false);
   const [draftFromRejected, setDraftFromRejected] = useState<RejectedCandidate | null>(null);
   const [showReanalyzeDialog, setShowReanalyzeDialog] = useState(false);
-  // GAP-TH3: selected element from canvas click
   const [selectedElement, setSelectedElement] = useState<ArchitectureElement | null>(null);
   const [activeTab, setActiveTab] = useState("threats");
 
@@ -57,7 +168,6 @@ export function AnalysisPage() {
 
   usePageTitle(job ? `${job.title} — Analysis` : "Threat Analysis");
 
-  // GAP-TH3: read elementId from URL search params for server-side filtering
   const elementIdFilter = searchParams.get("elementId") ?? undefined;
   const statusFilters = searchParams
     .getAll("status")
@@ -69,8 +179,6 @@ export function AnalysisPage() {
   const methodFilters = searchParams.getAll("method").filter((v) => !!v.trim());
   const frameworkFilters = searchParams.getAll("framework").filter((v) => !!v.trim());
 
-  // Defensive guard: stale deep links can carry element IDs from older architecture versions.
-  // If the element no longer exists, clear the URL filter instead of letting downstream queries fail.
   useEffect(() => {
     if (!elementIdFilter || !architecture) return;
     const exists = architecture.elements.some((e) => e.id === elementIdFilter);
@@ -93,8 +201,6 @@ export function AnalysisPage() {
   };
   const { data: threats = [], isLoading: threatsLoading } = useThreats(orgId, jobId, filters);
   const { data: rejectedCandidates = [], isLoading: rejectedLoading } = useRejectedCandidates(orgId, jobId);
-
-  // Unfiltered threats needed for overlay counts on the diagram
   const { data: allThreats = [] } = useThreats(orgId, jobId);
 
   const updateStatus = useUpdateThreatStatus(orgId, jobId);
@@ -108,13 +214,11 @@ export function AnalysisPage() {
   const sourceMethodsByIdentifier = useMemo(() => {
     const map = new Map<string, string[]>();
     if (!analysis) return map;
-
     type AnalysisThreat = { identifier?: string; sourceMethods?: string[] };
     const groups = [
       ...(Array.isArray(analysis["confirmedThreats"]) ? (analysis["confirmedThreats"] as AnalysisThreat[]) : []),
       ...(Array.isArray(analysis["conditionalThreats"]) ? (analysis["conditionalThreats"] as AnalysisThreat[]) : []),
     ];
-
     groups.forEach((threat) => {
       if (!threat.identifier) return;
       const methods = Array.isArray(threat.sourceMethods)
@@ -122,17 +226,13 @@ export function AnalysisPage() {
         : [];
       map.set(threat.identifier, methods);
     });
-
     return map;
   }, [analysis]);
 
   const displayedThreats = useMemo(
     () =>
       threats
-        .map((t) => ({
-          ...t,
-          sourceMethods: sourceMethodsByIdentifier.get(t.identifier) ?? t.sourceMethods ?? [],
-        }))
+        .map((t) => ({ ...t, sourceMethods: sourceMethodsByIdentifier.get(t.identifier) ?? t.sourceMethods ?? [] }))
         .sort((a, b) => {
           const sa = SEVERITY_ORDER[a.riskRating?.severity ?? "note"] ?? 99;
           const sb = SEVERITY_ORDER[b.riskRating?.severity ?? "note"] ?? 99;
@@ -142,27 +242,23 @@ export function AnalysisPage() {
   );
 
   const displayedAllThreats = useMemo(
-    () =>
-      allThreats.map((t) => ({
-        ...t,
-        sourceMethods: sourceMethodsByIdentifier.get(t.identifier) ?? t.sourceMethods ?? [],
-      })),
+    () => allThreats.map((t) => ({ ...t, sourceMethods: sourceMethodsByIdentifier.get(t.identifier) ?? t.sourceMethods ?? [] })),
     [allThreats, sourceMethodsByIdentifier],
   );
 
-  // Derive node threat counts for ArchCanvas from unfiltered threats
   const threatCountByElement = new Map<string, { count: number; maxSeverity: "critical" | "high" | "medium" | "low" | null }>();
   displayedAllThreats.forEach((t) => {
+    const sev = t.riskRating?.severity as "critical" | "high" | "medium" | "low" | undefined;
     t.affectedElementIds.forEach((elId) => {
       const existing = threatCountByElement.get(elId);
-      threatCountByElement.set(elId, {
-        count: (existing?.count ?? 0) + 1,
-        maxSeverity: existing?.maxSeverity ?? null,
-      });
+      const prevSev = existing?.maxSeverity ?? null;
+      const nextSev = (sev && (!prevSev || (SEVERITY_ORDER[sev] ?? 99) < (SEVERITY_ORDER[prevSev] ?? 99)))
+        ? sev
+        : prevSev;
+      threatCountByElement.set(elId, { count: (existing?.count ?? 0) + 1, maxSeverity: nextSev });
     });
   });
 
-  // GAP-TH4: per-edge threat counts for DataFlow edge overlays
   const dataFlowElements = architecture?.elements.filter((e) => e.elementType === "DataFlow") ?? [];
   const threatCountByEdge = new Map<string, number>();
   dataFlowElements.forEach((df) => {
@@ -170,19 +266,28 @@ export function AnalysisPage() {
     if (count > 0) threatCountByEdge.set(df.id, count);
   });
 
-  // GAP-TH3: derive selected element name for filter chip
   const selectedElementForFilter = elementIdFilter
     ? architecture?.elements.find((e) => e.id === elementIdFilter)
     : undefined;
 
-  // GAP-TH5: threats related to currently selected canvas element
   const threatsForSelectedElement = selectedElement
     ? displayedAllThreats.filter((t) => t.affectedElementIds.includes(selectedElement.id))
     : undefined;
+
+  // Evidence gaps: unanswered pre-analysis questions
+  const unansweredCount = useMemo(() => {
+    if (!architecture?.clarificationQuestions?.length) return 0;
+    const answeredSet = new Set((architecture.clarificationAnswers ?? []).map((a) => a.question));
+    return architecture.clarificationQuestions.filter((q) => !answeredSet.has(q.question)).length;
+  }, [architecture]);
+
+  const reviewQuestions = Array.isArray(analysis?.["reviewQuestions"])
+    ? (analysis!["reviewQuestions"] as string[])
+    : [];
+
   function handleElementSelect(el: ArchitectureElement | null) {
     setSelectedElement(el);
     if (el) {
-      // GAP-TH3: write elementId to URL so threat list filters server-side
       const next = new URLSearchParams(searchParams);
       next.set("elementId", el.id);
       setSearchParams(next);
@@ -209,17 +314,20 @@ export function AnalysisPage() {
     const firstMatch = threat.affectedElementIds
       .map((id) => architecture?.elements.find((e) => e.id === id) ?? null)
       .find((e): e is ArchitectureElement => e !== null);
-
     if (!firstMatch) {
       toast.info("No mapped architecture element found for this threat.");
       return;
     }
-
     setSelectedElement(firstMatch);
     const next = new URLSearchParams(searchParams);
     next.set("elementId", firstMatch.id);
     setSearchParams(next);
     setActiveTab("architecture");
+  }
+
+  function handleDriverClick(el: ArchitectureElement) {
+    handleElementSelect(el);
+    setActiveTab("threats");
   }
 
   async function handleReanalyze() {
@@ -234,10 +342,40 @@ export function AnalysisPage() {
     }
   }
 
+  const searchQuery = searchParams.get("q")?.trim().toLowerCase() ?? "";
+  const visibleThreats = searchQuery
+    ? displayedThreats.filter((t) => t.title.toLowerCase().includes(searchQuery))
+    : displayedThreats;
+
+  // Auto-clear selected threat when it falls outside the current filter/search result
+  useEffect(() => {
+    if (selectedThreat && !visibleThreats.some((t) => t.id === selectedThreat.id)) {
+      setSelectedThreat(null);
+    }
+  }, [visibleThreats, selectedThreat]);
+
+  const listRef = useRef<HTMLDivElement>(null);
+
+  function handleListKeyDown(e: React.KeyboardEvent) {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const idx = selectedThreat ? visibleThreats.findIndex((t) => t.id === selectedThreat.id) : -1;
+    const next =
+      e.key === "ArrowDown"
+        ? Math.min(idx + 1, visibleThreats.length - 1)
+        : Math.max(idx - 1, 0);
+    if (visibleThreats[next]) setSelectedThreat(visibleThreats[next]);
+  }
+
+  const openVisibleThreats = visibleThreats.filter((t) => t.status === "Open");
+
+  async function handleBulkTriage(status: "Accepted" | "Mitigated" | "Rejected") {
+    await Promise.all(openVisibleThreats.map((t) => updateStatus.mutateAsync({ threatId: t.id, status })));
+    toast.success(`${openVisibleThreats.length} threat${openVisibleThreats.length !== 1 ? "s" : ""} marked as ${status}`);
+  }
+
   const methodCategories = [...new Set(displayedAllThreats.map((t) => t.methodCategory))];
-  const frameworks = [
-    ...new Set(displayedAllThreats.flatMap((t) => (t.frameworkMappings ?? []).map((m) => m.framework))),
-  ];
+  const frameworks = [...new Set(displayedAllThreats.flatMap((t) => (t.frameworkMappings ?? []).map((m) => m.framework)))];
 
   if (jobLoading) {
     return (
@@ -267,14 +405,8 @@ export function AnalysisPage() {
             <h1 className="truncate font-semibold">{job?.title ?? "Threat model"}</h1>
           </div>
           {job && <JobStatusBadge status={job.status} />}
-
           {canReanalyze && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowReanalyzeDialog(true)}
-              className="gap-1.5"
-            >
+            <Button variant="outline" size="sm" onClick={() => setShowReanalyzeDialog(true)} className="gap-1.5">
               <RefreshCw className="h-4 w-4" />
               Re-analyze
             </Button>
@@ -290,6 +422,32 @@ export function AnalysisPage() {
                 ? analysis["partialReason"]
                 : "This analysis is incomplete due to architectural ambiguity. Some threats may be missing."}
             </span>
+          </div>
+        )}
+
+        {/* Evidence gaps banner */}
+        {(unansweredCount > 0 || reviewQuestions.length > 0) && (
+          <div className="flex items-center gap-3 border-b bg-amber-50 px-4 py-2 text-xs">
+            <HelpCircle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+            <span className="text-amber-800 font-medium flex-1">
+              {[
+                unansweredCount > 0 && `${unansweredCount} unanswered pre-analysis question${unansweredCount !== 1 ? "s" : ""} — re-analyze to improve results`,
+                reviewQuestions.length > 0 && `${reviewQuestions.length} open question${reviewQuestions.length !== 1 ? "s" : ""} from the analysis requiring your input`,
+              ].filter(Boolean).join(" · ")}
+            </span>
+            {reviewQuestions.length > 0 && (
+              <button
+                onClick={() => {
+                  const text = reviewQuestions.join("\n\n");
+                  void navigator.clipboard.writeText(text);
+                  toast.success("Questions copied");
+                }}
+                className="flex items-center gap-1 text-amber-700 hover:text-amber-900 transition-colors shrink-0"
+              >
+                <Copy className="h-3 w-3" />
+                Copy questions
+              </button>
+            )}
           </div>
         )}
 
@@ -314,9 +472,12 @@ export function AnalysisPage() {
           </div>
         )}
 
-        {/* Summary header */}
+        {/* Severity stats bar */}
+        {displayedAllThreats.length > 0 && <SeverityBar threats={displayedAllThreats} />}
+
+        {/* System summary + classification */}
         {analysis && (
-          <div className="border-b px-4 py-3 shrink-0 space-y-2">
+          <div className="border-b px-4 py-2 shrink-0 space-y-1.5">
             {typeof analysis["systemSummary"] === "string" && (
               <p className="text-sm text-muted-foreground line-clamp-2">{analysis["systemSummary"]}</p>
             )}
@@ -325,14 +486,9 @@ export function AnalysisPage() {
                 (analysis["classification"] as string[]).map((c) => (
                   <Badge key={c} variant="outline" className="text-xs">{c}</Badge>
                 ))}
-              <Badge variant="secondary" className="text-xs">
-                {displayedAllThreats.length} threats
-              </Badge>
-              <Badge variant="outline" className="text-xs">
-                {rejectedCandidates.length} discarded
-              </Badge>
+              <Badge variant="secondary" className="text-xs">{displayedAllThreats.length} threats</Badge>
+              <Badge variant="outline" className="text-xs">{rejectedCandidates.length} discarded</Badge>
             </div>
-
             {(job?.applicationDescription || job?.architectureDescription) && (
               <details className="rounded-md border bg-muted/30">
                 <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
@@ -354,256 +510,381 @@ export function AnalysisPage() {
                 </div>
               </details>
             )}
-
-            {/* Review questions */}
-            {Array.isArray(analysis["reviewQuestions"]) &&
-              (analysis["reviewQuestions"] as string[]).length > 0 && (
-                <div className="rounded-md bg-amber-50 border border-amber-200 p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2 text-amber-800 text-xs font-semibold">
-                      <HelpCircle className="h-3.5 w-3.5" />
-                      Questions requiring your review
-                    </div>
-                    <button
-                      onClick={() => {
-                        const text = (analysis["reviewQuestions"] as string[]).join("\n\n");
-                        void navigator.clipboard.writeText(text);
-                        toast.success("Questions copied");
-                      }}
-                      className="flex items-center gap-1 text-amber-700 hover:text-amber-900 text-xs transition-colors"
-                    >
-                      <Copy className="h-3 w-3" />
-                      Copy all
-                    </button>
-                  </div>
-                  <ul className="space-y-1">
-                    {(analysis["reviewQuestions"] as string[]).map((q, i) => (
-                      <li key={i} className="text-xs text-amber-700">{q}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
           </div>
         )}
 
-        {/* Tabs */}
+        {/* Tabs — ordered by priority */}
         <div className="min-h-0 flex-1 overflow-hidden">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full min-h-0 flex-col">
             <TabsList className="mx-4 mt-2 w-auto max-w-[calc(100vw-2rem)] shrink-0 justify-start overflow-x-auto whitespace-nowrap">
-              <TabsTrigger value="threats">
-                Threats ({elementIdFilter ? `${displayedThreats.length} / ${displayedAllThreats.length}` : displayedAllThreats.length})
+              {/* Primary — highlighted */}
+              <TabsTrigger value="threats" className="data-[state=active]:font-semibold">
+                Threats
+                <span className={cn(
+                  "ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                  displayedAllThreats.some(t => t.riskRating?.severity === "critical")
+                    ? "bg-red-100 text-red-700"
+                    : "bg-muted text-muted-foreground"
+                )}>
+                  {elementIdFilter ? `${displayedThreats.length}/${displayedAllThreats.length}` : displayedAllThreats.length}
+                </span>
               </TabsTrigger>
-              <TabsTrigger value="discarded">Discarded threats ({rejectedCandidates.length})</TabsTrigger>
               <TabsTrigger value="architecture">Architecture</TabsTrigger>
-              <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
               <TabsTrigger value="remediation">Remediation</TabsTrigger>
+              <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
+              <TabsTrigger value="tests">
+                Tests
+                {(() => {
+                  const count = Array.isArray(analysis?.["securityTestCases"]) ? (analysis!["securityTestCases"] as unknown[]).length : 0;
+                  return count > 0 ? (
+                    <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{count}</span>
+                  ) : null;
+                })()}
+              </TabsTrigger>
+              <TabsTrigger value="trees">
+                Attack Trees
+                {(() => {
+                  const count = Array.isArray(analysis?.["attackTrees"]) ? (analysis!["attackTrees"] as unknown[]).length : 0;
+                  return count > 0 ? (
+                    <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{count}</span>
+                  ) : null;
+                })()}
+              </TabsTrigger>
+              <TabsTrigger value="discarded" className="text-muted-foreground">
+                Discarded
+                <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  {rejectedCandidates.length}
+                </span>
+              </TabsTrigger>
               <TabsTrigger value="export">Export</TabsTrigger>
             </TabsList>
 
-            {/* Threats tab */}
+            {/* ── Threats ── */}
             {activeTab === "threats" && (
-            <TabsContent value="threats" className="mt-0 flex h-full min-h-0 flex-1 flex-col overflow-hidden md:flex-row md:items-stretch">
-              {/* Left: filter + list */}
-              <div className="flex w-full shrink-0 flex-col gap-3 border-b p-3 md:h-full md:w-[52rem] md:border-b-0 md:border-r">
-                <ThreatFilterBar
-                  methodCategories={methodCategories}
-                  frameworks={frameworks}
-                  elementFilter={selectedElementForFilter
-                    ? { id: selectedElementForFilter.id, name: selectedElementForFilter.name }
-                    : undefined}
-                  onClearElement={handleClearElementFilter}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAddThreat(true)}
-                  className="w-full"
-                >
-                  + Add your own threat
-                </Button>
-                <div className="min-h-0 flex-1 overflow-y-auto">
-                  {threatsLoading ? (
-                    <div className="space-y-1">
-                      {[1, 2, 3].map((i) => <Skeleton key={i} className="h-9 w-full" />)}
+              <TabsContent value="threats" className="mt-0 flex h-full min-h-0 flex-1 overflow-hidden">
+                {/* Left: filter + list */}
+                <div className="flex w-full shrink-0 flex-col gap-2 border-r p-3 md:h-full md:w-[52rem]">
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                    <input
+                      type="search"
+                      placeholder="Search threats…"
+                      value={searchQuery}
+                      onChange={(e) => {
+                        const next = new URLSearchParams(searchParams);
+                        if (e.target.value) next.set("q", e.target.value);
+                        else next.delete("q");
+                        setSearchParams(next, { replace: true });
+                      }}
+                      className="w-full rounded-md border bg-transparent py-1.5 pl-8 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
+                    />
+                  </div>
+
+                  {/* Filters + Open-only toggle */}
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <ThreatFilterBar
+                        methodCategories={methodCategories}
+                        frameworks={frameworks}
+                        elementFilter={selectedElementForFilter
+                          ? { id: selectedElementForFilter.id, name: selectedElementForFilter.name }
+                          : undefined}
+                        onClearElement={handleClearElementFilter}
+                      />
                     </div>
-                  ) : threats.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-muted-foreground">No threats match your filters.</p>
+                    <button
+                      title="Show open threats only"
+                      onClick={() => {
+                        const next = new URLSearchParams(searchParams);
+                        const isOpenOnly = statusFilters.length === 1 && statusFilters[0] === "Open";
+                        next.delete("status");
+                        if (!isOpenOnly) next.set("status", "Open");
+                        setSearchParams(next);
+                      }}
+                      className={cn(
+                        "mt-0.5 flex shrink-0 items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                        statusFilters.length === 1 && statusFilters[0] === "Open"
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
+                      Open only
+                    </button>
+                  </div>
+
+                  {/* What's left summary */}
+                  {(() => {
+                    const openCritical = displayedAllThreats.filter((t) => t.status === "Open" && t.riskRating?.severity === "critical").length;
+                    const openHigh = displayedAllThreats.filter((t) => t.status === "Open" && t.riskRating?.severity === "high").length;
+                    if (openCritical === 0 && openHigh === 0) return null;
+                    const parts = [
+                      openCritical > 0 && `${openCritical} critical`,
+                      openHigh > 0 && `${openHigh} high`,
+                    ].filter(Boolean).join(" · ");
+                    return (
+                      <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30 px-3 py-2 text-xs">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-600 dark:text-red-400" />
+                        <span className="font-medium text-red-700 dark:text-red-300">{parts} open — prioritize these</span>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setShowAddThreat(true)} className="flex-1">
+                      + Add threat
+                    </Button>
+                    {openVisibleThreats.length > 0 && (
+                      <div className="flex gap-1">
+                        <button
+                          title={`Accept all ${openVisibleThreats.length} open threats`}
+                          onClick={() => void handleBulkTriage("Accepted")}
+                          disabled={updateStatus.isPending}
+                          className="flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium text-green-700 border-green-200 hover:bg-green-50 dark:text-green-400 dark:border-green-900 dark:hover:bg-green-950/40 transition-colors disabled:opacity-50"
+                        >
+                          <CheckCircle className="h-3.5 w-3.5" />
+                          Accept all
+                        </button>
+                        <button
+                          title={`Mitigate all ${openVisibleThreats.length} open threats`}
+                          onClick={() => void handleBulkTriage("Mitigated")}
+                          disabled={updateStatus.isPending}
+                          className="flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium text-blue-700 border-blue-200 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-900 dark:hover:bg-blue-950/40 transition-colors disabled:opacity-50"
+                        >
+                          <ChevronsUpDown className="h-3.5 w-3.5" />
+                          Mitigate all
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div
+                    ref={listRef}
+                    tabIndex={0}
+                    onKeyDown={handleListKeyDown}
+                    className="min-h-0 flex-1 overflow-y-auto outline-none"
+                  >
+                    {threatsLoading ? (
+                      <div className="space-y-1">
+                        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-9 w-full" />)}
+                      </div>
+                    ) : visibleThreats.length === 0 ? (
+                      <p className="py-6 text-center text-sm text-muted-foreground">
+                        {searchQuery ? "No threats match your search." : "No threats match your filters."}
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        {visibleThreats.map((t) => (
+                          <ThreatCard
+                            key={t.id}
+                            threat={t}
+                            selected={selectedThreat?.id === t.id}
+                            onClick={setSelectedThreat}
+                            onShowInArchitecture={handleShowThreatInArchitecture}
+                            onUpdateStatus={async (id, status) => { await updateStatus.mutateAsync({ threatId: id, status }); }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right: threat detail OR summary panel */}
+                {selectedThreat ? (
+                  <div className="min-h-0 flex-1 overflow-hidden md:h-full">
+                    <ThreatDetailPanel
+                      threat={selectedThreat}
+                      onClose={() => setSelectedThreat(null)}
+                      onUpdateStatus={async (id, status) => { await updateStatus.mutateAsync({ threatId: id, status }); }}
+                      onAddNote={async (id, body) => { await addNote.mutateAsync({ threatId: id, body }); }}
+                      onShowInArchitecture={handleShowThreatInArchitecture}
+                    />
+                  </div>
+                ) : (
+                  <TopDriversPanel
+                    threats={displayedAllThreats}
+                    elements={architecture?.elements ?? []}
+                    onElementClick={handleDriverClick}
+                  />
+                )}
+              </TabsContent>
+            )}
+
+            {/* ── Tests ── */}
+            {activeTab === "tests" && (
+              <TabsContent value="tests" className="flex-1 overflow-y-auto mt-0">
+                <TestCasesPanel
+                  testCases={
+                    Array.isArray(analysis?.["securityTestCases"])
+                      ? (analysis!["securityTestCases"] as Array<{ threatIdentifier: string; threatTitle: string; scenarios: Array<{ scenarioTitle: string; given: string; when: string; then: string; and?: string | null }> }>)
+                      : []
+                  }
+                  onThreatClick={(identifier) => {
+                    const threat = displayedAllThreats.find((t) => t.identifier === identifier);
+                    if (threat) { setSelectedThreat(threat); setActiveTab("threats"); }
+                  }}
+                />
+              </TabsContent>
+            )}
+
+            {/* ── Attack Trees ── */}
+            {activeTab === "trees" && (
+              <TabsContent value="trees" className="flex-1 overflow-y-auto mt-0">
+                <AttackTreesPanel
+                  attackTrees={
+                    Array.isArray(analysis?.["attackTrees"])
+                      ? (analysis!["attackTrees"] as Array<{ threatIdentifier: string; threatTitle: string; mermaidDiagram: string; textSummary: string }>)
+                      : []
+                  }
+                  onThreatClick={(identifier) => {
+                    const threat = displayedAllThreats.find((t) => t.identifier === identifier);
+                    if (threat) { setSelectedThreat(threat); setActiveTab("threats"); }
+                  }}
+                />
+              </TabsContent>
+            )}
+
+            {/* ── Discarded ── */}
+            {activeTab === "discarded" && (
+              <TabsContent value="discarded" className="mt-0 flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="border-b px-4 py-3 text-sm text-muted-foreground">
+                  Threats rejected during analysis/synthesis. You can manually promote any discarded threat into your threat list.
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  {rejectedLoading ? (
+                    <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 w-full" />)}</div>
+                  ) : rejectedCandidates.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">No discarded threats for this job.</p>
                   ) : (
-                    <div className="space-y-1">
-                      {displayedThreats.map((t) => (
-                        <ThreatCard
-                          key={t.id}
-                          threat={t}
-                          selected={selectedThreat?.id === t.id}
-                          onClick={setSelectedThreat}
-                          onShowInArchitecture={handleShowThreatInArchitecture}
-                        />
+                    <div className="space-y-3">
+                      {rejectedCandidates.map((candidate) => (
+                        <div key={candidate.id} className="rounded-lg border p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <h3 className="font-medium">{candidate.title}</h3>
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                {candidate.methodCategory && (
+                                  <Badge variant="outline" className="text-xs">{candidate.methodCategory}</Badge>
+                                )}
+                                <Badge variant="secondary" className="text-xs">{candidate.rejectionReason}</Badge>
+                              </div>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => { setDraftFromRejected(candidate); setShowAddThreat(true); }}
+                            >
+                              Promote to threat
+                            </Button>
+                          </div>
+                          {candidate.rejectionNote && (
+                            <p className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap">{candidate.rejectionNote}</p>
+                          )}
+                        </div>
                       ))}
                     </div>
                   )}
                 </div>
-              </div>
-
-              {/* Right: detail panel — only rendered when a threat is selected */}
-              {selectedThreat && (
-                <div className="min-h-0 flex-1 overflow-hidden md:h-full">
-                  <ThreatDetailPanel
-                    threat={selectedThreat}
-                    onClose={() => setSelectedThreat(null)}
-                    onUpdateStatus={async (id, status) => {
-                      await updateStatus.mutateAsync({ threatId: id, status });
-                    }}
-                    onAddNote={async (id, body) => {
-                      await addNote.mutateAsync({ threatId: id, body });
-                    }}
-                    onShowInArchitecture={handleShowThreatInArchitecture}
-                  />
-                </div>
-              )}
-            </TabsContent>
+              </TabsContent>
             )}
 
-            {/* Architecture tab — GAP-TH3/TH4/TH5 */}
-            {activeTab === "discarded" && (
-            <TabsContent value="discarded" className="mt-0 flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-              <div className="border-b px-4 py-3 text-sm text-muted-foreground">
-                Threats rejected during analysis/synthesis. You can manually promote any discarded threat into your threat list.
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                {rejectedLoading ? (
-                  <div className="space-y-2">
-                    {[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 w-full" />)}
-                  </div>
-                ) : rejectedCandidates.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">No discarded threats for this job.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {rejectedCandidates.map((candidate) => (
-                      <div key={candidate.id} className="rounded-lg border p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <h3 className="font-medium">{candidate.title}</h3>
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                              {candidate.methodCategory && (
-                                <Badge variant="outline" className="text-xs">{candidate.methodCategory}</Badge>
-                              )}
-                              <Badge variant="secondary" className="text-xs">{candidate.rejectionReason}</Badge>
-                            </div>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setDraftFromRejected(candidate);
-                              setShowAddThreat(true);
-                            }}
-                          >
-                            Promote to threat
-                          </Button>
-                        </div>
-                        {candidate.rejectionNote && (
-                          <p className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap">{candidate.rejectionNote}</p>
-                        )}
+            {/* ── Architecture ── */}
+            {activeTab === "architecture" && (
+              <TabsContent value="architecture" className="mt-0 flex h-full min-h-0 flex-1 items-stretch overflow-hidden">
+                {architecture ? (
+                  <>
+                    <div className="min-h-0 flex-1 overflow-hidden">
+                      <ArchCanvas
+                        elements={architecture.elements}
+                        readOnly
+                        threatCountByElement={threatCountByElement}
+                        threatCountByEdge={threatCountByEdge}
+                        selectedElementId={selectedElement?.id}
+                        onElementSelect={handleElementSelect}
+                        onEdgeClick={handleEdgeClick}
+                      />
+                    </div>
+                    {(selectedThreat ?? selectedElement) && (
+                      <div className="min-h-0 w-full shrink-0 overflow-y-auto border-l xl:h-full xl:w-[24rem]">
+                        {selectedThreat ? (
+                          <ThreatDetailPanel
+                            threat={selectedThreat}
+                            onClose={() => setSelectedThreat(null)}
+                            onUpdateStatus={async (id, status) => { await updateStatus.mutateAsync({ threatId: id, status }); }}
+                            onAddNote={async (id, body) => { await addNote.mutateAsync({ threatId: id, body }); }}
+                          />
+                        ) : selectedElement ? (
+                          <ElementDetailPanel
+                            element={selectedElement}
+                            readOnly
+                            onPatch={async () => undefined}
+                            onDelete={async () => undefined}
+                            onCorrect={async () => undefined}
+                            relatedThreats={threatsForSelectedElement}
+                            onThreatClick={(t) => { setSelectedThreat(t); }}
+                          />
+                        ) : null}
                       </div>
-                    ))}
+                    )}
+                  </>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+                    Architecture not available
                   </div>
                 )}
-              </div>
-            </TabsContent>
+              </TabsContent>
             )}
 
-            {/* Architecture tab — GAP-TH3/TH4/TH5 */}
-            {activeTab === "architecture" && (
-            <TabsContent value="architecture" className="mt-0 flex h-full min-h-0 flex-1 items-stretch overflow-hidden">
-              {architecture ? (
-                <>
-                  <div className="min-h-0 flex-1 overflow-hidden">
-                    <ArchCanvas
-                      elements={architecture.elements}
-                      readOnly
-                      threatCountByElement={threatCountByElement}
-                      threatCountByEdge={threatCountByEdge}
-                      selectedElementId={selectedElement?.id}
-                      onElementSelect={handleElementSelect}
-                      onEdgeClick={handleEdgeClick}
-                    />
-                  </div>
-                  {/* Right detail panel — element or threat, shown on selection */}
-                  {(selectedThreat ?? selectedElement) && (
-                    <div className="min-h-0 w-full shrink-0 overflow-y-auto border-l xl:h-full xl:w-[24rem]">
-                      {selectedThreat ? (
-                        <ThreatDetailPanel
-                          threat={selectedThreat}
-                          onClose={() => setSelectedThreat(null)}
-                          onUpdateStatus={async (id, status) => {
-                            await updateStatus.mutateAsync({ threatId: id, status });
-                          }}
-                          onAddNote={async (id, body) => {
-                            await addNote.mutateAsync({ threatId: id, body });
-                          }}
-                        />
-                      ) : selectedElement ? (
-                        <ElementDetailPanel
-                          element={selectedElement}
-                          readOnly
-                          onPatch={async () => undefined}
-                          onDelete={async () => undefined}
-                          onCorrect={async () => undefined}
-                          relatedThreats={threatsForSelectedElement}
-                          onThreatClick={(t) => {
-                            setSelectedThreat(t);
-                          }}
-                        />
-                      ) : null}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-                  Architecture not available
-                </div>
-              )}
-            </TabsContent>
-            )}
-
-            {/* Recommendations tab */}
-            {activeTab === "recommendations" && (
-            <TabsContent value="recommendations" className="flex-1 overflow-y-auto mt-0">
-              <RecommendationsPanel
-                recommendations={
-                  Array.isArray(analysis?.["secureDesignRecommendations"])
-                    ? (analysis?.["secureDesignRecommendations"] as Array<{ title: string; description: string; principles?: string[]; affectedElements?: string[] }>)
-                    : []
-                }
-              />
-            </TabsContent>
-            )}
-
-            {/* Remediation tab */}
+            {/* ── Remediation ── */}
             {activeTab === "remediation" && (
-            <TabsContent value="remediation" className="flex-1 overflow-y-auto mt-0">
-              <RemediationPanel
-                items={
-                  Array.isArray(analysis?.["prioritizedRemediationList"])
-                    ? (analysis?.["prioritizedRemediationList"] as Array<{ threatIdentifier: string; title: string; mitigationSummary: string; priority: "critical" | "high" | "medium" | "low" }>)
-                    : []
-                }
-                onThreatClick={(identifier) => {
-                  const threat = displayedAllThreats.find((t) => t.identifier === identifier);
-                  if (threat) {
-                    setSelectedThreat(threat);
-                    setActiveTab("threats");
+              <TabsContent value="remediation" className="mt-0 flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="border-b px-4 py-3 text-sm text-muted-foreground shrink-0">
+                  Prioritized list of fixes across all confirmed threats, ordered by severity. Click a threat identifier to jump to the threat.
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                <RemediationPanel
+                  items={
+                    Array.isArray(analysis?.["prioritizedRemediationList"])
+                      ? (analysis?.["prioritizedRemediationList"] as Array<{ threatIdentifier: string; title: string; mitigationSummary: string; priority: "critical" | "high" | "medium" | "low" }>)
+                      : []
                   }
-                }}
-              />
-            </TabsContent>
+                  onThreatClick={(identifier) => {
+                    const threat = displayedAllThreats.find((t) => t.identifier === identifier);
+                    if (threat) { setSelectedThreat(threat); setActiveTab("threats"); }
+                  }}
+                />
+                </div>
+              </TabsContent>
             )}
 
-            {/* Export tab */}
+            {/* ── Recommendations ── */}
+            {activeTab === "recommendations" && (
+              <TabsContent value="recommendations" className="mt-0 flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="border-b px-4 py-3 text-sm text-muted-foreground shrink-0">
+                  Secure-by-design recommendations that apply to the architecture as a whole, independent of specific threats.
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <RecommendationsPanel
+                    recommendations={
+                      Array.isArray(analysis?.["secureDesignRecommendations"])
+                        ? (analysis?.["secureDesignRecommendations"] as Array<{ title: string; description: string; principles?: string[]; affectedElements?: string[]; relatedThreatIdentifiers?: string[] }>)
+                        : []
+                    }
+                    onThreatClick={(identifier) => {
+                      const threat = displayedAllThreats.find((t) => t.identifier === identifier);
+                      if (threat) { setSelectedThreat(threat); setActiveTab("threats"); }
+                    }}
+                  />
+                </div>
+              </TabsContent>
+            )}
+
+            {/* ── Export ── */}
             {activeTab === "export" && (
-            <TabsContent value="export" className="flex-1 overflow-y-auto mt-0">
-              <ExportPanel orgId={orgId} jobId={jobId} analysisData={analysisData} architecture={architecture} threats={allThreats} />
-            </TabsContent>
+              <TabsContent value="export" className="flex-1 overflow-y-auto mt-0">
+                <ExportPanel orgId={orgId} jobId={jobId} analysisData={analysisData} architecture={architecture} threats={allThreats} />
+              </TabsContent>
             )}
           </Tabs>
         </div>
@@ -611,10 +892,7 @@ export function AnalysisPage() {
 
       <AddThreatModal
         open={showAddThreat}
-        onOpenChange={(open) => {
-          setShowAddThreat(open);
-          if (!open) setDraftFromRejected(null);
-        }}
+        onOpenChange={(open) => { setShowAddThreat(open); if (!open) setDraftFromRejected(null); }}
         onSubmit={async (req) => {
           await addThreat.mutateAsync(req);
           toast.success("Threat added");

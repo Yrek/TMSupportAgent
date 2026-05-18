@@ -117,6 +117,43 @@ public static class GroupKeyRegistry
             "Cloud data service (SQL DB, Key Vault, Blob Storage, or equivalent) reachable over public internet with no private endpoint or strict firewall, " +
             "enabling direct credential-based access that bypasses application-layer controls",
             ["api_bypass_edge"]),
+
+        // ── AI / LLM / Agentic attack vectors ───────────────────────────────────────
+
+        new("prompt_injection_direct",
+            "User-controlled input reaches the LLM without structural sanitization, allowing an attacker to override system instructions " +
+            "or cause unintended model behavior. Scope: direct path from user input to model. " +
+            "Use prompt_injection_indirect for injection via external content (MCP responses, retrieved documents, tool output).",
+            ["prompt_injection_indirect"]),
+
+        new("prompt_injection_indirect",
+            "Untrusted external content (MCP server response, retrieved document, tool output, web page, database record) reaches the LLM " +
+            "and overrides system instructions or causes the model to invoke unintended tools or disclose sensitive context. " +
+            "Distinct from prompt_injection_direct (user input) — the injection vector is a trusted-looking system channel, " +
+            "making it harder to detect and filter.",
+            ["prompt_injection_direct"]),
+
+        new("llm_tool_unauthorized_action",
+            "Model output directly drives tool invocations (function calls, MCP tool calls, shell commands, database writes) " +
+            "without a human-in-the-loop approval gate, allowing a successful prompt injection or jailbreak to cause " +
+            "real-world side effects: data deletion, privilege changes, exfiltration, or API calls on behalf of the user. " +
+            "Distinct from prompt_injection_indirect (the injection vector) — this key encodes the consequent unauthorized action.",
+            ["prompt_injection_direct", "prompt_injection_indirect"]),
+
+        new("agentic_privilege_escalation",
+            "Agent or orchestrator is granted a tool scope that exceeds what any single user request requires " +
+            "(e.g., read+write+delete across all tenants, access to admin APIs). A successful injection, jailbreak, " +
+            "or confused-deputy attack achieves impact far beyond the attacker's legitimate access level. " +
+            "Distinct from llm_tool_unauthorized_action (which covers the action path) — this key encodes the excessive " +
+            "standing permission that amplifies the blast radius.",
+            ["llm_tool_unauthorized_action"]),
+
+        new("supply_chain_model",
+            "Compromised, backdoored, or poisoned model weights, fine-tune dataset, or model provider supply chain " +
+            "introduces hidden behavior into the application's LLM. Distinct from supply_chain_ci_cd (build pipeline) — " +
+            "the attack vector is the model artifact itself (Hugging Face weights, fine-tune data, RLHF poisoning, " +
+            "LoRA adapter injection), not the application's deployment infrastructure.",
+            ["supply_chain_ci_cd"]),
     ];
 
     /// <summary>

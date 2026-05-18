@@ -245,11 +245,22 @@ public sealed class SynthesizeStage(
         // Framework mapping sub-step: cheap model call after synthesis (spec §4 Stage 6, §7)
         output = await RunFrameworkMappingSubStepAsync(output, model, ct);
 
+        // Normalize threats first so all subsequent sub-steps see canonical lowercase severity/confidence values.
         output = output with
         {
             ConfirmedThreats = output.ConfirmedThreats.Select(NormalizeThreat).ToArray(),
             ConditionalThreats = output.ConditionalThreats.Select(NormalizeThreat).ToArray()
         };
+
+        // Security test case sub-step: generate Gherkin scenarios for confirmed threats.
+        // Runs after normalization so severity values are canonical.
+        // Non-fatal — skipped if over budget or if the LLM fails.
+        output = await RunSecurityTestCaseSubStepAsync(output, ct);
+
+        // Attack tree sub-step: generate Mermaid + text attack trees for high/critical threats.
+        // Runs after normalization so the high/critical filter sees canonical lowercase severity.
+        // Non-fatal — skipped if over budget or if the LLM fails.
+        output = await RunAttackTreeSubStepAsync(output, ct);
 
         // Ensure UserAddedThreats is always an empty array at synthesis time (spec §4 Stage 6)
         // Populated later via POST /threats API — never by the LLM.
@@ -521,6 +532,219 @@ public sealed class SynthesizeStage(
             ConfirmedThreats  = output.ConfirmedThreats.Select(MergeMappings).ToArray(),
             ConditionalThreats = output.ConditionalThreats.Select(MergeMappings).ToArray()
         };
+    }
+
+    // ── Security test case sub-step ──────────────────────────────────────────────
+
+    private sealed record TestCaseItem(
+        [property: JsonPropertyName("threatIdentifier")] string ThreatIdentifier,
+        [property: JsonPropertyName("threatTitle")] string ThreatTitle,
+        [property: JsonPropertyName("scenarios")] TestCaseScenarioItem[] Scenarios);
+
+    private sealed record TestCaseScenarioItem(
+        [property: JsonPropertyName("scenarioTitle")] string ScenarioTitle,
+        [property: JsonPropertyName("given")] string Given,
+        [property: JsonPropertyName("when")] string When,
+        [property: JsonPropertyName("then")] string Then,
+        [property: JsonPropertyName("and")] string? And);
+
+    // ── Attack tree sub-step ─────────────────────────────────────────────────────
+
+    private sealed record AttackTreeItem(
+        [property: JsonPropertyName("threatIdentifier")] string ThreatIdentifier,
+        [property: JsonPropertyName("threatTitle")] string ThreatTitle,
+        [property: JsonPropertyName("mermaidDiagram")] string MermaidDiagram,
+        [property: JsonPropertyName("textSummary")] string TextSummary);
+
+    // ── Shared JSON extraction ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Strips markdown code fences and leading prose from a model response, returning the
+    /// innermost JSON array string. Handles three common failure modes:
+    ///   1. Response wrapped in ```json ... ``` or ``` ... ``` fences.
+    ///   2. Preamble text before the opening bracket (model ignores "respond with ONLY JSON").
+    ///   3. Trailing explanation text after the closing bracket.
+    /// Returns "[]" if no JSON array can be found so callers receive an empty result
+    /// rather than a JsonException.
+    /// </summary>
+    private static string ExtractJsonArray(string raw)
+    {
+        var s = raw.Trim();
+
+        // Strip opening fence
+        if (s.StartsWith("```json", StringComparison.OrdinalIgnoreCase)) s = s[7..];
+        else if (s.StartsWith("```")) s = s[3..];
+
+        // Strip closing fence
+        if (s.EndsWith("```")) s = s[..^3];
+
+        s = s.Trim();
+
+        // If there is preamble prose, find the first '[' and last ']'
+        if (!s.StartsWith('['))
+        {
+            var start = s.IndexOf('[');
+            var end   = s.LastIndexOf(']');
+            if (start >= 0 && end > start)
+                s = s[start..(end + 1)];
+        }
+
+        return string.IsNullOrWhiteSpace(s) ? "[]" : s;
+    }
+
+    /// <summary>
+    /// Runs a cheap-model call to generate Gherkin security test cases for confirmed threats.
+    /// Non-fatal — skipped if over budget or if the LLM call fails.
+    /// </summary>
+    private async Task<FinalOutput> RunSecurityTestCaseSubStepAsync(FinalOutput output, CancellationToken ct)
+    {
+        if (output.ConfirmedThreats.Length == 0) return output;
+
+        var cheapModel = llmFactory.GetLowCostModel();
+        var llmClient = llmFactory.GetForModel(cheapModel);
+
+        var threatSummaries = output.ConfirmedThreats.Select(t => new
+        {
+            identifier = t.Identifier,
+            title = t.Title,
+            methodCategory = t.MethodCategory,
+            description = t.Description,
+            attackScenario = t.AttackScenario,
+            mitigationTitles = t.Mitigations.Select(m => m.Title).ToArray()
+        });
+        var threatsJson = JsonSerializer.Serialize(threatSummaries, SerializeOptions);
+        var userPrompt = PromptTemplates.BuildSecurityTestCaseUser(threatsJson);
+
+        var estimated = TokenEstimator.EstimatePrompt(PromptTemplates.SecurityTestCaseSystem, userPrompt);
+        var budget = synthesisOptions.Value.TestCaseInputBudget;
+        if (estimated > (int)(budget * 0.9))
+        {
+            logger.LogWarning(
+                "Security test case sub-step skipped — estimated tokens ({Estimated}) exceed budget ({Budget}).",
+                estimated, budget);
+            return output;
+        }
+
+        var request = new LlmRequest(
+            SystemPrompt: PromptTemplates.SecurityTestCaseSystem,
+            UserPrompt: userPrompt,
+            Model: cheapModel,
+            Temperature: 0f,
+            MaxTokens: synthesisOptions.Value.TestCaseMaxOutputTokens.ToMaxTokens());
+
+        List<TestCaseItem>? items = null;
+        try
+        {
+            var response = await llmClient.CompleteAsync(request, ct);
+            var cleaned = ExtractJsonArray(response.Content);
+
+            items = JsonSerializer.Deserialize<List<TestCaseItem>>(cleaned, DeserializeOptions);
+
+            logger.LogInformation(
+                "Security test case sub-step complete. Model={Model} TestCases={Count} InputTokens={In} OutputTokens={Out}",
+                cheapModel, items?.Count ?? 0, response.InputTokens, response.OutputTokens);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Security test case sub-step failed; synthesis output is unaffected.");
+            return output;
+        }
+
+        if (items is null or []) return output;
+
+        var testCases = items
+            .Where(i => !string.IsNullOrWhiteSpace(i.ThreatIdentifier) && i.Scenarios.Length > 0)
+            .Select(i => new SecurityTestCase(
+                ThreatIdentifier: i.ThreatIdentifier,
+                ThreatTitle: i.ThreatTitle,
+                Scenarios: i.Scenarios.Select(s => new SecurityTestScenario(
+                    ScenarioTitle: s.ScenarioTitle,
+                    Given: s.Given,
+                    When: s.When,
+                    Then: s.Then,
+                    And: s.And)).ToArray()))
+            .ToArray();
+
+        return output with { SecurityTestCases = testCases };
+    }
+
+    /// <summary>
+    /// Runs a cheap-model call to generate Mermaid + text attack trees for high/critical confirmed threats.
+    /// Non-fatal — skipped if over budget or if the LLM call fails.
+    /// </summary>
+    private async Task<FinalOutput> RunAttackTreeSubStepAsync(FinalOutput output, CancellationToken ct)
+    {
+        var eligibleThreats = output.ConfirmedThreats
+            .Where(t => t.RiskRating?.Severity?.Equals("high", StringComparison.OrdinalIgnoreCase) == true
+                     || t.RiskRating?.Severity?.Equals("critical", StringComparison.OrdinalIgnoreCase) == true)
+            .ToArray();
+        if (eligibleThreats.Length == 0) return output;
+
+        var cheapModel = llmFactory.GetLowCostModel();
+        var llmClient = llmFactory.GetForModel(cheapModel);
+
+        var threatSummaries = eligibleThreats.Select(t => new
+        {
+            identifier = t.Identifier,
+            title = t.Title,
+            severity = t.RiskRating?.Severity ?? "high",
+            methodCategory = t.MethodCategory,
+            description = t.Description,
+            attackScenario = t.AttackScenario,
+            affectedElementLabels = t.AffectedElementLabels
+        });
+        var threatsJson = JsonSerializer.Serialize(threatSummaries, SerializeOptions);
+        var userPrompt = PromptTemplates.BuildAttackTreeUser(threatsJson);
+
+        var estimated = TokenEstimator.EstimatePrompt(PromptTemplates.AttackTreeSystem, userPrompt);
+        var budget = synthesisOptions.Value.AttackTreeInputBudget;
+        if (estimated > (int)(budget * 0.9))
+        {
+            logger.LogWarning(
+                "Attack tree sub-step skipped — estimated tokens ({Estimated}) exceed budget ({Budget}).",
+                estimated, budget);
+            return output;
+        }
+
+        var request = new LlmRequest(
+            SystemPrompt: PromptTemplates.AttackTreeSystem,
+            UserPrompt: userPrompt,
+            Model: cheapModel,
+            Temperature: 0f,
+            MaxTokens: synthesisOptions.Value.AttackTreeMaxOutputTokens.ToMaxTokens());
+
+        List<AttackTreeItem>? items = null;
+        try
+        {
+            var response = await llmClient.CompleteAsync(request, ct);
+            var cleaned = ExtractJsonArray(response.Content);
+
+            items = JsonSerializer.Deserialize<List<AttackTreeItem>>(cleaned, DeserializeOptions);
+
+            logger.LogInformation(
+                "Attack tree sub-step complete. Model={Model} Trees={Count} InputTokens={In} OutputTokens={Out}",
+                cheapModel, items?.Count ?? 0, response.InputTokens, response.OutputTokens);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Attack tree sub-step failed; synthesis output is unaffected.");
+            return output;
+        }
+
+        if (items is null or []) return output;
+
+        var trees = items
+            .Where(i => !string.IsNullOrWhiteSpace(i.ThreatIdentifier)
+                     && !string.IsNullOrWhiteSpace(i.MermaidDiagram)
+                     && !string.IsNullOrWhiteSpace(i.TextSummary))
+            .Select(i => new AttackTree(
+                ThreatIdentifier: i.ThreatIdentifier,
+                ThreatTitle: i.ThreatTitle,
+                MermaidDiagram: i.MermaidDiagram.Trim(),
+                TextSummary: i.TextSummary.Trim()))
+            .ToArray();
+
+        return output with { AttackTrees = trees };
     }
 
     /// <summary>
@@ -1224,4 +1448,29 @@ public sealed class SynthesisOptions
     /// tasks like framework mapping.  Set to false to reduce cost at the expense of review quality.
     /// </summary>
     public bool UseStrongModelForAdversarialReview { get; init; } = true;
+
+    /// <summary>
+    /// Maximum estimated input tokens for the security test case sub-step.
+    /// Sub-step is skipped (non-fatal) when the prompt exceeds this.
+    /// </summary>
+    public int TestCaseInputBudget { get; init; } = 12_000;
+
+    /// <summary>
+    /// max_completion_tokens for the security test case sub-step.
+    /// Set to 0 to omit the ceiling and let the model use its own default.
+    /// </summary>
+    public int TestCaseMaxOutputTokens { get; init; } = 8_192;
+
+    /// <summary>
+    /// Maximum estimated input tokens for the attack tree sub-step.
+    /// Only high/critical threats are included, so budget can be smaller than test cases.
+    /// Sub-step is skipped (non-fatal) when the prompt exceeds this.
+    /// </summary>
+    public int AttackTreeInputBudget { get; init; } = 10_000;
+
+    /// <summary>
+    /// max_completion_tokens for the attack tree sub-step.
+    /// Set to 0 to omit the ceiling and let the model use its own default.
+    /// </summary>
+    public int AttackTreeMaxOutputTokens { get; init; } = 6_144;
 }

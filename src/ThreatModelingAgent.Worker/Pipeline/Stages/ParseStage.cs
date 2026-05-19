@@ -393,9 +393,15 @@ public sealed class ParseStage(
     private static string NormalizeDiagramLabel(string value)
     {
         if (string.IsNullOrWhiteSpace(value)) return value;
-        var noTags = Regex.Replace(value, "<[^>]+>", " ");
+        // Preserve <br/> and <br> as a literal \n so downstream label matching can split on it.
+        // LabelVariants in AnalyzeStage generates first-line and space-joined variants from \n,
+        // allowing "Azure Blob Storage" to match "Azure Blob Storage\nUploaded Documents & Reports".
+        // All other HTML tags are collapsed to a single space.
+        var withBreaks = Regex.Replace(value, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
+        var noTags = Regex.Replace(withBreaks, "<[^>]+>", " ");
         var decoded = System.Net.WebUtility.HtmlDecode(noTags);
-        return Regex.Replace(decoded, @"\s+", " ").Trim();
+        // Collapse runs of spaces (but not newlines) so multi-space gaps become single spaces.
+        return Regex.Replace(decoded, @"[ \t]+", " ").Trim();
     }
 
     private static string[] GuessElementHints(string label)

@@ -138,8 +138,6 @@ public sealed class ThreatsController(
         return framework.Trim().ToLowerInvariant().Replace(" ", "_").Replace("-", "_") switch
         {
             "stride" => "stride",
-            "vast" => "vast",
-            "pasta" => "pasta",
             "octave" or "ocatve" => "octave",
             "trike" => "trike",
             "mitre_attack" or "mitre_att&ck" or "mitre_attck" or "mitre" => "mitre_attack",

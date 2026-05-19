@@ -6,8 +6,8 @@ Two model tiers are configured in `appsettings.json` (or environment overrides):
 
 | Key | Default | Purpose |
 |-----|---------|---------|
-| `LlmRouting:StrongModel` | `gpt-4o` | Security-critical reasoning |
-| `LlmRouting:LowCostModel` | `gpt-4o-mini` | Classification, formatting, deduplication |
+| `LlmRouting:StrongModel` | `gpt-5` | Security-critical reasoning |
+| `LlmRouting:LowCostModel` | `gpt-5-mini` | Classification, formatting, deduplication |
 
 The client (OpenAI, Azure OpenAI, Anthropic, Gemini) is selected automatically based on the model name prefix. If `OpenAI:ApiKey` is set, plain OpenAI is preferred over Azure OpenAI for `gpt-*` and `o*` models.
 

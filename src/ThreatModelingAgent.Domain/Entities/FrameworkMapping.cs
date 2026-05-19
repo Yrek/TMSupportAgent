@@ -19,9 +19,9 @@ public class FrameworkMapping
     // Must stay in sync with FrameworkNormalizer.Normalize() canonical output values.
     private static readonly HashSet<string> AllowedFrameworks =
     [
-        "stride", "vast", "pasta", "octave", "trike",
+        "stride", "octave", "trike",
         "mitre_attack", "owasp_cumulus", "owasp_cornucopia",
-        "owasp_top10", "owasp_api_top10",
+        "owasp_top10", "owasp_api_top10", "owasp_llm_top10", "owasp_agentic_top10",
         "asvs", "cis_controls", "ncsc", "twelve_factor", "cwe"
     ];
 

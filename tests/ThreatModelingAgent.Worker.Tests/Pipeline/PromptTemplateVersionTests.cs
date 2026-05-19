@@ -66,14 +66,14 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void ClassifySystem_VersionIs_classify_2_1_0()
+    public void ClassifySystem_VersionIs_classify_2_2_0()
     {
-        PromptTemplates.ClassifySystem.Should().Contain("prompt-version: classify-2.1.0");
+        PromptTemplates.ClassifySystem.Should().Contain("prompt-version: classify-2.2.0");
     }
 
     [Theory]
     [InlineData("STRIDE")]
-    [InlineData("PASTA")]
+
     [InlineData("LINDDUN")]
     [InlineData("ATTACK_TREE")]
     public void BuildAnalyzeSystem_ContainsVersionString(string method)
@@ -81,7 +81,7 @@ public sealed class PromptTemplateVersionTests
         var system = PromptTemplates.BuildAnalyzeSystem(method);
         system.Should().Contain(VersionPrefix,
             because: $"ANALYZE system prompt for method {method} must carry a prompt-version");
-        system.Should().Contain("prompt-version: analyze-6.5.0");
+        system.Should().Contain("prompt-version: analyze-6.6.0");
     }
 
     [Fact]
@@ -92,9 +92,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void SynthesizeSystem_VersionIs_synthesize_3_4_0()
+    public void SynthesizeSystem_VersionIs_synthesize_3_5_0()
     {
-        PromptTemplates.SynthesizeSystem.Should().Contain("prompt-version: synthesize-3.4.0");
+        PromptTemplates.SynthesizeSystem.Should().Contain("prompt-version: synthesize-3.5.0");
     }
 
     [Fact]
@@ -105,9 +105,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void FrameworkMappingSystem_VersionIs_framework_mapping_1_1_0()
+    public void FrameworkMappingSystem_VersionIs_framework_mapping_1_3_0()
     {
-        PromptTemplates.FrameworkMappingSystem.Should().Contain("prompt-version: framework-mapping-1.1.0");
+        PromptTemplates.FrameworkMappingSystem.Should().Contain("prompt-version: framework-mapping-1.3.0");
     }
 
     [Fact]
@@ -118,9 +118,9 @@ public sealed class PromptTemplateVersionTests
     }
 
     [Fact]
-    public void ReviewSystem_VersionIs_review_1_3_0()
+    public void ReviewSystem_VersionIs_review_1_4_0()
     {
-        PromptTemplates.ReviewSystem.Should().Contain("prompt-version: review-1.3.0");
+        PromptTemplates.ReviewSystem.Should().Contain("prompt-version: review-1.4.0");
     }
 
     // ── No secrets or credentials in any template ─────────────────────────────

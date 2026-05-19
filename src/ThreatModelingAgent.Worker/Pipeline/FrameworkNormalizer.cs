@@ -6,7 +6,7 @@ namespace ThreatModelingAgent.Worker.Pipeline;
 /// Used by both SynthesizeStage (framework mapping sub-step) and PipelineDbPersistence
 /// (when persisting framework mappings to DB). Must not be duplicated — CLAUDE.md §14.
 ///
-/// Allowed values: stride, vast, pasta, octave, trike, mitre_attack, owasp_cumulus,
+/// Allowed values: stride, octave, trike, mitre_attack, owasp_cumulus,
 /// owasp_cornucopia, owasp_top10, owasp_api_top10, owasp_llm_top10, owasp_agentic_top10,
 /// asvs, cis_controls, ncsc, twelve_factor, cwe.
 /// Returns null for unknown frameworks so the caller can skip them silently.
@@ -19,8 +19,6 @@ internal static class FrameworkNormalizer
         return framework.Trim().ToLowerInvariant().Replace(" ", "_").Replace("-", "_") switch
         {
             "stride" => "stride",
-            "vast" => "vast",
-            "pasta" => "pasta",
             "octave" or "ocatve" => "octave",
             "trike" => "trike",
             "mitre_attack" or "mitre_att&ck" or "mitre_attck" or "mitre" => "mitre_attack",

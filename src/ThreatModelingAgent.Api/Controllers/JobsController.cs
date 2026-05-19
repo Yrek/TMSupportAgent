@@ -27,7 +27,7 @@ public sealed class JobsController(
 
     private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB (CLAUDE.md §9.7)
     private const int MaxApplicationDescriptionLength = 2000;
-    private const int MaxArchitectureDescriptionLength = 20000;
+    private const int MaxArchitectureDescriptionLength = 50000;
     // GET /v1/orgs/{orgId}/jobs
     [HttpGet]
     public async Task<IActionResult> ListJobs(

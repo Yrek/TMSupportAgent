@@ -17,7 +17,8 @@ The agent runs a multi-stage AI pipeline:
 5. **Runs parallel threat analysis** — multiple analysis passes execute concurrently, each focused on a different attack lens (STRIDE, LINDDUN, abuse cases, tenant isolation, supply chain, AI/LLM threats…). Methods are pre-selected based on what your architecture actually is.
 6. **Synthesises and challenges its own findings** — passes are merged, deduplicated, and put through an adversarial review that actively looks for missed threats and blind spots.
 7. **Maps to control frameworks** — every finding is mapped to OWASP Top 10, ASVS, CIS Controls, NCSC, and STRIDE categories.
-8. **Produces immediately actionable output** — threats with severity ratings, attack scenarios, mitigations, and acceptance criteria; secure design recommendations; a prioritised remediation list written to be pasted into a sprint backlog.
+8. **Generates attack trees for high and critical threats** — visual Mermaid flowcharts showing the attacker's decision tree: AND nodes (all conditions required) and OR nodes (any path sufficient). Each tree is downloadable as Mermaid source.
+9. **Produces immediately actionable output** — threats with severity ratings, attack scenarios, mitigations, and acceptance criteria; secure design recommendations; a prioritised remediation list written to be pasted into a sprint backlog; Gherkin-style security test cases (Given / When / Then / And) ready to copy into a test suite.
 
 ### What you get out
 
@@ -28,6 +29,8 @@ The agent runs a multi-stage AI pipeline:
 - **Secure design recommendations** — architectural patterns to adopt, tagged with security principles (Least Privilege, Defence in Depth, Blast-Radius Reduction…)
 - **Prioritised remediation list** — threats ranked by likelihood × impact, written as backlog-ready action items
 - **Framework mappings** — OWASP, ASVS, NCSC references on every confirmed finding
+- **Attack trees** — visual attacker decision trees for every high and critical threat, showing OR (any path sufficient) and AND (all conditions required) nodes
+- **Security test cases** — concrete BDD-style test scenarios per threat (Given / When / Then / And), written to be dropped directly into a test suite
 
 ### Architecture types supported
 
@@ -90,6 +93,14 @@ The Recommendations tab surfaces architectural patterns that address clusters of
 ![Prioritised remediation list](docs/images/remediations.png)
 
 The Remediation tab presents every confirmed threat ranked by severity (Critical → High → Medium → Low). Each entry shows the threat ID, a short action title, and a one-sentence description of what to implement — written to be pasted directly into a backlog ticket. Work through Critical items first. Every entry links back to the full threat detail so whoever implements the fix has all the context they need.
+
+---
+
+### Attack trees — visual attacker decision trees for high and critical threats
+
+![Attack trees](docs/images/attackTree.png)
+
+The Attack Trees tab generates a Mermaid flowchart for every high or critical threat. Each tree maps the attacker's decision path from goal to preconditions: **OR** nodes mean any single child path is sufficient to succeed; **AND** nodes mean the attacker needs all children simultaneously. Trees can be toggled between diagram and text summary views, and the Mermaid source can be copied directly for use in documentation or further editing.
 
 ---
 

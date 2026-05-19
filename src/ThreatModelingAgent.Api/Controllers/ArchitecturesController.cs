@@ -58,8 +58,6 @@ public sealed class ArchitecturesController(
         "tenant_isolation",
         "identity_session_delegation",
         "ai_llm_threat",
-        "vast",
-        "pasta",
         "octave",
         "trike",
         "mitre_attack",

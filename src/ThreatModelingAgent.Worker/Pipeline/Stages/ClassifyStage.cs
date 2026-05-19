@@ -34,8 +34,6 @@ public sealed class ClassifyStage(
         "tenant_isolation",
         "identity_session_delegation",
         "ai_llm_threat",
-        "vast",
-        "pasta",
         "octave",
         "trike",
         "mitre_attack",

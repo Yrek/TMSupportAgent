@@ -114,7 +114,7 @@ export function AddThreatModal({
 
           <div className="space-y-1.5">
             <Label htmlFor="methodCategory">Method category *</Label>
-            <Input id="methodCategory" {...register("methodCategory")} placeholder="e.g. STRIDE, PASTA, Custom" />
+            <Input id="methodCategory" {...register("methodCategory")} placeholder="e.g. STRIDE, Abuse Case, Custom" />
             {errors.methodCategory && <p className="text-sm text-destructive">{errors.methodCategory.message}</p>}
           </div>
 

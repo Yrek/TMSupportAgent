@@ -405,9 +405,9 @@ public static class PromptTemplates
 
     // ── CLASSIFY ─────────────────────────────────────────────────────────────
 
-    // prompt-version: classify-2.1.0
+    // prompt-version: classify-2.2.0
     public const string ClassifySystem = """
-        prompt-version: classify-2.1.0
+        prompt-version: classify-2.2.0
         You are an architecture classifier. Classify the given canonical architecture model
         and select the appropriate threat modeling methods with security coverage intent.
 
@@ -421,7 +421,7 @@ public static class PromptTemplates
         abuse_case (required for all), tenant_isolation (required for multi_tenant_saas),
         identity_session_delegation (required for identity_complex),
         ai_llm_threat (required for llm_enabled, agentic_mcp_enabled),
-        vast, pasta, octave, trike, mitre_attack, owasp_cumulus, owasp_cornucopia,
+        octave, trike, mitre_attack, owasp_cumulus, owasp_cornucopia,
         maestro,
         supply_chain, availability_resilience
 
@@ -480,10 +480,10 @@ public static class PromptTemplates
 
     // ── ANALYZE ──────────────────────────────────────────────────────────────
 
-    // prompt-version: analyze-6.5.0
+    // prompt-version: analyze-6.6.0
     public static string BuildAnalyzeSystem(string method) =>
         $$"""
-        prompt-version: analyze-6.5.0
+        prompt-version: analyze-6.6.0
         You are a senior threat analyst applying the {{method.ToUpperInvariant()}} lens to an architecture.
         Identify credible, evidence-grounded threats with concrete attacker paths.
 
@@ -947,13 +947,13 @@ public static class PromptTemplates
 
     // ── FRAMEWORK MAPPING ─────────────────────────────────────────────────────
 
-    // prompt-version: framework-mapping-1.2.0
+    // prompt-version: framework-mapping-1.3.0
     public const string FrameworkMappingSystem = """
-        prompt-version: framework-mapping-1.2.0
+        prompt-version: framework-mapping-1.3.0
         You are a security framework mapper. Map each threat to relevant security framework references.
 
         ALLOWED FRAMEWORKS (use ONLY these exact values — no others):
-        stride, vast, pasta, octave, trike, mitre_attack, owasp_cumulus, owasp_cornucopia,
+        stride, octave, trike, mitre_attack, owasp_cumulus, owasp_cornucopia,
         owasp_top10, owasp_api_top10, owasp_llm_top10, owasp_agentic_top10,
         asvs, cis_controls, ncsc, twelve_factor, cwe
 
@@ -1307,10 +1307,6 @@ public static class PromptTemplates
                 "For each candidate, name the specific architecture component that is the trust boundary being crossed and the concrete attacker objective.",
             "abuse_case" =>
                 "Model realistic attacker abuse journeys end-to-end, including business-logic abuse and account lifecycle abuse.",
-            "vast" =>
-                "Apply VAST process lens and map threats to application and operational touchpoints, emphasizing scalable threat coverage and ownership boundaries.",
-            "pasta" =>
-                "Apply PASTA risk-centric reasoning with attacker intent, likely attack paths, and business-impact prioritization.",
             "octave" =>
                 "Apply OCTAVE asset-centric reasoning: critical asset impact, organizational context, and control weakness paths.",
             "trike" =>

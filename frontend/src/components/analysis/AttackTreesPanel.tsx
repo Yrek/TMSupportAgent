@@ -7,8 +7,20 @@ import mermaid from "mermaid";
 mermaid.initialize({
   startOnLoad: false,
   theme: "neutral",
-  securityLevel: "strict",
+  // "loose" required for htmlLabels so <br/> in pre-processed labels renders correctly.
+  // Diagrams are backend-generated, not direct user input.
+  securityLevel: "loose",
   fontFamily: "inherit",
+  flowchart: {
+    htmlLabels: true,
+    nodeSpacing: 12,
+    rankSpacing: 20,
+    padding: 4,
+    diagramPadding: 4,
+  },
+  themeVariables: {
+    fontSize: "8px",
+  },
 });
 
 interface AttackTree {
@@ -23,6 +35,33 @@ interface AttackTreesPanelProps {
   onThreatClick?: ((id: string) => void) | undefined;
 }
 
+const MERMAID_INIT =
+  `%%{init: {"theme": "neutral", "themeVariables": {"fontSize": "8px"}, ` +
+  `"flowchart": {"htmlLabels": true, "nodeSpacing": 12, "rankSpacing": 20, "padding": 4, "wrap": true, "diagramPadding": 4}}}%%\n`;
+
+function insertLineBreaks(text: string, maxChars = 24): string {
+  if (text.length <= maxChars) return text;
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    if (line && line.length + 1 + word.length > maxChars) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.join("<br/>");
+}
+
+function prewrapMermaidLabels(source: string): string {
+  return source
+    .replace(/\["([^"]+)"\]/g, (_, label) => `["${insertLineBreaks(label)}"]`)
+    .replace(/\("([^"]+)"\)/g, (_, label) => `("${insertLineBreaks(label)}")`);
+}
+
 function MermaidDiagram({ chart }: { chart: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const uid = useId().replace(/:/g, "");
@@ -31,16 +70,17 @@ function MermaidDiagram({ chart }: { chart: string }) {
   useEffect(() => {
     let cancelled = false;
     mermaid
-      .render(id, chart)
+      .render(id, MERMAID_INIT + prewrapMermaidLabels(chart))
       .then(({ svg }) => {
         if (!cancelled && containerRef.current) {
           containerRef.current.innerHTML = svg;
-          // Make SVG responsive
           const svgEl = containerRef.current.querySelector("svg");
           if (svgEl) {
             svgEl.removeAttribute("width");
             svgEl.removeAttribute("height");
-            svgEl.style.maxWidth = "100%";
+            svgEl.style.maxWidth = "min(100%, 560px)";
+            svgEl.style.height = "auto";
+            svgEl.style.fontSize = "8px";
           }
         }
       })
@@ -55,7 +95,7 @@ function MermaidDiagram({ chart }: { chart: string }) {
     };
   }, [chart, id]);
 
-  return <div ref={containerRef} className="flex justify-center overflow-x-auto py-2" />;
+  return <div ref={containerRef} className="flex justify-center overflow-x-auto py-2 [&>svg]:max-w-[560px] [&>svg]:h-auto" />;
 }
 
 function AttackTreeRow({
@@ -71,9 +111,12 @@ function AttackTreeRow({
   return (
     <div className="rounded-lg border">
       {/* Header */}
-      <button
-        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-muted/30 transition-colors"
+      <div
+        role="button"
+        tabIndex={0}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-muted/30 transition-colors cursor-pointer"
         onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setOpen((v) => !v); }}
       >
         {open ? (
           <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -136,7 +179,7 @@ function AttackTreeRow({
         >
           <Copy className="h-3.5 w-3.5" />
         </button>
-      </button>
+      </div>
 
       {/* Body */}
       {open && (

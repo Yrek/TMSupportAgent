@@ -58,8 +58,6 @@ const METHOD_OPTIONS = [
   { value: "maestro",                   label: "MAESTRO (AI/ML)" },
   { value: "supply_chain",              label: "Supply Chain" },
   { value: "availability_resilience",   label: "Availability & Resilience" },
-  { value: "vast",                      label: "VAST" },
-  { value: "pasta",                     label: "PASTA" },
   { value: "octave",                    label: "OCTAVE (Advanced)" },
   { value: "trike",                     label: "TRIKE (Advanced)" },
 ] as const;
@@ -67,21 +65,47 @@ const METHOD_OPTIONS = [
 function computeSuggestedMethods(arch: ArchitectureModel): string[] {
   const suggested = new Set<string>(["stride", "abuse_case"]);
 
-  const hasLlmBoundary = arch.elements.some((e) => e.elementType === "LlmBoundary");
+  const hasLlmBoundary =
+    arch.elements.some((e) => e.elementType === "LlmBoundary") ||
+    arch.classification.some((c) => c === "llm_enabled" || c === "agentic_mcp_enabled") ||
+    arch.elements.some((e) => {
+      const n = e.name.toLowerCase();
+      return n.includes("llm") || n.includes("openai") || n.includes("orchestrat") || n.includes("mcp");
+    });
+  const purposeLower = arch.systemPurpose?.toLowerCase() ?? "";
   const hasMultiTenant =
     arch.elements.some((e) => e.name.toLowerCase().includes("tenant")) ||
-    arch.classification.some((c) => c === "multi_tenant_saas");
+    arch.classification.some((c) => c === "multi_tenant_saas") ||
+    purposeLower.includes("tenant") ||
+    purposeLower.includes("multi-tenant");
   const hasPrivacy =
     arch.elements.some(
       (e) =>
         e.name.toLowerCase().includes("pii") ||
         e.name.toLowerCase().includes("personal") ||
         e.name.toLowerCase().includes("privacy"),
-    ) || arch.classification.some((c) => c === "privacy_heavy");
+    ) ||
+    arch.classification.some((c) => c === "privacy_heavy") ||
+    purposeLower.includes("privacy") ||
+    purposeLower.includes("personal data");
   const hasCloud =
-    arch.deploymentContext != null &&
-    arch.deploymentContext.environment !== "unknown" &&
-    arch.deploymentContext.environment !== "on_prem";
+    arch.classification.some((c) => c === "cloud_native") ||
+    (arch.deploymentContext != null &&
+      arch.deploymentContext.environment !== "unknown" &&
+      arch.deploymentContext.environment !== "on_prem") ||
+    purposeLower.includes("azure") ||
+    purposeLower.includes("aws") ||
+    purposeLower.includes("gcp");
+  const hasComplexIdentity =
+    arch.classification.some((c) => c === "identity_complex") ||
+    purposeLower.includes("identity") ||
+    purposeLower.includes("federation") ||
+    purposeLower.includes("sso");
+  const hasEventDriven =
+    arch.classification.some((c) => c === "event_driven") ||
+    purposeLower.includes("event-driven") ||
+    purposeLower.includes("message queue") ||
+    purposeLower.includes("service bus");
   const externalCount = arch.elements.filter((e) => e.elementType === "ExternalSystem").length;
 
   if (hasLlmBoundary) {
@@ -91,6 +115,8 @@ function computeSuggestedMethods(arch: ArchitectureModel): string[] {
   if (hasMultiTenant) suggested.add("tenant_isolation");
   if (hasPrivacy) suggested.add("linddun");
   if (hasCloud) suggested.add("owasp_cumulus");
+  if (hasComplexIdentity) suggested.add("identity_session_delegation");
+  if (hasEventDriven) suggested.add("availability_resilience");
   if (externalCount > 2) suggested.add("supply_chain");
 
   return [...suggested];

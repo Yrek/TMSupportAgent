@@ -130,8 +130,7 @@ public sealed class AnalyzeStageTests
 
     [Theory]
     [InlineData("availability_resilience")]
-    [InlineData("vast")]
-    [InlineData("pasta")]
+
     public async Task PatternDrivenMethod_UsesLowCostModel(string method)
     {
         var (stage, factory, client) = BuildStage(lowCostModel: "gpt-4o-mini");
@@ -217,15 +216,43 @@ public sealed class AnalyzeStageTests
     }
 
     [Fact]
-    public async Task ThreatWithPartiallyUnknownLabels_MovedToRejected()
+    public async Task ThreatWithPartiallyUnknownLabels_StripsUnknownLabelsAndKeepsCandidate()
+    {
+        // Partial-match policy: if at least one label is valid, strip the phantom label
+        // and keep the candidate (traceability preserved via remaining valid labels).
+        // Only reject when ALL labels are unknown (tested separately below).
+        var (stage, _, client) = BuildStage();
+        var model = MinimalCanonical("API");
+        var mixedSet = new ThreatCandidateSet(
+            Method: "stride",
+            Candidates: [
+                new ThreatCandidate("Known",   "stride_s", ["API"],                 "d", "s", null, [], null, null, null, null, "high", [], "direct", null, "confirmed"),
+                new ThreatCandidate("Partial", "stride_t", ["API", "GhostService"], "d", "s", null, [], null, null, null, null, "high", [], "direct", null, "confirmed")
+            ],
+            RejectedCandidates: []);
+
+        client.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new LlmResponse(JsonSerializer.Serialize(mixedSet, CamelCase), 1000, 500, "gpt-4o"));
+
+        var result = await stage.ExecuteAsync(InputFor("stride", model), None);
+
+        result.Candidates.Should().HaveCount(2);
+        var partial = result.Candidates.First(c => c.Title == "Partial");
+        partial.AffectedElementLabels.Should().BeEquivalentTo(["API"],
+            because: "unknown label GhostService must be stripped while the valid label API is preserved");
+        result.RejectedCandidates.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ThreatWithAllUnknownLabels_MovedToRejected()
     {
         var (stage, _, client) = BuildStage();
         var model = MinimalCanonical("API");
         var mixedSet = new ThreatCandidateSet(
             Method: "stride",
             Candidates: [
-                new ThreatCandidate("Known", "stride_s", ["API"], "d", "s", null, [], null, null, null, null, "high", [], "direct", null, "confirmed"),
-                new ThreatCandidate("Unknown", "stride_t", ["API", "GhostService"], "d", "s", null, [], null, null, null, null, "high", [], "direct", null, "confirmed")
+                new ThreatCandidate("Known",   "stride_s", ["API"],          "d", "s", null, [], null, null, null, null, "high", [], "direct", null, "confirmed"),
+                new ThreatCandidate("Unknown", "stride_t", ["GhostService"], "d", "s", null, [], null, null, null, null, "high", [], "direct", null, "confirmed")
             ],
             RejectedCandidates: []);
 

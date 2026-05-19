@@ -39,7 +39,8 @@ public sealed class SynthesizeStage(
 
     private static readonly JsonSerializerOptions DeserializeOptions = new()
     {
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        AllowTrailingCommas = true,
     };
 
     // Group keys are defined in GroupKeyRegistry — single source of truth.
@@ -559,37 +560,50 @@ public sealed class SynthesizeStage(
     // ── Shared JSON extraction ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Strips markdown code fences and leading prose from a model response, returning the
-    /// innermost JSON array string. Handles three common failure modes:
-    ///   1. Response wrapped in ```json ... ``` or ``` ... ``` fences.
-    ///   2. Preamble text before the opening bracket (model ignores "respond with ONLY JSON").
-    ///   3. Trailing explanation text after the closing bracket.
+    /// Extracts a JSON array from a model response that may contain preamble prose, Mermaid
+    /// diagrams (which have their own [] bracket syntax), or trailing explanation text.
+    ///
+    /// Strategy (in order):
+    ///   1. Find a ```json ... ``` code fence anywhere in the response and extract its content.
+    ///   2. Find a ``` ... ``` code fence anywhere and extract its content.
+    ///   3. If the trimmed string already starts with '[', use it directly.
+    ///   4. Return "[]" — do not guess at bracket positions since Mermaid node labels
+    ///      use [text] syntax and would produce false matches.
+    ///
     /// Returns "[]" if no JSON array can be found so callers receive an empty result
     /// rather than a JsonException.
     /// </summary>
     private static string ExtractJsonArray(string raw)
     {
-        var s = raw.Trim();
-
-        // Strip opening fence
-        if (s.StartsWith("```json", StringComparison.OrdinalIgnoreCase)) s = s[7..];
-        else if (s.StartsWith("```")) s = s[3..];
-
-        // Strip closing fence
-        if (s.EndsWith("```")) s = s[..^3];
-
-        s = s.Trim();
-
-        // If there is preamble prose, find the first '[' and last ']'
-        if (!s.StartsWith('['))
+        // Strategy 1: look for ```json fence anywhere (model may have preamble prose)
+        var jsonFenceIdx = raw.IndexOf("```json", StringComparison.OrdinalIgnoreCase);
+        if (jsonFenceIdx >= 0)
         {
-            var start = s.IndexOf('[');
-            var end   = s.LastIndexOf(']');
-            if (start >= 0 && end > start)
-                s = s[start..(end + 1)];
+            var contentStart = jsonFenceIdx + 7;
+            var closeIdx = raw.IndexOf("```", contentStart, StringComparison.Ordinal);
+            if (closeIdx > contentStart)
+                return raw[contentStart..closeIdx].Trim();
         }
 
-        return string.IsNullOrWhiteSpace(s) ? "[]" : s;
+        // Strategy 2: look for plain ``` fence anywhere
+        var fenceIdx = raw.IndexOf("```", StringComparison.Ordinal);
+        if (fenceIdx >= 0)
+        {
+            var contentStart = fenceIdx + 3;
+            var closeIdx = raw.IndexOf("```", contentStart, StringComparison.Ordinal);
+            if (closeIdx > contentStart)
+            {
+                var inner = raw[contentStart..closeIdx].Trim();
+                if (inner.StartsWith('[')) return inner;
+            }
+        }
+
+        // Strategy 3: response is bare JSON starting with '['
+        var trimmed = raw.Trim();
+        if (trimmed.StartsWith('[')) return trimmed;
+
+        // Strategy 4: cannot safely extract — Mermaid brackets make blind IndexOf('[') unreliable
+        return "[]";
     }
 
     /// <summary>
@@ -674,9 +688,12 @@ public sealed class SynthesizeStage(
     /// </summary>
     private async Task<FinalOutput> RunAttackTreeSubStepAsync(FinalOutput output, CancellationToken ct)
     {
+        // Cap at 8 threats (critical-first) so trees fit within the output token budget.
         var eligibleThreats = output.ConfirmedThreats
             .Where(t => t.RiskRating?.Severity?.Equals("high", StringComparison.OrdinalIgnoreCase) == true
                      || t.RiskRating?.Severity?.Equals("critical", StringComparison.OrdinalIgnoreCase) == true)
+            .OrderBy(t => t.RiskRating?.Severity?.Equals("critical", StringComparison.OrdinalIgnoreCase) == true ? 0 : 1)
+            .Take(8)
             .ToArray();
         if (eligibleThreats.Length == 0) return output;
 
@@ -717,6 +734,14 @@ public sealed class SynthesizeStage(
         try
         {
             var response = await llmClient.CompleteAsync(request, ct);
+
+            var maxOut = synthesisOptions.Value.AttackTreeMaxOutputTokens;
+            if (maxOut > 0 && response.OutputTokens >= maxOut)
+                logger.LogWarning(
+                    "Attack tree response hit output token limit ({Limit}) — likely truncated. " +
+                    "Set AttackTreeMaxOutputTokens=0 to remove the ceiling.",
+                    maxOut);
+
             var cleaned = ExtractJsonArray(response.Content);
 
             items = JsonSerializer.Deserialize<List<AttackTreeItem>>(cleaned, DeserializeOptions);
@@ -1472,5 +1497,5 @@ public sealed class SynthesisOptions
     /// max_completion_tokens for the attack tree sub-step.
     /// Set to 0 to omit the ceiling and let the model use its own default.
     /// </summary>
-    public int AttackTreeMaxOutputTokens { get; init; } = 6_144;
+    public int AttackTreeMaxOutputTokens { get; init; } = 0;    // 0 = no ceiling; model uses its own default
 }

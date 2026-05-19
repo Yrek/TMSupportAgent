@@ -79,7 +79,9 @@ export function UploadJobPage() {
   const [diagramFormat, setDiagramFormat] = useState<DiagramFormat>("mermaid");
 
   const submitJob = useSubmitJob(orgId);
-  const { register, handleSubmit } = useForm<FormValues>();
+  const { register, handleSubmit, watch } = useForm<FormValues>();
+  const appDescLen = (watch("applicationDescription") ?? "").length;
+  const archDescLen = (watch("architectureDescription") ?? "").length;
 
   async function onSubmit(values: FormValues) {
     let artifact: File | null = null;
@@ -117,14 +119,20 @@ export function UploadJobPage() {
       toast.success("Job submitted");
       navigate(`/orgs/${orgId}/jobs/${job.id}`);
     } catch (err) {
-      const axiosErr = err as AxiosError<{ code?: string }>;
+      const axiosErr = err as AxiosError<{ code?: string; message?: string }>;
       const status = axiosErr.response?.status;
+      const code = axiosErr.response?.data?.code;
+      const message = axiosErr.response?.data?.message;
       if (status === 413) {
         setFileError("File is too large (max 10 MB).");
       } else if (status === 415) {
         setFileError("File type not supported.");
       } else if (status === 429) {
         toast.error("Too many submissions — try again shortly.");
+      } else if (status === 400 && code === "APPLICATION_DESCRIPTION_TOO_LONG") {
+        toast.error(message ?? "Application description is too long (max 2,000 characters).");
+      } else if (status === 400 && code === "ARCHITECTURE_DESCRIPTION_TOO_LONG") {
+        toast.error(message ?? "Architecture description is too long (max 50,000 characters).");
       } else {
         toast.error("Failed to submit job. Please try again.");
       }
@@ -167,6 +175,9 @@ export function UploadJobPage() {
               rows={3}
               maxLength={2000}
             />
+            <p className={`text-xs text-right ${appDescLen > 1800 ? "text-destructive" : "text-muted-foreground"}`}>
+              {appDescLen} / 2,000
+            </p>
           </div>
 
           <div className="space-y-1.5">
@@ -176,8 +187,11 @@ export function UploadJobPage() {
               {...register("architectureDescription")}
               placeholder="Any context not obvious from the diagram (trust boundaries, assumptions, external dependencies)."
               rows={4}
-              maxLength={20000}
+              maxLength={50000}
             />
+            <p className={`text-xs text-right ${archDescLen > 45000 ? "text-destructive" : "text-muted-foreground"}`}>
+              {archDescLen} / 50,000
+            </p>
           </div>
 
           <div className="space-y-2">

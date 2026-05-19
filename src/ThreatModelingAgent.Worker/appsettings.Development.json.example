@@ -72,7 +72,7 @@
     "TestCaseInputBudget": 12000,
     "TestCaseMaxOutputTokens": 8192,
     "AttackTreeInputBudget": 10000,
-    "AttackTreeMaxOutputTokens": 6144
+    "AttackTreeMaxOutputTokens": 0
   },
 
   "ModelPricing": {

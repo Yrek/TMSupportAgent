@@ -267,6 +267,64 @@ public sealed class AnalyzeStageTests
         result.RejectedCandidates[0].Title.Should().Be("Unknown");
     }
 
+    [Fact]
+    public async Task ThreatLabelMatchesFirstLineOfMultiLineCanonicalLabel_Accepted()
+    {
+        // LLMs sometimes output only the first line of a multi-line Mermaid node label.
+        // "Azure Blob Storage" should match canonical "Azure Blob Storage\nUploaded Documents & Reports".
+        var (stage, _, client) = BuildStage();
+        var model = MinimalCanonical("Azure Blob Storage\nUploaded Documents & Reports");
+        var set = GoodCandidateSet("stride", ["Azure Blob Storage"]);
+
+        client.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ResponseFor(set));
+
+        var result = await stage.ExecuteAsync(InputFor("stride", model), None);
+
+        result.Candidates.Should().HaveCount(1,
+            because: "first-line-only label must match the full multi-line canonical label");
+        result.RejectedCandidates.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ThreatLabelMatchesSpaceJoinedMultiLineCanonicalLabel_Accepted()
+    {
+        // LLMs sometimes replace the newline in a multi-line Mermaid node label with a space.
+        // "Azure Blob Storage Uploaded Documents & Reports" should match canonical
+        // "Azure Blob Storage\nUploaded Documents & Reports".
+        var (stage, _, client) = BuildStage();
+        var model = MinimalCanonical("Azure Blob Storage\nUploaded Documents & Reports");
+        var set = GoodCandidateSet("stride", ["Azure Blob Storage Uploaded Documents & Reports"]);
+
+        client.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ResponseFor(set));
+
+        var result = await stage.ExecuteAsync(InputFor("stride", model), None);
+
+        result.Candidates.Should().HaveCount(1,
+            because: "space-joined label must match the multi-line canonical label");
+        result.RejectedCandidates.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ThreatLabelWithMermaidStadiumDelimiters_Accepted()
+    {
+        // LLMs sometimes include Mermaid stadium-shape delimiters in labels, e.g.
+        // /"Platform Operator"/ instead of just Platform Operator.
+        var (stage, _, client) = BuildStage();
+        var model = MinimalCanonical("Platform Operator");
+        var set = GoodCandidateSet("stride", ["/\"Platform Operator\"/"]);
+
+        client.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ResponseFor(set));
+
+        var result = await stage.ExecuteAsync(InputFor("stride", model), None);
+
+        result.Candidates.Should().HaveCount(1,
+            because: "stadium-shape delimiters must be stripped before matching the canonical label");
+        result.RejectedCandidates.Should().BeEmpty();
+    }
+
     // ── Schema validation ─────────────────────────────────────────────────────
 
     [Fact]

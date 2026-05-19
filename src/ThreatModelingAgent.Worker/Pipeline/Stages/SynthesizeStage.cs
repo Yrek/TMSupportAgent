@@ -667,7 +667,7 @@ public sealed class SynthesizeStage(
         if (items is null or []) return output;
 
         var testCases = items
-            .Where(i => !string.IsNullOrWhiteSpace(i.ThreatIdentifier) && i.Scenarios.Length > 0)
+            .Where(i => !string.IsNullOrWhiteSpace(i.ThreatIdentifier) && i.Scenarios is { Length: > 0 })
             .Select(i => new SecurityTestCase(
                 ThreatIdentifier: i.ThreatIdentifier,
                 ThreatTitle: i.ThreatTitle,

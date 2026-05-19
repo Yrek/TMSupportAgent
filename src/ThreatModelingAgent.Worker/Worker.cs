@@ -32,9 +32,9 @@ public sealed class ServiceBusWorker(
         {
             MaxConcurrentCalls = 2,     // limit parallelism to control LLM costs
             AutoCompleteMessages = false, // we complete manually after successful processing
-            // Full pipeline with GPT-5 can run 10–15 min. Renew the lock for up to 30 min
-            // so the same message is not redelivered while a worker is still processing it.
-            MaxAutoLockRenewalDuration = TimeSpan.FromMinutes(30)
+            // Full pipeline can run 60+ min on large architectures with many methods and retries.
+            // Renew the lock for up to 90 min so the message is not redelivered mid-processing.
+            MaxAutoLockRenewalDuration = TimeSpan.FromMinutes(90)
         };
 
         await using var processor = sbClient.CreateProcessor(queueName, options);

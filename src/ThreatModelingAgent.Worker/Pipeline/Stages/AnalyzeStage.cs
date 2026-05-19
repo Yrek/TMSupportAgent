@@ -196,10 +196,8 @@ public sealed class AnalyzeStage(
         var knownLabels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         void AddLabel(string label)
         {
-            knownLabels.Add(label);
-            var norm = NormalizeLabel(label);
-            if (!string.Equals(norm, label, StringComparison.OrdinalIgnoreCase))
-                knownLabels.Add(norm);
+            foreach (var variant in LabelVariants(label))
+                knownLabels.Add(variant);
         }
         foreach (var c in model.Components)      AddLabel(c.Label);
         foreach (var a in model.Actors)          AddLabel(a.Label);
@@ -213,7 +211,7 @@ public sealed class AnalyzeStage(
         foreach (var threat in set.Candidates)
         {
             var unknownLabels = threat.AffectedElementLabels
-                .Where(l => !knownLabels.Contains(l) && !knownLabels.Contains(NormalizeLabel(l)))
+                .Where(l => !LabelVariants(l).Any(knownLabels.Contains))
                 .ToArray();
 
             if (unknownLabels.Length == 0)
@@ -223,7 +221,7 @@ public sealed class AnalyzeStage(
             else
             {
                 var validLabels = threat.AffectedElementLabels
-                    .Where(l => knownLabels.Contains(l) || knownLabels.Contains(NormalizeLabel(l)))
+                    .Where(l => LabelVariants(l).Any(knownLabels.Contains))
                     .ToArray();
 
                 if (validLabels.Length > 0)
@@ -324,11 +322,30 @@ public sealed class AnalyzeStage(
     // only matches real whitespace. Without handling the literal form, canonical labels
     // like "AI agent service\nLLM · tool calls · tasks" would never match the LLM's
     // output of "AI agent service".
-    private static string NormalizeLabel(string label)
+    // Returns all normalized variants of a label so the known-label set covers every form
+    // an LLM might use to refer to the same element:
+    //   1. Raw label as-is
+    //   2. Mermaid shape delimiters stripped (e.g. /"Platform Operator"/ → Platform Operator)
+    //   3. First-line only (LLM outputs just the heading of a multi-line Mermaid node)
+    //   4. Space-joined (LLM replaces the newline with a space instead of truncating)
+    // Each subsequent variant is also derived from the stripped form so all combinations are covered.
+    private static IEnumerable<string> LabelVariants(string label)
     {
-        var literalNl = label.IndexOf("\\n", StringComparison.Ordinal);
-        var controlChar = label.IndexOfAny(['\n', '\r', '\t']);
+        yield return label;
 
+        // Strip Mermaid stadium-shape delimiters: /\"text\"/ or /"text"/
+        var stripped = label.Trim();
+        if (stripped.StartsWith("/\"", StringComparison.Ordinal) && stripped.EndsWith("\"/", StringComparison.Ordinal))
+            stripped = stripped[2..^2].Trim();
+        else if (stripped.StartsWith("/(", StringComparison.Ordinal) && stripped.EndsWith(")/", StringComparison.Ordinal))
+            stripped = stripped[2..^2].Trim();
+
+        if (!string.Equals(stripped, label, StringComparison.OrdinalIgnoreCase))
+            yield return stripped;
+
+        // Work from the stripped form for all remaining variants.
+        var literalNl   = stripped.IndexOf("\\n", StringComparison.Ordinal);
+        var controlChar = stripped.IndexOfAny(['\n', '\r', '\t']);
         var cut = (literalNl, controlChar) switch
         {
             (>= 0, >= 0) => Math.Min(literalNl, controlChar),
@@ -337,7 +354,16 @@ public sealed class AnalyzeStage(
             _            => -1
         };
 
-        return (cut > 0 ? label[..cut] : label).Trim();
+        var firstLine = (cut > 0 ? stripped[..cut] : stripped).Trim();
+        if (!string.Equals(firstLine, label, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(firstLine, stripped, StringComparison.OrdinalIgnoreCase))
+            yield return firstLine;
+
+        var spaceJoined = stripped.Replace("\\n", " ").Replace('\n', ' ').Replace('\r', ' ').Trim();
+        if (!string.Equals(spaceJoined, label, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(spaceJoined, stripped, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(spaceJoined, firstLine, StringComparison.OrdinalIgnoreCase))
+            yield return spaceJoined;
     }
 
     private static SemaphoreSlim CreateThrottle(AnalyzeThrottlingOptions options)

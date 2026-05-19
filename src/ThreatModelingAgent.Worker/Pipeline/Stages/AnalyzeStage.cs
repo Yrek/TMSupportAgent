@@ -316,19 +316,17 @@ public sealed class AnalyzeStage(
             $"- {p.Description} | blast radius: {p.ImpactIfCompromised}"));
     }
 
-    // Strips everything from the first line-break onwards and trims whitespace.
-    // Handles both actual control characters and Mermaid's literal two-char \n escape
-    // (backslash + n), which NormalizeDiagramLabel preserves as-is because \s+ regex
-    // only matches real whitespace. Without handling the literal form, canonical labels
-    // like "AI agent service\nLLM · tool calls · tasks" would never match the LLM's
-    // output of "AI agent service".
     // Returns all normalized variants of a label so the known-label set covers every form
     // an LLM might use to refer to the same element:
     //   1. Raw label as-is
     //   2. Mermaid shape delimiters stripped (e.g. /"Platform Operator"/ → Platform Operator)
     //   3. First-line only (LLM outputs just the heading of a multi-line Mermaid node)
-    //   4. Space-joined (LLM replaces the newline with a space instead of truncating)
-    // Each subsequent variant is also derived from the stripped form so all combinations are covered.
+    //   4. Space-joined (LLM replaces the line-break with a space instead of truncating)
+    //
+    // Line-break forms handled: HTML <br/> / <br> tags, literal two-char \n escape, actual
+    // control characters (\n \r \t). Mermaid diagrams use <br/> for multi-line node labels;
+    // the PARSE stage preserves them verbatim so canonical labels arrive with <br/> intact,
+    // while the ANALYZE LLM typically renders the label as a single space-joined string.
     private static IEnumerable<string> LabelVariants(string label)
     {
         yield return label;
@@ -343,23 +341,21 @@ public sealed class AnalyzeStage(
         if (!string.Equals(stripped, label, StringComparison.OrdinalIgnoreCase))
             yield return stripped;
 
-        // Work from the stripped form for all remaining variants.
-        var literalNl   = stripped.IndexOf("\\n", StringComparison.Ordinal);
-        var controlChar = stripped.IndexOfAny(['\n', '\r', '\t']);
-        var cut = (literalNl, controlChar) switch
-        {
-            (>= 0, >= 0) => Math.Min(literalNl, controlChar),
-            (>= 0, _)    => literalNl,
-            (_, >= 0)    => controlChar,
-            _            => -1
-        };
+        // Normalise all line-break forms to a single space so we can generate consistent
+        // first-line and space-joined variants regardless of how the break was encoded.
+        // Order matters: replace <br/> and <br> before scanning for \n control chars.
+        var normalised = System.Text.RegularExpressions.Regex.Replace(stripped, @"<br\s*/?>", "\n", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                                                              .Replace("\\n", "\n");
 
-        var firstLine = (cut > 0 ? stripped[..cut] : stripped).Trim();
+        // Work from the normalised form for all remaining variants.
+        var cut = normalised.IndexOfAny(['\n', '\r', '\t']);
+
+        var firstLine = (cut > 0 ? normalised[..cut] : normalised).Trim();
         if (!string.Equals(firstLine, label, StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(firstLine, stripped, StringComparison.OrdinalIgnoreCase))
             yield return firstLine;
 
-        var spaceJoined = stripped.Replace("\\n", " ").Replace('\n', ' ').Replace('\r', ' ').Trim();
+        var spaceJoined = System.Text.RegularExpressions.Regex.Replace(normalised, @"[\n\r\t]+", " ").Trim();
         if (!string.Equals(spaceJoined, label, StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(spaceJoined, stripped, StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(spaceJoined, firstLine, StringComparison.OrdinalIgnoreCase))

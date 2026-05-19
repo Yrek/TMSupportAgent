@@ -325,6 +325,46 @@ public sealed class AnalyzeStageTests
         result.RejectedCandidates.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task ThreatLabelMatchesFirstLineOfHtmlBrCanonicalLabel_Accepted()
+    {
+        // Mermaid diagrams use <br/> for multi-line node labels (e.g. "Azure Blob Storage<br/>Uploaded Documents & Reports").
+        // The PARSE stage preserves <br/> verbatim, so canonical labels arrive with <br/>.
+        // The ANALYZE LLM typically outputs only the first segment, e.g. "Azure Blob Storage".
+        var (stage, _, client) = BuildStage();
+        var model = MinimalCanonical("Azure Blob Storage<br/>Uploaded Documents & Reports");
+        var set = GoodCandidateSet("stride", ["Azure Blob Storage"]);
+
+        client.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ResponseFor(set));
+
+        var result = await stage.ExecuteAsync(InputFor("stride", model), None);
+
+        result.Candidates.Should().HaveCount(1,
+            because: "first-line-only label must match a canonical label that uses <br/> as a line break");
+        result.RejectedCandidates.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ThreatLabelMatchesSpaceJoinedHtmlBrCanonicalLabel_Accepted()
+    {
+        // Same scenario as above but the LLM outputs the space-joined form rather than truncating.
+        // "Azure Blob Storage Uploaded Documents & Reports" must match canonical
+        // "Azure Blob Storage<br/>Uploaded Documents & Reports".
+        var (stage, _, client) = BuildStage();
+        var model = MinimalCanonical("Azure Blob Storage<br/>Uploaded Documents & Reports");
+        var set = GoodCandidateSet("stride", ["Azure Blob Storage Uploaded Documents & Reports"]);
+
+        client.CompleteAsync(Arg.Any<LlmRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ResponseFor(set));
+
+        var result = await stage.ExecuteAsync(InputFor("stride", model), None);
+
+        result.Candidates.Should().HaveCount(1,
+            because: "space-joined label must match a canonical label that uses <br/> as a line break");
+        result.RejectedCandidates.Should().BeEmpty();
+    }
+
     // ── Schema validation ─────────────────────────────────────────────────────
 
     [Fact]
